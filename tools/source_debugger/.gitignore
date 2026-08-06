@@ -1,0 +1,6 @@
+# The debugger owns its environment and generated artifacts.
+.venv/
+__pycache__/
+.pytest_cache/
+traces/
+downloads/
