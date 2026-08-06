@@ -176,6 +176,24 @@ globalThis.source = {
       download: true,
       install: true,
     },
+    debugProjects: [
+      {
+        id: 'search-keyword',
+        name: '搜索关键词',
+        description: '调用源搜索接口，观察请求、状态码和返回内容。',
+        inputLabel: '关键词',
+        placeholder: '例如 minecraft',
+        defaultInput: 'minecraft',
+      },
+      {
+        id: 'app-details',
+        name: '获取应用详情',
+        description: '打开详情页并通过 WebView 读取应用信息和下载链接。',
+        inputLabel: '应用详情 URL',
+        placeholder: '粘贴源详情页 URL',
+        defaultInput: 'https://apkvision.org/games/arcade/minecraft-pe-apk-55409/',
+      },
+    ],
   },
 
   async search(query, page = 1) {
@@ -242,5 +260,37 @@ globalThis.source = {
     } finally {
       await tab.close();
     }
+  },
+
+  async debug(projectId, input) {
+    const value = cleanText(input);
+    if (projectId === 'search-keyword') {
+      const results = await this.search(value);
+      return {
+        title: '搜索完成',
+        summary: `关键词“${value}”返回 ${results.length} 条结果`,
+        data: results.map((item) => ({
+          name: item.name,
+          id: item.id,
+          version: item.version,
+          iconUrl: item.iconUrl,
+        })),
+      };
+    }
+    if (projectId === 'app-details') {
+      const app = await this.details(value);
+      return {
+        title: '详情读取完成',
+        summary: `已读取 ${app.name} 的详情`,
+        data: {
+          name: app.name,
+          packageName: app.packageName,
+          version: app.version,
+          updatedAt: app.updatedAt,
+          downloads: (app.downloads || []).length,
+        },
+      };
+    }
+    throw new Error(`未知调试项目：${projectId}`);
   },
 };

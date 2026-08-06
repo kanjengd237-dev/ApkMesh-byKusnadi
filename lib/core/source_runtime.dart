@@ -74,6 +74,15 @@ abstract interface class ApkSourceScript {
   Future<void> dispose();
 }
 
+abstract interface class DebugProjectSource {
+  List<SourceDebugProject> get debugProjects;
+  Future<DebugProjectResult> runDebugProject(
+    SourceDebugProject project,
+    String input,
+    SourceHostApi host,
+  );
+}
+
 class SourceRegistry {
   SourceRegistry({List<ApkSourceScript> scripts = const []})
     : scripts = [...scripts];
@@ -119,6 +128,23 @@ class SourceRegistry {
 
   ApkSourceScript scriptFor(String sourceId) =>
       scripts.firstWhere((item) => item.id == sourceId);
+
+  List<SourceDebugProject> get debugProjects => scripts
+      .whereType<DebugProjectSource>()
+      .expand((script) => script.debugProjects)
+      .toList(growable: false);
+
+  Future<DebugProjectResult> runDebugProject(
+    SourceDebugProject project,
+    String input,
+    SourceHostApi host,
+  ) {
+    final script = scriptFor(project.sourceId);
+    if (script is! DebugProjectSource) {
+      throw UnsupportedError('源未声明调试项目');
+    }
+    return (script as DebugProjectSource).runDebugProject(project, input, host);
+  }
 
   Future<void> dispose() async {
     for (final script in scripts) {

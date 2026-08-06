@@ -61,6 +61,46 @@ class AppListing {
   final String summary;
 }
 
+class SourceDebugProject {
+  const SourceDebugProject({
+    required this.sourceId,
+    required this.sourceName,
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.inputLabel,
+    required this.placeholder,
+    this.defaultInput = '',
+  });
+
+  final String sourceId;
+  final String sourceName;
+  final String id;
+  final String name;
+  final String description;
+  final String inputLabel;
+  final String placeholder;
+  final String defaultInput;
+
+  String get key => '$sourceId:$id';
+}
+
+class DebugProjectResult {
+  const DebugProjectResult({
+    required this.projectId,
+    required this.sourceId,
+    required this.title,
+    required this.summary,
+    required this.data,
+  });
+
+  final String projectId;
+  final String sourceId;
+  final String title;
+  final String summary;
+  final dynamic data;
+}
+
 class SourceDownload {
   const SourceDownload({
     required this.label,

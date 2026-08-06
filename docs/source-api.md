@@ -18,6 +18,16 @@ globalThis.source = {
       download: true,
       install: false,
     },
+    debugProjects: [
+      {
+        id: 'search-keyword',
+        name: '搜索关键词',
+        description: '调用 search() 并在调试面板中显示请求和结果。',
+        inputLabel: '关键词',
+        placeholder: '例如 minecraft',
+        defaultInput: 'minecraft',
+      },
+    ],
   },
   async search(query, page) {},
   async details(idOrUrl) {},
@@ -27,6 +37,22 @@ globalThis.source = {
 `search()` 返回应用摘要数组。每项包含 `id`、`name`、`packageName`、`version`、`size`、`updatedAt`、`category`、`iconUrl` 和 `summary`。
 
 `details()` 返回完整应用对象，并增加 `description`、`screenshots`、`comments` 和 `downloads`。`downloads` 每项包含 `label`、`url` 和 `size`。
+
+`debugProjects` 是可选的调试项目声明。调试面板会按声明生成输入框和运行按钮，并调用 `debug(projectId, input)`。项目应返回 `{ title, summary, data }`，其中 `data` 会以结构化文本显示在运行结果下方。项目可以复用 `search()`、`details()` 或其他已声明的宿主能力；例如详情项目调用 `apkmesh.browser.open()` 时，面板会同步显示活动 WebView，点击标签即可打开可视化查看器。
+
+```js
+async debug(projectId, input) {
+  if (projectId === 'search-keyword') {
+    const results = await this.search(input);
+    return {
+      title: '搜索完成',
+      summary: `返回 ${results.length} 条结果`,
+      data: results,
+    };
+  }
+  throw new Error(`未知调试项目：${projectId}`);
+}
+```
 
 ## 宿主能力
 

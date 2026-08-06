@@ -83,6 +83,8 @@ class NativeHostApi implements SourceHostApi {
     Map<String, String> headers = const {},
     required SourcePolicy policy,
   }) async {
+    final requestId = _debug?.beginRequest(url, headers: headers);
+    var requestRecorded = false;
     _log('HTTP $url', category: 'HTTP');
     try {
       final response = await _getWithRedirects(
@@ -90,12 +92,35 @@ class NativeHostApi implements SourceHostApi {
         policy,
         headers: headers,
       );
+      final body = await response.stream.bytesToString();
       if (response.statusCode >= 400) {
+        if (requestId != null) {
+          _debug?.failRequest(
+            requestId,
+            'HTTP ${response.statusCode}',
+            statusCode: response.statusCode,
+            responseHeaders: response.headers,
+            responseBody: body,
+          );
+        }
+        requestRecorded = true;
         throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
       }
+      if (requestId != null) {
+        _debug?.completeRequest(
+          requestId,
+          statusCode: response.statusCode,
+          responseHeaders: response.headers,
+          responseBody: body,
+        );
+        requestRecorded = true;
+      }
       _log('HTTP $url -> ${response.statusCode}', category: 'HTTP');
-      return response.stream.bytesToString();
+      return body;
     } catch (error) {
+      if (requestId != null && !requestRecorded) {
+        _debug?.failRequest(requestId, error);
+      }
       _log(
         'HTTP $url failed: $error',
         level: DebugLogLevel.error,

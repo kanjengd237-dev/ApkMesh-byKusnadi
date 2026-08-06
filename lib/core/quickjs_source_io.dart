@@ -22,7 +22,7 @@ Future<ApkSourceScript?> loadQuickJsSource(
   return source;
 }
 
-class QuickJsApkSourceScript implements ApkSourceScript {
+class QuickJsApkSourceScript implements ApkSourceScript, DebugProjectSource {
   QuickJsApkSourceScript(this.scriptText, {this._debug}) {
     _runtime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: false);
     _installBridge();
@@ -34,6 +34,7 @@ class QuickJsApkSourceScript implements ApkSourceScript {
   late final SourcePolicy _policy;
   String? _sourceId;
   String? _sourceName;
+  List<SourceDebugProject> _debugProjects = const [];
   SourceHostApi? _host;
   bool _disposed = false;
 
@@ -150,6 +151,7 @@ class QuickJsApkSourceScript implements ApkSourceScript {
     final manifest = (manifestResult as Map).cast<String, dynamic>();
     _sourceId = manifest['id'] as String?;
     _sourceName = manifest['name'] as String?;
+    _debugProjects = _parseDebugProjects(manifest['debugProjects']);
     final permissions = _dynamicMap(manifest['permissions']);
     final hosts = (permissions['network'] as List? ?? const [])
         .map((item) => item.toString())
@@ -159,6 +161,46 @@ class QuickJsApkSourceScript implements ApkSourceScript {
       allowBrowser: permissions['browser'] == true,
       allowDownload: permissions['download'] == true,
       allowInstall: permissions['install'] == true,
+    );
+  }
+
+  List<SourceDebugProject> _parseDebugProjects(dynamic value) => value is List
+      ? value
+            .whereType<Map>()
+            .map((item) {
+              final project = item.cast<String, dynamic>();
+              return SourceDebugProject(
+                sourceId: id,
+                sourceName: name,
+                id: (project['id'] ?? '').toString(),
+                name: (project['name'] ?? '').toString(),
+                description: (project['description'] ?? '').toString(),
+                inputLabel: (project['inputLabel'] ?? '输入').toString(),
+                placeholder: (project['placeholder'] ?? '').toString(),
+                defaultInput: (project['defaultInput'] ?? '').toString(),
+              );
+            })
+            .where((project) => project.id.isNotEmpty)
+            .toList()
+      : const [];
+
+  @override
+  List<SourceDebugProject> get debugProjects => _debugProjects;
+
+  @override
+  Future<DebugProjectResult> runDebugProject(
+    SourceDebugProject project,
+    String input,
+    SourceHostApi host,
+  ) async {
+    final value = await _callWithArguments('debug', [project.id, input], host);
+    final result = _dynamicMap(value);
+    return DebugProjectResult(
+      projectId: project.id,
+      sourceId: id,
+      title: (result['title'] ?? project.name).toString(),
+      summary: (result['summary'] ?? '调试项目执行完成').toString(),
+      data: result['data'] ?? value,
     );
   }
 
@@ -185,9 +227,12 @@ class QuickJsApkSourceScript implements ApkSourceScript {
     return decoded;
   }
 
-  Future<dynamic> _call(
+  Future<dynamic> _call(String method, dynamic argument, SourceHostApi host) =>
+      _callWithArguments(method, [argument], host);
+
+  Future<dynamic> _callWithArguments(
     String method,
-    dynamic argument,
+    List<dynamic> arguments,
     SourceHostApi host,
   ) async {
     if (_disposed) throw StateError('源已释放');
@@ -198,7 +243,7 @@ class QuickJsApkSourceScript implements ApkSourceScript {
     }
     try {
       final result = await _evaluateJson(
-        '(async () => JSON.stringify(await source.$method(${jsonEncode(argument)})))()',
+        '(async () => JSON.stringify(await source.$method(${arguments.map(jsonEncode).join(', ')})))()',
       );
       _log('QuickJS call $method completed');
       return result;

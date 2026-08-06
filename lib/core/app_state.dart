@@ -36,6 +36,7 @@ class AppState extends ChangeNotifier {
   Map<String, String> get sourceErrors => Map.unmodifiable(registry.lastErrors);
   bool get hasEnabledSource =>
       _sources.any((source) => source.status == SourceStatus.enabled);
+  List<SourceDebugProject> get debugProjects => registry.debugProjects;
 
   Future<void> initialize() async {
     debug.add('正在加载内置 QuickJS 源', category: 'App');
@@ -84,6 +85,34 @@ class AppState extends ChangeNotifier {
   }
 
   Future<AppDetails> details(AppListing app) => registry.details(app, host);
+
+  Future<DebugProjectResult> runDebugProject(
+    SourceDebugProject project,
+    String input,
+  ) async {
+    final enabled = _sources.any(
+      (source) =>
+          source.id == project.sourceId &&
+          source.status == SourceStatus.enabled,
+    );
+    if (!enabled) throw StateError('源未启用：${project.sourceName}');
+    debug.add(
+      '开始调试项目：${project.name} · ${project.sourceName}',
+      category: 'Debug',
+    );
+    try {
+      final result = await registry.runDebugProject(project, input, host);
+      debug.add(result.summary, category: 'Debug');
+      return result;
+    } catch (error) {
+      debug.add(
+        '调试项目失败：${project.name} · $error',
+        level: DebugLogLevel.error,
+        category: 'Debug',
+      );
+      rethrow;
+    }
+  }
 
   Future<String> download(
     SourceDownload file,
