@@ -19,7 +19,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Minecraft'), findsOneWidget);
-    expect(find.textContaining('APK Award'), findsOneWidget);
+    expect(find.textContaining('APKVision'), findsOneWidget);
   });
 
   testWidgets('shows a completed empty search state', (tester) async {

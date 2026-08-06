@@ -10,11 +10,11 @@ class AppState extends ChangeNotifier {
   AppState() {
     _sources = [
       ApkSource(
-        id: 'apkaward-demo',
-        name: 'APK Award（测试源）',
-        homepage: 'apkaward.com',
-        version: '0.3.0',
-        description: '内置演示源，用于验证搜索、详情和下载接口。',
+        id: 'apkvision-demo',
+        name: 'APKVision（测试源）',
+        homepage: 'apkvision.org',
+        version: '1.0.0',
+        description: '内置演示源，用于验证 APKVision 搜索、详情和下载接口。',
         status: SourceStatus.enabled,
         builtIn: true,
         lastSync: DateTime.now(),
@@ -24,7 +24,7 @@ class AppState extends ChangeNotifier {
 
   late List<ApkSource> _sources;
   final SourceRegistry registry = SourceRegistry(
-    scripts: [ApkAwardDemoScript()],
+    scripts: [ApkVisionDemoScript()],
   );
   final DebugLogStore debug = DebugLogStore();
   late final SourceHostApi host = createPlatformHostApi(debug: debug);
@@ -41,7 +41,7 @@ class AppState extends ChangeNotifier {
     debug.add('正在加载内置 QuickJS 源', category: 'App');
     try {
       final quickJsSource = await loadQuickJsSource(
-        'assets/sources/apkaward.js',
+        'assets/sources/apkvision.js',
         debug: debug,
       );
       if (quickJsSource != null) {

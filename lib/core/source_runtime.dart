@@ -190,22 +190,16 @@ class DemoHostApi implements SourceHostApi {
   Future<void> dispose() async {}
 }
 
-class ApkAwardDemoScript implements ApkSourceScript {
+class ApkVisionDemoScript implements ApkSourceScript {
   @override
-  String get id => 'apkaward-demo';
+  String get id => 'apkvision-demo';
 
   @override
-  String get name => 'APK Award（测试源）';
+  String get name => 'APKVision（测试源）';
 
   @override
   SourcePolicy get policy => const SourcePolicy(
-    allowedHosts: {
-      'apkaward.com',
-      '*.apkaward.com',
-      'apkawards.com',
-      '*.apkawards.com',
-      'example.com',
-    },
+    allowedHosts: {'apkvision.org', '*.apkvision.org'},
     allowBrowser: true,
     allowDownload: true,
   );
@@ -230,26 +224,33 @@ class ApkAwardDemoScript implements ApkSourceScript {
   Future<void> dispose() async {}
 
   static const _detail = AppDetails(
-    id: 'https://apkaward.com/minecraft/',
-    sourceId: 'apkaward-demo',
+    id: 'https://apkvision.org/games/arcade/minecraft-pe-apk-55409/',
+    sourceId: 'apkvision-demo',
     name: 'Minecraft',
     packageName: 'com.mojang.minecraftpe',
-    version: '1.21.92',
-    size: '760 MB',
-    updatedAt: '2026-07-18',
-    category: '游戏',
-    sourceName: 'APK Award（测试源）',
+    version: '1.26.50.24 Beta',
+    size: '1000.1 MB',
+    updatedAt: 'August 5, 2026',
+    category: 'Arcade',
+    sourceName: 'APKVision（测试源）',
     iconUrl:
-        'https://upload.wikimedia.org/wikipedia/en/5/51/Minecraft_cover.png',
-    summary: '开放世界沙盒游戏',
-    description: '这是一个用于验证源接口的测试条目。Android 端初始化完成后会由 QuickJS 源替换。',
-    screenshots: [],
+        'https://apkvision.org/wp-content/uploads/2020/01/minecraft-play-with-friends.png',
+    summary: 'Minecraft APK free download from APKVision.',
+    description: '这是一个用于验证 APKVision 搜索、详情和下载接口的测试条目。',
+    screenshots: [
+      'https://img.apkvision.org/minecraft-play-with-friends/minecraft-play-with-friends-1.webp',
+      'https://img.apkvision.org/minecraft-play-with-friends/minecraft-play-with-friends-2.webp',
+      'https://img.apkvision.org/minecraft-play-with-friends/minecraft-play-with-friends-3.webp',
+      'https://img.apkvision.org/minecraft-play-with-friends/minecraft-play-with-friends-4.webp',
+      'https://img.apkvision.org/minecraft-play-with-friends/minecraft-play-with-friends-5.webp',
+    ],
     comments: ['请在安装前自行校验文件来源与签名。'],
     downloads: [
       SourceDownload(
-        label: 'APK · 测试文件',
-        url: 'https://example.com/minecraft.apk',
-        size: '760 MB',
+        label: 'Minecraft APK v1.26.50.24 Beta',
+        url:
+            'https://apkvision.org/games/arcade/minecraft-pe-apk-55409/download/v1.26.50.24-beta-apk/',
+        size: '1000.1 MB',
       ),
     ],
   );

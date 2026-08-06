@@ -143,7 +143,7 @@ class QuickJsApkSourceScript implements ApkSourceScript {
       };
     ''';
     _runtime.evaluate(bootstrap);
-    _runtime.evaluate(scriptText, sourceUrl: 'apkaward.js');
+    _runtime.evaluate(scriptText, sourceUrl: 'apkvision.js');
     final manifestResult = await _evaluateJson(
       'JSON.stringify(source.manifest)',
     );
@@ -165,7 +165,7 @@ class QuickJsApkSourceScript implements ApkSourceScript {
   Future<dynamic> _evaluateJson(String expression) async {
     var result = await _runtime.evaluateAsync(
       expression,
-      sourceUrl: 'apkaward.js',
+      sourceUrl: 'apkvision.js',
     );
     _runtime.executePendingJob();
     if (result.stringResult == '[object Promise]' ||

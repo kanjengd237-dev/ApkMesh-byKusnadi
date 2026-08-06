@@ -22,7 +22,7 @@ void main() {
   });
 
   test('registry skips disabled source ids', () async {
-    final registry = SourceRegistry(scripts: [ApkAwardDemoScript()]);
+    final registry = SourceRegistry(scripts: [ApkVisionDemoScript()]);
     final host = DemoHostApi();
 
     expect(
@@ -33,9 +33,15 @@ void main() {
       (await registry.search(
         'minecraft',
         host,
-        enabledSourceIds: {'apkaward-demo'},
+        enabledSourceIds: {'apkvision-demo'},
       )).single.name,
       'Minecraft',
+    );
+    expect(
+      ApkVisionDemoScript().policy.permits(
+        Uri.parse('https://dl.apkvision.org/minecraft/test.apk'),
+      ),
+      isTrue,
     );
   });
 
