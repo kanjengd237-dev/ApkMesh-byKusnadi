@@ -8,29 +8,39 @@ import 'package:flutter_js/flutter_js.dart';
 
 import 'models.dart';
 import 'source_runtime.dart';
+import 'debug_log.dart';
 
-Future<ApkSourceScript?> loadQuickJsSource(String assetPath) async {
+Future<ApkSourceScript?> loadQuickJsSource(
+  String assetPath, {
+  DebugLogStore? debug,
+}) async {
   // QuickJS is used for the Android runtime; other native platforms retain the demo source.
   if (!Platform.isAndroid) return null;
   final script = await rootBundle.loadString(assetPath);
-  final source = QuickJsApkSourceScript(script);
+  final source = QuickJsApkSourceScript(script, debug: debug);
   await source.initialize();
   return source;
 }
 
 class QuickJsApkSourceScript implements ApkSourceScript {
-  QuickJsApkSourceScript(this.scriptText) {
+  QuickJsApkSourceScript(this.scriptText, {this._debug}) {
     _runtime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: false);
     _installBridge();
   }
 
   final String scriptText;
+  final DebugLogStore? _debug;
   late final JavascriptRuntime _runtime;
   late final SourcePolicy _policy;
   String? _sourceId;
   String? _sourceName;
   SourceHostApi? _host;
   bool _disposed = false;
+
+  void _log(String message, {DebugLogLevel level = DebugLogLevel.info}) {
+    debugPrint('[APK Mesh] $message');
+    _debug?.add(message, level: level, category: 'QuickJS');
+  }
 
   Future<void> initialize() => _evaluateScript();
 
@@ -182,15 +192,20 @@ class QuickJsApkSourceScript implements ApkSourceScript {
   ) async {
     if (_disposed) throw StateError('源已释放');
     _host = host;
-    debugPrint('[APK Mesh] QuickJS call $method');
+    _log('QuickJS call $method');
     if (_sourceId == null) {
       await _evaluateScript();
     }
-    final result = await _evaluateJson(
-      '(async () => JSON.stringify(await source.$method(${jsonEncode(argument)})))()',
-    );
-    debugPrint('[APK Mesh] QuickJS call $method completed');
-    return result;
+    try {
+      final result = await _evaluateJson(
+        '(async () => JSON.stringify(await source.$method(${jsonEncode(argument)})))()',
+      );
+      _log('QuickJS call $method completed');
+      return result;
+    } catch (error) {
+      _log('QuickJS call $method failed: $error', level: DebugLogLevel.error);
+      rethrow;
+    }
   }
 
   @override

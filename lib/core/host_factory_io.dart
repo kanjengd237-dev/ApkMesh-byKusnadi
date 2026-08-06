@@ -10,14 +10,21 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'debug_log.dart';
 import 'source_runtime.dart';
 
-SourceHostApi createPlatformHostApi() => NativeHostApi();
+SourceHostApi createPlatformHostApi({DebugLogStore? debug}) =>
+    NativeHostApi(debug: debug);
 
 class NativeHostApi implements SourceHostApi {
+  NativeHostApi({this._debug});
+
   static const _installChannel = MethodChannel('com.apkmesh/install');
+  final DebugLogStore? _debug;
   final Map<String, HeadlessInAppWebView> _tabs = {};
   final Map<String, InAppWebViewController> _controllers = {};
+  final Map<String, BrowserTabDebugInfo> _tabStates = {};
+  final List<BrowserTabDebugInfo> _tabHistory = [];
   final http.Client _client = http.Client();
 
   bool get _hasHeadlessWebView =>
@@ -28,6 +35,40 @@ class NativeHostApi implements SourceHostApi {
 
   @override
   bool get supportsInstall => Platform.isAndroid;
+
+  @override
+  List<BrowserTabDebugInfo> get browserTabs => [
+    ..._tabStates.values,
+    ..._tabHistory,
+  ];
+
+  void _log(
+    String message, {
+    DebugLogLevel level = DebugLogLevel.info,
+    String category = 'Host',
+  }) {
+    debugPrint('[APK Mesh] $message');
+    _debug?.add(message, level: level, category: category);
+  }
+
+  void _setTabState(
+    String tabId, {
+    String? url,
+    required String state,
+    bool active = true,
+  }) {
+    final current = _tabStates[tabId];
+    if (current == null) return;
+    final snapshot = current.copyWith(url: url, state: state, active: active);
+    if (active) {
+      _tabStates[tabId] = snapshot;
+    } else {
+      _tabStates.remove(tabId);
+      _tabHistory.insert(0, snapshot);
+      if (_tabHistory.length > 20) _tabHistory.removeLast();
+    }
+    _log('WebView ${active ? state : 'closed'} $tabId ${snapshot.url}');
+  }
 
   void _check(Uri uri, SourcePolicy policy, {required bool capability}) {
     if (!capability) throw UnsupportedError('该源没有请求此能力');
@@ -42,17 +83,26 @@ class NativeHostApi implements SourceHostApi {
     Map<String, String> headers = const {},
     required SourcePolicy policy,
   }) async {
-    debugPrint('[APK Mesh] HTTP $url');
-    final response = await _getWithRedirects(
-      Uri.parse(url),
-      policy,
-      headers: headers,
-    );
-    if (response.statusCode >= 400) {
-      throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
+    _log('HTTP $url', category: 'HTTP');
+    try {
+      final response = await _getWithRedirects(
+        Uri.parse(url),
+        policy,
+        headers: headers,
+      );
+      if (response.statusCode >= 400) {
+        throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
+      }
+      _log('HTTP $url -> ${response.statusCode}', category: 'HTTP');
+      return response.stream.bytesToString();
+    } catch (error) {
+      _log(
+        'HTTP $url failed: $error',
+        level: DebugLogLevel.error,
+        category: 'HTTP',
+      );
+      rethrow;
     }
-    debugPrint('[APK Mesh] HTTP $url -> ${response.statusCode}');
-    return response.stream.bytesToString();
   }
 
   Future<http.StreamedResponse> _getWithRedirects(
@@ -89,8 +139,16 @@ class NativeHostApi implements SourceHostApi {
     }
 
     final tabId = DateTime.now().microsecondsSinceEpoch.toString();
+    _tabStates[tabId] = BrowserTabDebugInfo(
+      id: tabId,
+      url: url,
+      state: 'starting',
+      startedAt: DateTime.now(),
+    );
+    _log('WebView opening $tabId $url');
     final controllerReady = Completer<InAppWebViewController>();
     final pageLoaded = Completer<void>();
+    var loaded = false;
     late final HeadlessInAppWebView tab;
     tab = HeadlessInAppWebView(
       initialSettings: InAppWebViewSettings(
@@ -104,9 +162,12 @@ class NativeHostApi implements SourceHostApi {
       initialUrlRequest: URLRequest(url: WebUri(uri.toString())),
       onWebViewCreated: (controller) {
         _controllers[tabId] = controller;
+        _setTabState(tabId, state: 'created');
         if (!controllerReady.isCompleted) controllerReady.complete(controller);
       },
       onLoadStop: (controller, url) {
+        loaded = true;
+        _setTabState(tabId, url: url?.toString(), state: 'ready');
         if (!pageLoaded.isCompleted) pageLoaded.complete();
       },
       shouldOverrideUrlLoading: (_, action) async {
@@ -137,6 +198,7 @@ class NativeHostApi implements SourceHostApi {
       const Duration(seconds: 30),
       onTimeout: () {},
     );
+    if (!loaded) _setTabState(tabId, state: 'load-timeout');
     return tabId;
   }
 
@@ -145,15 +207,20 @@ class NativeHostApi implements SourceHostApi {
 
   @override
   Future<void> browserWaitFor(String tabId, String selector) async {
+    _setTabState(tabId, state: 'waiting: $selector');
     final escaped = jsonEncode(selector);
     final controller = _controller(tabId);
     for (var i = 0; i < 100; i++) {
       final exists = await controller.evaluateJavascript(
         source: 'document.querySelector($escaped) != null',
       );
-      if (exists == true || exists.toString() == 'true') return;
+      if (exists == true || exists.toString() == 'true') {
+        _setTabState(tabId, state: 'ready');
+        return;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
+    _setTabState(tabId, state: 'wait-timeout');
     throw TimeoutException('等待选择器超时: $selector');
   }
 
@@ -162,6 +229,7 @@ class NativeHostApi implements SourceHostApi {
     String tabId,
     Map<String, dynamic> selectors,
   ) async {
+    _log('WebView query $tabId', category: 'WebView');
     final value = await _evaluateQuery(_controller(tabId), null, selectors);
     return value.cast<String, dynamic>();
   }
@@ -172,6 +240,7 @@ class NativeHostApi implements SourceHostApi {
     String rootSelector,
     Map<String, dynamic> selectors,
   ) async {
+    _log('WebView queryAll $tabId $rootSelector', category: 'WebView');
     final result = await _evaluateQueryAll(
       _controller(tabId),
       rootSelector,
@@ -235,9 +304,11 @@ class NativeHostApi implements SourceHostApi {
 
   @override
   Future<void> browserClose(String tabId) async {
+    _log('WebView closing $tabId', category: 'WebView');
     final tab = _tabs.remove(tabId);
     _controllers.remove(tabId);
     await tab?.dispose();
+    _setTabState(tabId, state: 'closed', active: false);
   }
 
   @override

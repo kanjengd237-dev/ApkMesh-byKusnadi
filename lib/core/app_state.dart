@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'debug_log.dart';
 import 'host_factory.dart';
 import 'models.dart';
 import 'quickjs_source.dart';
@@ -25,7 +26,8 @@ class AppState extends ChangeNotifier {
   final SourceRegistry registry = SourceRegistry(
     scripts: [ApkAwardDemoScript()],
   );
-  final SourceHostApi host = createPlatformHostApi();
+  final DebugLogStore debug = DebugLogStore();
+  late final SourceHostApi host = createPlatformHostApi(debug: debug);
   bool _sourceRuntimeReady = false;
   String? _runtimeError;
   List<ApkSource> get sources => List.unmodifiable(_sources);
@@ -36,30 +38,50 @@ class AppState extends ChangeNotifier {
       _sources.any((source) => source.status == SourceStatus.enabled);
 
   Future<void> initialize() async {
+    debug.add('正在加载内置 QuickJS 源', category: 'App');
     try {
       final quickJsSource = await loadQuickJsSource(
         'assets/sources/apkaward.js',
+        debug: debug,
       );
       if (quickJsSource != null) {
         registry.replace(quickJsSource);
         _sourceRuntimeReady = true;
+        debug.add('内置 QuickJS 源加载完成', category: 'App');
         notifyListeners();
       }
     } catch (error) {
       // Keep the deterministic demo source available when native services are unavailable.
       _runtimeError = error.toString();
+      debug.add(
+        'QuickJS 源加载失败: $error',
+        level: DebugLogLevel.error,
+        category: 'App',
+      );
       notifyListeners();
     }
   }
 
-  Future<List<AppListing>> search(String query) => registry.search(
-    query,
-    host,
-    enabledSourceIds: _sources
-        .where((source) => source.status == SourceStatus.enabled)
-        .map((source) => source.id)
-        .toSet(),
-  );
+  Future<List<AppListing>> search(String query) async {
+    debug.add('开始聚合搜索：${query.trim()}', category: 'App');
+    final results = await registry.search(
+      query,
+      host,
+      enabledSourceIds: _sources
+          .where((source) => source.status == SourceStatus.enabled)
+          .map((source) => source.id)
+          .toSet(),
+    );
+    for (final entry in sourceErrors.entries) {
+      debug.add(
+        '${entry.key} 执行失败：${entry.value}',
+        level: DebugLogLevel.error,
+        category: 'Source',
+      );
+    }
+    debug.add('聚合搜索完成，结果 ${results.length} 条', category: 'App');
+    return results;
+  }
 
   Future<AppDetails> details(AppListing app) => registry.details(app, host);
 
@@ -117,6 +139,7 @@ class AppState extends ChangeNotifier {
   void dispose() {
     host.dispose();
     registry.dispose();
+    debug.dispose();
     super.dispose();
   }
 }

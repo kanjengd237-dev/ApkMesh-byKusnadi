@@ -32,4 +32,14 @@ void main() {
     expect(find.text('已在所有启用的源中搜索“missing-package”。'), findsOneWidget);
     expect(find.text('输入关键词开始搜索'), findsNothing);
   });
+
+  testWidgets('opens the source debug bottom sheet', (tester) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byTooltip('调试'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('调试信息'), findsOneWidget);
+    expect(find.text('WebView 状态'), findsOneWidget);
+    expect(find.text('运行日志'), findsOneWidget);
+  });
 }

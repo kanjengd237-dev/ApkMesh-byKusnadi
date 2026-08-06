@@ -1,4 +1,5 @@
 import 'models.dart';
+import 'debug_log.dart';
 
 class SourcePolicy {
   const SourcePolicy({
@@ -30,6 +31,7 @@ class SourcePolicy {
 abstract interface class SourceHostApi {
   bool get supportsBrowser;
   bool get supportsInstall;
+  List<BrowserTabDebugInfo> get browserTabs;
 
   Future<String> request(
     String url, {
@@ -126,6 +128,9 @@ class SourceRegistry {
 }
 
 class DemoHostApi implements SourceHostApi {
+  @override
+  List<BrowserTabDebugInfo> get browserTabs => const [];
+
   @override
   bool get supportsBrowser => false;
 

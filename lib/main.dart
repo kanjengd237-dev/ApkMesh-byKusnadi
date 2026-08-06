@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/app_state.dart';
+import 'core/debug_log.dart';
 import 'core/models.dart';
 
 void main() => runApp(const ApkMeshApp());
@@ -101,9 +102,9 @@ class _ShellState extends State<Shell> {
             title: const Text('APK Mesh'),
             actions: [
               IconButton(
-                tooltip: '搜索',
-                onPressed: () => setState(() => index = 0),
-                icon: const Icon(Icons.search),
+                tooltip: '调试',
+                onPressed: () => _showDebugSheet(context),
+                icon: const Icon(Icons.bug_report_outlined),
               ),
             ],
           ),
@@ -148,6 +149,15 @@ class _ShellState extends State<Shell> {
                 ),
         );
       },
+    );
+  }
+
+  void _showDebugSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => DebugSheet(state: widget.state),
     );
   }
 }
@@ -464,6 +474,174 @@ class SettingsPage extends StatelessWidget {
       ),
     ],
   );
+}
+
+class DebugSheet extends StatelessWidget {
+  const DebugSheet({required this.state, super.key});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: .86,
+      minChildSize: .45,
+      maxChildSize: .96,
+      builder: (_, controller) => AnimatedBuilder(
+        animation: state.debug,
+        builder: (context, _) => Material(
+          color: Theme.of(context).colorScheme.surface,
+          child: ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '调试信息',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '清空日志',
+                    onPressed: state.debug.entries.isEmpty
+                        ? null
+                        : state.debug.clear,
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const Divider(),
+              Text('运行时', style: Theme.of(context).textTheme.titleMedium),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  state.sourceRuntimeReady
+                      ? Icons.check_circle_outline
+                      : Icons.warning_amber_outlined,
+                ),
+                title: Text(
+                  state.sourceRuntimeReady ? 'QuickJS 源已加载' : '使用演示源',
+                ),
+                subtitle: Text(
+                  state.runtimeError ??
+                      '已启用源：${state.sources.where((source) => source.status == SourceStatus.enabled).map((source) => source.name).join('、')}',
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.web_outlined),
+                title: Text(
+                  'WebView：${state.host.supportsBrowser ? '可用' : '不可用'}',
+                ),
+                subtitle: Text(
+                  '安装能力：${state.host.supportsInstall ? '可用' : '不可用'}',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'WebView 状态',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              if (state.host.browserTabs.isEmpty)
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.web_asset_off_outlined),
+                  title: Text('暂无 WebView 标签'),
+                  subtitle: Text('源未打开详情页，或最近一次标签已清理。'),
+                )
+              else
+                ...state.host.browserTabs.map((tab) => _DebugTabTile(tab: tab)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text('运行日志', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(width: 8),
+                  Text('${state.debug.entries.length} 条'),
+                ],
+              ),
+              const SizedBox(height: 4),
+              if (state.debug.entries.isEmpty)
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.article_outlined),
+                  title: Text('暂无日志'),
+                )
+              else
+                ...state.debug.entries.reversed.map(
+                  (entry) => _DebugLogTile(entry: entry),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DebugTabTile extends StatelessWidget {
+  const _DebugTabTile({required this.tab});
+  final BrowserTabDebugInfo tab;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = tab.active
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.outline;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        tab.active ? Icons.web : Icons.web_asset_off_outlined,
+        color: color,
+      ),
+      title: Text('${tab.active ? '活动' : '已关闭'} · ${tab.state}'),
+      subtitle: Text(
+        '${tab.url}\n${tab.id} · ${_formatDebugTime(tab.startedAt)}',
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+      ),
+      isThreeLine: true,
+    );
+  }
+}
+
+class _DebugLogTile extends StatelessWidget {
+  const _DebugLogTile({required this.entry});
+  final DebugLogEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (entry.level) {
+      DebugLogLevel.error => Theme.of(context).colorScheme.error,
+      DebugLogLevel.warning => Theme.of(context).colorScheme.tertiary,
+      DebugLogLevel.info => Theme.of(context).colorScheme.primary,
+    };
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        entry.level == DebugLogLevel.error
+            ? Icons.error_outline
+            : Icons.notes_outlined,
+        color: color,
+      ),
+      title: Text(entry.message),
+      subtitle: Text('${entry.category} · ${_formatDebugTime(entry.time)}'),
+    );
+  }
+}
+
+String _formatDebugTime(DateTime time) {
+  final local = time.toLocal();
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
 }
 
 class DetailsSheet extends StatefulWidget {
