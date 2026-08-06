@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
@@ -41,6 +42,7 @@ class NativeHostApi implements SourceHostApi {
     Map<String, String> headers = const {},
     required SourcePolicy policy,
   }) async {
+    debugPrint('[APK Mesh] HTTP $url');
     final response = await _getWithRedirects(
       Uri.parse(url),
       policy,
@@ -49,6 +51,7 @@ class NativeHostApi implements SourceHostApi {
     if (response.statusCode >= 400) {
       throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
     }
+    debugPrint('[APK Mesh] HTTP $url -> ${response.statusCode}');
     return response.stream.bytesToString();
   }
 
@@ -63,7 +66,9 @@ class NativeHostApi implements SourceHostApi {
       final request = http.Request('GET', uri)
         ..followRedirects = false
         ..headers.addAll(headers);
-      final response = await _client.send(request);
+      final response = await _client
+          .send(request)
+          .timeout(const Duration(seconds: 15));
       if (response.statusCode < 300 || response.statusCode >= 400) {
         return response;
       }

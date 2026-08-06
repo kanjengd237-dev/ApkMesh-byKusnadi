@@ -27,8 +27,11 @@ class AppState extends ChangeNotifier {
   );
   final SourceHostApi host = createPlatformHostApi();
   bool _sourceRuntimeReady = false;
+  String? _runtimeError;
   List<ApkSource> get sources => List.unmodifiable(_sources);
   bool get sourceRuntimeReady => _sourceRuntimeReady;
+  String? get runtimeError => _runtimeError;
+  Map<String, String> get sourceErrors => Map.unmodifiable(registry.lastErrors);
   bool get hasEnabledSource =>
       _sources.any((source) => source.status == SourceStatus.enabled);
 
@@ -42,8 +45,10 @@ class AppState extends ChangeNotifier {
         _sourceRuntimeReady = true;
         notifyListeners();
       }
-    } catch (_) {
+    } catch (error) {
       // Keep the deterministic demo source available when native services are unavailable.
+      _runtimeError = error.toString();
+      notifyListeners();
     }
   }
 

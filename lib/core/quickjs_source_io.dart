@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_js/flutter_js.dart';
 
@@ -161,10 +162,17 @@ class QuickJsApkSourceScript implements ApkSourceScript {
         result.stringResult.contains("Instance of 'Future")) {
       result = await _runtime
           .handlePromise(result)
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(minutes: 2));
     }
     final value = result.stringResult;
-    return jsonDecode(value);
+    final decoded = jsonDecode(value);
+    if (decoded is String) {
+      final nested = decoded.trimLeft();
+      if (nested.startsWith('{') || nested.startsWith('[')) {
+        return jsonDecode(decoded);
+      }
+    }
+    return decoded;
   }
 
   Future<dynamic> _call(
@@ -174,12 +182,14 @@ class QuickJsApkSourceScript implements ApkSourceScript {
   ) async {
     if (_disposed) throw StateError('源已释放');
     _host = host;
+    debugPrint('[APK Mesh] QuickJS call $method');
     if (_sourceId == null) {
       await _evaluateScript();
     }
     final result = await _evaluateJson(
-      'JSON.stringify(await source.$method(${jsonEncode(argument)}))',
+      '(async () => JSON.stringify(await source.$method(${jsonEncode(argument)})))()',
     );
+    debugPrint('[APK Mesh] QuickJS call $method completed');
     return result;
   }
 

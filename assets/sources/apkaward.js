@@ -22,8 +22,10 @@ async function buildIndex() {
   const root = await fetchText(`${ORIGIN}/sitemap.xml`);
   const sitemapUrls = [...root.matchAll(/<loc>\s*(https:\/\/apkaward\.com\/sitemap-pt-post-\d{4}-\d{2}\.xml)\s*<\/loc>/gi)].map((match) => decodeXml(match[1]));
   const groups = [];
-  for (let offset = 0; offset < sitemapUrls.length; offset += 4) {
-    const batch = await Promise.all(sitemapUrls.slice(offset, offset + 4).map(async (url) => {
+  // Keep the first search responsive; older months can be added by a future background indexer.
+  const recentSitemaps = sitemapUrls.slice(0, 12);
+  for (let offset = 0; offset < recentSitemaps.length; offset += 4) {
+    const batch = await Promise.all(recentSitemaps.slice(offset, offset + 4).map(async (url) => {
       try {
         const xml = await fetchText(url);
         return [...xml.matchAll(/<url>[\s\S]*?<loc>\s*(https:\/\/apkaward\.com\/([^<\/?#]+)\/?)[^<]*<\/loc>[\s\S]*?(?:<lastmod>([^<]+)<\/lastmod>)?[\s\S]*?<\/url>/gi)].map((match) => ({

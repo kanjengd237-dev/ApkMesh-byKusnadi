@@ -164,15 +164,36 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<AppListing> results = const [];
   bool loading = false;
+  String? error;
+  String? submittedQuery;
 
   Future<void> search() async {
-    setState(() => loading = true);
-    final found = await widget.state.search(widget.controller.text);
-    if (mounted) {
-      setState(() {
-        results = found;
-        loading = false;
-      });
+    final query = widget.controller.text.trim();
+    setState(() {
+      loading = true;
+      error = null;
+      submittedQuery = query;
+    });
+    try {
+      final found = await widget.state.search(query);
+      if (mounted) {
+        setState(() {
+          results = found;
+          loading = false;
+          if (found.isEmpty && widget.state.sourceErrors.isNotEmpty) {
+            error = widget.state.sourceErrors.entries
+                .map((entry) => '${entry.key}：${entry.value}')
+                .join('\n');
+          }
+        });
+      }
+    } catch (searchError) {
+      if (mounted) {
+        setState(() {
+          loading = false;
+          error = searchError.toString();
+        });
+      }
     }
   }
 
@@ -213,11 +234,30 @@ class _HomePageState extends State<HomePage> {
               child: CircularProgressIndicator(),
             ),
           ),
-        if (!loading && results.isEmpty && widget.state.hasEnabledSource)
-          const EmptyMessage(
+        if (!loading && error != null)
+          Card(
+            color: Theme.of(context).colorScheme.errorContainer,
+            child: ListTile(
+              leading: Icon(
+                Icons.error_outline,
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+              title: const Text('源执行失败'),
+              subtitle: Text(error!),
+            ),
+          ),
+        if (!loading &&
+            error == null &&
+            results.isEmpty &&
+            widget.state.hasEnabledSource)
+          EmptyMessage(
             icon: Icons.manage_search,
-            title: '输入关键词开始搜索',
-            detail: '结果会合并所有已启用源的数据。',
+            title: submittedQuery == null ? '输入关键词开始搜索' : '未找到结果',
+            detail: submittedQuery == null
+                ? '结果会合并所有已启用源的数据。'
+                : submittedQuery!.isEmpty
+                ? '请输入应用名称或包名。'
+                : '已在所有启用的源中搜索“$submittedQuery”。',
           ),
         ...results.map((app) => AppResultTile(app: app, state: widget.state)),
       ],
@@ -232,6 +272,14 @@ class AppResultTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    void openDetails() {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => DetailsSheet(app: app, state: state),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
@@ -242,14 +290,11 @@ class AppResultTile extends StatelessWidget {
           '${app.summary}\n${app.version} · ${app.size} · ${app.sourceName}',
         ),
         isThreeLine: true,
+        onTap: openDetails,
         trailing: IconButton(
           tooltip: '查看详情',
           icon: const Icon(Icons.chevron_right),
-          onPressed: () => showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            builder: (_) => DetailsSheet(app: app, state: state),
-          ),
+          onPressed: openDetails,
         ),
       ),
     );
@@ -421,10 +466,19 @@ class SettingsPage extends StatelessWidget {
   );
 }
 
-class DetailsSheet extends StatelessWidget {
+class DetailsSheet extends StatefulWidget {
   const DetailsSheet({required this.app, required this.state, super.key});
   final AppListing app;
   final AppState state;
+
+  @override
+  State<DetailsSheet> createState() => _DetailsSheetState();
+}
+
+class _DetailsSheetState extends State<DetailsSheet> {
+  late final Future<AppDetails> details = widget.app is AppDetails
+      ? Future<AppDetails>.value(widget.app as AppDetails)
+      : widget.state.details(widget.app);
 
   @override
   Widget build(BuildContext context) {
@@ -435,27 +489,25 @@ class DetailsSheet extends StatelessWidget {
         minChildSize: .45,
         maxChildSize: .94,
         builder: (_, controller) => FutureBuilder<AppDetails>(
-          future: app is AppDetails
-              ? Future<AppDetails>.value(app as AppDetails)
-              : state.details(app),
+          future: details,
           builder: (context, snapshot) => ListView(
             controller: controller,
             padding: const EdgeInsets.all(24),
             children: [
               Row(
                 children: [
-                  AppIcon(url: app.iconUrl),
+                  AppIcon(url: widget.app.iconUrl),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          app.name,
+                          widget.app.name,
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
-                        Text(app.packageName),
-                        Text('${app.version} · ${app.size}'),
+                        Text(widget.app.packageName),
+                        Text('${widget.app.version} · ${widget.app.size}'),
                       ],
                     ),
                   ),
@@ -482,7 +534,10 @@ class DetailsSheet extends StatelessWidget {
                     trailing: FilledButton(
                       onPressed: () async {
                         try {
-                          final path = await state.download(file, app.sourceId);
+                          final path = await widget.state.download(
+                            file,
+                            widget.app.sourceId,
+                          );
                           if (context.mounted) {
                             final shouldInstall = await showDialog<bool>(
                               context: context,
@@ -507,9 +562,9 @@ class DetailsSheet extends StatelessWidget {
                             );
                             if (shouldInstall == true) {
                               try {
-                                final installed = await state.install(
+                                final installed = await widget.state.install(
                                   path,
-                                  app.sourceId,
+                                  widget.app.sourceId,
                                 );
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(

@@ -76,6 +76,7 @@ class SourceRegistry {
   SourceRegistry({List<ApkSourceScript> scripts = const []})
     : scripts = [...scripts];
   final List<ApkSourceScript> scripts;
+  final Map<String, String> lastErrors = {};
 
   void replace(ApkSourceScript script) {
     final index = scripts.indexWhere((item) => item.id == script.id);
@@ -94,14 +95,16 @@ class SourceRegistry {
     Set<String>? enabledSourceIds,
   }) async {
     final results = <AppListing>[];
+    lastErrors.clear();
     for (final script in scripts) {
       if (enabledSourceIds != null && !enabledSourceIds.contains(script.id)) {
         continue;
       }
       try {
         results.addAll(await script.search(query, host));
-      } catch (_) {
+      } catch (error) {
         // A broken source must not suppress successful results from other sources.
+        lastErrors[script.name] = error.toString();
       }
     }
     return results;
