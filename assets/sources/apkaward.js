@@ -1,6 +1,7 @@
 /** APK Award development source for APK Mesh's QuickJS contract. */
 const ORIGIN = 'https://apkaward.com';
-let indexPromise;
+let sitemapPromise;
+const sitemapCache = new Map();
 
 function decodeXml(value) {
   return value.replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', "'");
@@ -18,35 +19,60 @@ async function fetchText(url) {
   return apkmesh.request(url, {headers: {Accept: 'application/xml,text/xml,text/html;q=0.9,*/*;q=0.8'}});
 }
 
-async function buildIndex() {
-  const root = await fetchText(`${ORIGIN}/sitemap.xml`);
-  const sitemapUrls = [...root.matchAll(/<loc>\s*(https:\/\/apkaward\.com\/sitemap-pt-post-\d{4}-\d{2}\.xml)\s*<\/loc>/gi)].map((match) => decodeXml(match[1]));
-  const groups = [];
-  // Keep the first search responsive; older months can be added by a future background indexer.
-  const recentSitemaps = sitemapUrls.slice(0, 12);
-  for (let offset = 0; offset < recentSitemaps.length; offset += 4) {
-    const batch = await Promise.all(recentSitemaps.slice(offset, offset + 4).map(async (url) => {
+async function getSitemapUrls() {
+  if (sitemapPromise) return sitemapPromise;
+  sitemapPromise = fetchText(`${ORIGIN}/sitemap.xml`).then((root) =>
+    [...root.matchAll(/<loc>\s*(https:\/\/apkaward\.com\/sitemap-pt-post-\d{4}-\d{2}\.xml)\s*<\/loc>/gi)]
+      .map((match) => decodeXml(match[1])),
+  ).catch((error) => {
+    sitemapPromise = null;
+    throw error;
+  });
+  return sitemapPromise;
+}
+
+async function loadSitemap(url) {
+  if (sitemapCache.has(url)) return sitemapCache.get(url);
+  const pending = fetchText(url).then((xml) =>
+    [...xml.matchAll(/<url>[\s\S]*?<loc>\s*(https:\/\/apkaward\.com\/([^<\/?#]+)\/?)\s*<\/loc>[\s\S]*?(?:<lastmod>([^<]+)<\/lastmod>)?[\s\S]*?<\/url>/gi)]
+      .map((match) => ({
+        id: decodeXml(match[1]),
+        slug: decodeXml(match[2]).toLowerCase(),
+        updatedAt: match[3] || '',
+      })),
+  ).catch((error) => {
+    sitemapCache.delete(url);
+    throw error;
+  });
+  sitemapCache.set(url, pending);
+  return pending;
+}
+
+async function searchIndex(terms) {
+  const sitemapUrls = await getSitemapUrls();
+  const matches = new Map();
+  for (let offset = 0; offset < sitemapUrls.length; offset += 6) {
+    const batch = await Promise.all(sitemapUrls.slice(offset, offset + 6).map(async (url) => {
       try {
-        const xml = await fetchText(url);
-        return [...xml.matchAll(/<url>[\s\S]*?<loc>\s*(https:\/\/apkaward\.com\/([^<\/?#]+)\/?)[^<]*<\/loc>[\s\S]*?(?:<lastmod>([^<]+)<\/lastmod>)?[\s\S]*?<\/url>/gi)].map((match) => ({
-          id: decodeXml(match[1]),
-          slug: decodeXml(match[2]).toLowerCase(),
-          updatedAt: match[3] || '',
-        }));
+        return await loadSitemap(url);
       } catch (_) {
         return [];
       }
     }));
-    groups.push(...batch);
+    batch.flat().forEach((entry) => {
+      const text = normalize(entry.slug);
+      if (!terms.every((term) => text.includes(term))) return;
+      const joined = terms.join(' ');
+      const exact = text === joined ? 1000 : 0;
+      const prefix = text.startsWith(joined) ? 200 : 0;
+      const score = exact + prefix + terms.reduce((total, term) => total + (text.split(' ').includes(term) ? 50 : 10), 0);
+      const previous = matches.get(entry.slug);
+      if (!previous || score > previous.score) matches.set(entry.slug, {...entry, score});
+    });
+    // Newer sitemap groups are searched first. Stop once one group contains matches.
+    if (matches.size) break;
   }
-  const unique = new Map();
-  groups.flat().forEach((item) => unique.set(item.slug, item));
-  return [...unique.values()];
-}
-
-async function getIndex() {
-  if (!indexPromise) indexPromise = buildIndex().catch((error) => { indexPromise = null; throw error; });
-  return indexPromise;
+  return [...matches.values()].sort((left, right) => right.score - left.score);
 }
 
 function isDirectDownload(url) {
@@ -70,7 +96,7 @@ globalThis.source = {
   manifest: {
     id: 'apkaward-demo',
     name: 'APK Award（测试源）',
-    version: '0.1.0',
+    version: '0.2.0',
     minApiVersion: 1,
     homepage: 'https://apkaward.com',
     permissions: {
@@ -84,14 +110,8 @@ globalThis.source = {
   async search(query, page = 1) {
     const terms = normalize(query).split(' ').filter(Boolean);
     if (!terms.length) return [];
-    const index = await getIndex();
-    return index.map((entry) => {
-      const text = normalize(entry.slug);
-      if (!terms.every((term) => text.includes(term))) return null;
-      const exact = text === terms.join(' ') ? 1000 : 0;
-      const prefix = text.startsWith(terms.join(' ')) ? 200 : 0;
-      return {...entry, score: exact + prefix + terms.reduce((score, term) => score + (text.split(' ').includes(term) ? 50 : 10), 0)};
-    }).filter(Boolean).sort((left, right) => right.score - left.score).slice((page - 1) * 20, page * 20).map((entry) => ({
+    const index = await searchIndex(terms);
+    return index.slice((page - 1) * 20, page * 20).map((entry) => ({
       id: entry.id,
       name: humanize(entry.slug),
       packageName: '',

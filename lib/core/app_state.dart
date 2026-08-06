@@ -12,7 +12,7 @@ class AppState extends ChangeNotifier {
         id: 'apkaward-demo',
         name: 'APK Award（测试源）',
         homepage: 'apkaward.com',
-        version: '0.1.0',
+        version: '0.2.0',
         description: '内置演示源，用于验证搜索、详情和下载接口。',
         status: SourceStatus.enabled,
         builtIn: true,
