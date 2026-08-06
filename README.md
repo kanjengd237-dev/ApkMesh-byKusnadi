@@ -16,4 +16,11 @@ flutter run
 flutter test
 ```
 
-QuickJS 宿主桥接位于 `lib/core/source_runtime.dart`。后续接入原生 QuickJS、隐藏 WebView 和 Android 安装器时，实现 `SourceHostApi` 即可保持 UI 与源接口稳定。
+QuickJS 宿主桥接位于 `lib/core/source_runtime.dart`，Android 实现位于 `lib/core/quickjs_source_io.dart` 和 `lib/core/host_factory_io.dart`：
+
+- `flutter_js` 在 Android 中运行 QuickJS，并通过异步消息注册 `apkmesh.request`、`apkmesh.browser`、`apkmesh.download` 和 `apkmesh.install`。
+- `flutter_inappwebview` 提供隔离的 Headless WebView，所有导航和网络资源按源 manifest 的域名白名单校验。
+- 下载使用流式 HTTP，限制重定向必须继续落在白名单内；安装前必须由用户确认，Android 11+ 会在设置页请求“允许安装未知应用”。
+- APK Award 源使用公开 sitemap 建立运行期索引，再用隐藏浏览器解析详情、截图、评论和受信任下载地址。站点改版或 Cloudflare 验证可能导致源暂时不可用。
+
+Web 调试目标保留确定性的测试源，原生能力会显示为不可用；这是因为浏览器不能安全地模拟系统安装器和隐藏 WebView。

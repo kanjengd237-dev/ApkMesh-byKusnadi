@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
+import 'host_factory.dart';
 import 'models.dart';
+import 'quickjs_source.dart';
 import 'source_runtime.dart';
 
 class AppState extends ChangeNotifier {
@@ -23,10 +25,27 @@ class AppState extends ChangeNotifier {
   final SourceRegistry registry = SourceRegistry(
     scripts: [ApkAwardDemoScript()],
   );
-  final SourceHostApi host = DemoHostApi();
+  final SourceHostApi host = createPlatformHostApi();
+  bool _sourceRuntimeReady = false;
   List<ApkSource> get sources => List.unmodifiable(_sources);
+  bool get sourceRuntimeReady => _sourceRuntimeReady;
   bool get hasEnabledSource =>
       _sources.any((source) => source.status == SourceStatus.enabled);
+
+  Future<void> initialize() async {
+    try {
+      final quickJsSource = await loadQuickJsSource(
+        'assets/sources/apkaward.js',
+      );
+      if (quickJsSource != null) {
+        registry.replace(quickJsSource);
+        _sourceRuntimeReady = true;
+        notifyListeners();
+      }
+    } catch (_) {
+      // Keep the deterministic demo source available when native services are unavailable.
+    }
+  }
 
   Future<List<AppListing>> search(String query) => registry.search(
     query,
@@ -36,6 +55,33 @@ class AppState extends ChangeNotifier {
         .map((source) => source.id)
         .toSet(),
   );
+
+  Future<AppDetails> details(AppListing app) => registry.details(app, host);
+
+  Future<String> download(
+    SourceDownload file,
+    String sourceId, {
+    void Function(int received, int? total)? onProgress,
+  }) {
+    final script = registry.scriptFor(sourceId);
+    return host.download(
+      file.url,
+      fileName:
+          RegExp(
+            r'\.(apk|apks|xapk|zip)$',
+            caseSensitive: false,
+          ).hasMatch(file.label)
+          ? file.label
+          : null,
+      policy: script.policy,
+      onProgress: onProgress,
+    );
+  }
+
+  Future<bool> install(String path, String sourceId) {
+    final script = registry.scriptFor(sourceId);
+    return host.install(path, policy: script.policy);
+  }
 
   void toggleSource(String id, bool enabled) {
     _sources = _sources
@@ -60,5 +106,12 @@ class AppState extends ChangeNotifier {
   void addSource(ApkSource source) {
     _sources = [..._sources, source];
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    host.dispose();
+    registry.dispose();
+    super.dispose();
   }
 }

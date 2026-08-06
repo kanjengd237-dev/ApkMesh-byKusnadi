@@ -16,6 +16,12 @@ class _ApkMeshAppState extends State<ApkMeshApp> {
   final state = AppState();
 
   @override
+  void initState() {
+    super.initState();
+    state.initialize();
+  }
+
+  @override
   void dispose() {
     state.dispose();
     super.dispose();
@@ -68,7 +74,7 @@ class _ShellState extends State<Shell> {
     final pages = [
       HomePage(state: widget.state, controller: searchController),
       SourcesPage(state: widget.state),
-      const SettingsPage(),
+      SettingsPage(state: widget.state),
     ];
     final destinations = const [
       NavigationDestination(
@@ -213,15 +219,16 @@ class _HomePageState extends State<HomePage> {
             title: '输入关键词开始搜索',
             detail: '结果会合并所有已启用源的数据。',
           ),
-        ...results.map((app) => AppResultTile(app: app)),
+        ...results.map((app) => AppResultTile(app: app, state: widget.state)),
       ],
     );
   }
 }
 
 class AppResultTile extends StatelessWidget {
-  const AppResultTile({required this.app, super.key});
+  const AppResultTile({required this.app, required this.state, super.key});
   final AppListing app;
+  final AppState state;
 
   @override
   Widget build(BuildContext context) {
@@ -241,7 +248,7 @@ class AppResultTile extends StatelessWidget {
           onPressed: () => showModalBottomSheet(
             context: context,
             isScrollControlled: true,
-            builder: (_) => DetailsSheet(app: app),
+            builder: (_) => DetailsSheet(app: app, state: state),
           ),
         ),
       ),
@@ -371,7 +378,8 @@ class SourceTile extends StatelessWidget {
 }
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({required this.state, super.key});
+  final AppState state;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -385,10 +393,17 @@ class SettingsPage extends StatelessWidget {
         subtitle: Text('系统默认下载目录'),
       ),
       const Divider(),
-      const ListTile(
+      ListTile(
         leading: Icon(Icons.security_outlined),
         title: Text('安装权限'),
-        subtitle: Text('安装 APK 前由系统请求“允许安装未知应用”权限'),
+        subtitle: const Text('安装 APK 前需要允许本应用安装未知来源的应用'),
+        trailing: state.host.supportsInstall
+            ? IconButton(
+                tooltip: '打开系统安装权限',
+                icon: const Icon(Icons.open_in_new),
+                onPressed: () => state.host.requestInstallPermission(),
+              )
+            : null,
       ),
       const Divider(),
       const ListTile(
@@ -407,72 +422,137 @@ class SettingsPage extends StatelessWidget {
 }
 
 class DetailsSheet extends StatelessWidget {
-  const DetailsSheet({required this.app, super.key});
+  const DetailsSheet({required this.app, required this.state, super.key});
   final AppListing app;
+  final AppState state;
 
   @override
   Widget build(BuildContext context) {
-    final details = app is AppDetails ? app as AppDetails : null;
     return SafeArea(
       child: DraggableScrollableSheet(
         expand: false,
         initialChildSize: .78,
         minChildSize: .45,
         maxChildSize: .94,
-        builder: (_, controller) => ListView(
-          controller: controller,
-          padding: const EdgeInsets.all(24),
-          children: [
-            Row(
-              children: [
-                AppIcon(url: app.iconUrl),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        app.name,
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      Text(app.packageName),
-                      Text('${app.version} · ${app.size}'),
-                    ],
+        builder: (_, controller) => FutureBuilder<AppDetails>(
+          future: app is AppDetails
+              ? Future<AppDetails>.value(app as AppDetails)
+              : state.details(app),
+          builder: (context, snapshot) => ListView(
+            controller: controller,
+            padding: const EdgeInsets.all(24),
+            children: [
+              Row(
+                children: [
+                  AppIcon(url: app.iconUrl),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          app.name,
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        Text(app.packageName),
+                        Text('${app.version} · ${app.size}'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              if (snapshot.hasError) Text('源详情加载失败：${snapshot.error}'),
+              if (snapshot.hasData) ...[
+                Text(snapshot.data!.description),
+                const SizedBox(height: 24),
+                Text('下载文件', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                ...snapshot.data!.downloads.map(
+                  (file) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.file_download_outlined),
+                    title: Text(file.label),
+                    subtitle: Text(file.size),
+                    trailing: FilledButton(
+                      onPressed: () async {
+                        try {
+                          final path = await state.download(file, app.sourceId);
+                          if (context.mounted) {
+                            final shouldInstall = await showDialog<bool>(
+                              context: context,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text('下载完成'),
+                                content: Text(
+                                  '文件已保存到：$path\n是否交给系统安装器？请先确认来源和签名。',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, false),
+                                    child: const Text('稍后安装'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, true),
+                                    child: const Text('安装'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (shouldInstall == true) {
+                              try {
+                                final installed = await state.install(
+                                  path,
+                                  app.sourceId,
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        installed ? '已交给系统安装器' : '系统未接受此安装请求',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } catch (error) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('安装失败：$error')),
+                                  );
+                                }
+                              }
+                            }
+                          }
+                        } catch (error) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('下载失败：$error')),
+                            );
+                          }
+                        }
+                      },
+                      child: const Text('下载'),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text('评论', style: Theme.of(context).textTheme.titleMedium),
+                ...snapshot.data!.comments.map(
+                  (comment) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.comment_outlined),
+                    title: Text(comment),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 24),
-            Text(details?.description ?? app.summary),
-            if (details != null) ...[
-              const SizedBox(height: 24),
-              Text('下载文件', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              ...details.downloads.map(
-                (file) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.file_download_outlined),
-                  title: Text(file.label),
-                  subtitle: Text(file.size),
-                  trailing: FilledButton(
-                    onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('下载能力将在接入宿主 API 后启用')),
-                    ),
-                    child: const Text('下载'),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text('评论', style: Theme.of(context).textTheme.titleMedium),
-              ...details.comments.map(
-                (comment) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.comment_outlined),
-                  title: Text(comment),
-                ),
-              ),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -485,18 +565,25 @@ class AppIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ClipRRect(
     borderRadius: BorderRadius.circular(12),
-    child: Image.network(
-      url,
-      width: 56,
-      height: 56,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => Container(
-        width: 56,
-        height: 56,
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: const Icon(Icons.android),
-      ),
-    ),
+    child: url.isEmpty
+        ? Container(
+            width: 56,
+            height: 56,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: const Icon(Icons.android),
+          )
+        : Image.network(
+            url,
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => Container(
+              width: 56,
+              height: 56,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: const Icon(Icons.android),
+            ),
+          ),
   );
 }
 

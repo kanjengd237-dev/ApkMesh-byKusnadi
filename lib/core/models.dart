@@ -36,6 +36,7 @@ class ApkSource {
 class AppListing {
   const AppListing({
     required this.id,
+    required this.sourceId,
     required this.name,
     required this.packageName,
     required this.version,
@@ -48,6 +49,7 @@ class AppListing {
   });
 
   final String id;
+  final String sourceId;
   final String name;
   final String packageName;
   final String version;
@@ -73,6 +75,7 @@ class SourceDownload {
 class AppDetails extends AppListing {
   const AppDetails({
     required super.id,
+    required super.sourceId,
     required super.name,
     required super.packageName,
     required super.version,
