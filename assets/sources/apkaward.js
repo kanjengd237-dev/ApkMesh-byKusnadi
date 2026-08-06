@@ -1,78 +1,243 @@
 /** APK Award development source for APK Mesh's QuickJS contract. */
 const ORIGIN = 'https://apkaward.com';
-let sitemapPromise;
-const sitemapCache = new Map();
+const SITEMAP_URL = `${ORIGIN}/sitemap.xml`;
+const INDEX_TTL_MS = 6 * 60 * 60 * 1000;
+const DETAIL_TTL_MS = 30 * 60 * 1000;
+const SITEMAP_CONCURRENCY = 6;
+const ACRONYMS = new Set(['apk', 'fps', 'gta', 'hd', 'nba', 'obb', 'psp', 'rpg', 'vr', 'xapk']);
+let index;
+let indexCachedAt = 0;
+let indexPromise;
+const titleCache = new Map();
 
 function decodeXml(value) {
   return value.replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', "'");
 }
 
-function normalize(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function cleanText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSearch(value) {
+  const text = String(value || '');
+  const decomposed = typeof text.normalize === 'function' ? text.normalize('NFKD') : text;
+  return cleanText(decomposed)
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 function humanize(slug) {
-  return slug.split('-').filter(Boolean).map((word) => word.length <= 4 ? word.toUpperCase() : word[0].toUpperCase() + word.slice(1)).join(' ');
+  return slug.split('-').filter(Boolean).map((word) => {
+    const lower = word.toLowerCase();
+    if (ACRONYMS.has(lower)) return lower.toUpperCase();
+    return lower[0].toUpperCase() + lower.slice(1);
+  }).join(' ');
+}
+
+function stripApkSuffix(title) {
+  return cleanText(title)
+    .replace(/\s+APK(?:\s*[+:-].*)?$/i, '')
+    .replace(/\s+-\s+Download Free for Android.*$/i, '')
+    .trim();
+}
+
+function extractSearchTitle(html) {
+  const match = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
+  if (!match) return '';
+  return stripApkSuffix(decodeXml(match[1].replace(/<[^>]+>/g, ' ')));
 }
 
 async function fetchText(url) {
-  return apkmesh.request(url, {headers: {Accept: 'application/xml,text/xml,text/html;q=0.9,*/*;q=0.8'}});
+  return apkmesh.request(url, {headers: {
+    Accept: 'application/xml,text/xml,text/html;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.8',
+    Referer: `${ORIGIN}/`,
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
+  }});
 }
 
-async function getSitemapUrls() {
-  if (sitemapPromise) return sitemapPromise;
-  sitemapPromise = fetchText(`${ORIGIN}/sitemap.xml`).then((root) =>
-    [...root.matchAll(/<loc>\s*(https:\/\/apkaward\.com\/sitemap-pt-post-\d{4}-\d{2}\.xml)\s*<\/loc>/gi)]
-      .map((match) => decodeXml(match[1])),
-  ).catch((error) => {
-    sitemapPromise = null;
-    throw error;
-  });
-  return sitemapPromise;
+function parseSitemapIndex(xml) {
+  return [...xml.matchAll(/<sitemap\b[\s\S]*?<loc>\s*([^<]+?)\s*<\/loc>[\s\S]*?<\/sitemap>/gi)]
+    .map((match) => decodeXml(cleanText(match[1])))
+    .filter((url) => /^https:\/\/apkaward\.com\/sitemap-pt-post-\d{4}-\d{2}\.xml$/i.test(url));
 }
 
-async function loadSitemap(url) {
-  if (sitemapCache.has(url)) return sitemapCache.get(url);
-  const pending = fetchText(url).then((xml) =>
-    [...xml.matchAll(/<url>[\s\S]*?<loc>\s*(https:\/\/apkaward\.com\/([^<\/?#]+)\/?)\s*<\/loc>[\s\S]*?(?:<lastmod>([^<]+)<\/lastmod>)?[\s\S]*?<\/url>/gi)]
-      .map((match) => ({
-        id: decodeXml(match[1]),
-        slug: decodeXml(match[2]).toLowerCase(),
-        updatedAt: match[3] || '',
-      })),
-  ).catch((error) => {
-    sitemapCache.delete(url);
-    throw error;
-  });
-  sitemapCache.set(url, pending);
-  return pending;
-}
+function parseUrlSitemap(xml) {
+  const entries = [];
+  for (const match of xml.matchAll(/<url\b[\s\S]*?>([\s\S]*?)<\/url>/gi)) {
+    const block = match[1];
+    const locMatch = /<loc>\s*([^<]+?)\s*<\/loc>/i.exec(block);
+    if (!locMatch) continue;
+    const loc = decodeXml(cleanText(locMatch[1]));
+    const urlMatch = /^https:\/\/apkaward\.com\/([^\/?#]+)\/?$/i.exec(loc);
+    if (!urlMatch) continue;
 
-async function searchIndex(terms) {
-  const sitemapUrls = await getSitemapUrls();
-  const matches = new Map();
-  for (let offset = 0; offset < sitemapUrls.length; offset += 6) {
-    const batch = await Promise.all(sitemapUrls.slice(offset, offset + 6).map(async (url) => {
-      try {
-        return await loadSitemap(url);
-      } catch (_) {
-        return [];
-      }
-    }));
-    batch.flat().forEach((entry) => {
-      const text = normalize(entry.slug);
-      if (!terms.every((term) => text.includes(term))) return;
-      const joined = terms.join(' ');
-      const exact = text === joined ? 1000 : 0;
-      const prefix = text.startsWith(joined) ? 200 : 0;
-      const score = exact + prefix + terms.reduce((total, term) => total + (text.split(' ').includes(term) ? 50 : 10), 0);
-      const previous = matches.get(entry.slug);
-      if (!previous || score > previous.score) matches.set(entry.slug, {...entry, score});
+    let slug;
+    try {
+      slug = decodeURIComponent(urlMatch[1]).toLowerCase();
+    } catch (_) {
+      continue;
+    }
+    if (!/^[a-z0-9][a-z0-9-]{0,179}$/.test(slug)) continue;
+
+    const lastmodMatch = /<lastmod>\s*([^<]+?)\s*<\/lastmod>/i.exec(block);
+    const lastmod = lastmodMatch ? cleanText(lastmodMatch[1]) : '';
+    entries.push({
+      slug,
+      id: `${ORIGIN}/${slug}`,
+      label: humanize(slug),
+      lastmod: Number.isNaN(Date.parse(lastmod)) ? null : lastmod,
     });
-    // Newer sitemap groups are searched first. Stop once one group contains matches.
-    if (matches.size) break;
   }
-  return [...matches.values()].sort((left, right) => right.score - left.score);
+  return entries;
+}
+
+async function mapLimit(items, limit, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(limit, items.length)}, worker));
+  return results;
+}
+
+async function buildIndex() {
+  const root = await fetchText(SITEMAP_URL);
+  const sitemapUrls = parseSitemapIndex(root);
+  if (!sitemapUrls.length) throw new Error('APK Award sitemap index is empty');
+
+  let failedSitemaps = 0;
+  const groups = await mapLimit(sitemapUrls, SITEMAP_CONCURRENCY, async (url) => {
+    try {
+      return parseUrlSitemap(await fetchText(url));
+    } catch (_) {
+      failedSitemaps += 1;
+      return [];
+    }
+  });
+
+  const deduplicated = new Map();
+  for (const entry of groups.flat()) {
+    const current = deduplicated.get(entry.slug);
+    if (!current || Date.parse(entry.lastmod || 0) > Date.parse(current.lastmod || 0)) {
+      deduplicated.set(entry.slug, entry);
+    }
+  }
+  const entries = [...deduplicated.values()];
+  if (entries.length < 100 || failedSitemaps > sitemapUrls.length / 2) {
+    throw new Error('APK Award sitemap index is incomplete');
+  }
+  entries.sort((left, right) => Date.parse(right.lastmod || 0) - Date.parse(left.lastmod || 0));
+  return entries;
+}
+
+async function ensureIndex() {
+  if (index && Date.now() - indexCachedAt < INDEX_TTL_MS) return index;
+  if (!indexPromise) {
+    indexPromise = buildIndex().then((entries) => {
+      index = entries;
+      indexCachedAt = Date.now();
+      return entries;
+    }).catch((error) => {
+      if (index && index.length) return index;
+      throw error;
+    }).finally(() => {
+      indexPromise = null;
+    });
+  }
+  return indexPromise;
+}
+
+function diceCoefficient(left, right) {
+  if (left === right) return 1;
+  if (left.length < 2 || right.length < 2) return 0;
+  const pairs = new Map();
+  for (let offset = 0; offset < left.length - 1; offset += 1) {
+    const pair = left.slice(offset, offset + 2);
+    pairs.set(pair, (pairs.get(pair) || 0) + 1);
+  }
+  let matches = 0;
+  for (let offset = 0; offset < right.length - 1; offset += 1) {
+    const pair = right.slice(offset, offset + 2);
+    const count = pairs.get(pair) || 0;
+    if (count > 0) {
+      pairs.set(pair, count - 1);
+      matches += 1;
+    }
+  }
+  return (2 * matches) / (left.length + right.length - 2);
+}
+
+function scoreEntry(entry, rawQuery) {
+  const query = normalizeSearch(rawQuery);
+  if (!query) return 0;
+  const label = normalizeSearch(entry.label);
+  const slugText = normalizeSearch(entry.slug);
+  const words = [...new Set(`${label} ${slugText}`.split(' ').filter(Boolean))];
+  const terms = query.split(' ');
+  let score = 0;
+
+  if (label === query || slugText === query) score += 1000;
+  if (label.startsWith(query) || slugText.startsWith(query)) score += 420;
+  if (label.includes(query) || slugText.includes(query)) score += 220;
+
+  for (const term of terms) {
+    if (words.includes(term)) {
+      score += 90;
+      continue;
+    }
+    if (words.some((word) => word.startsWith(term))) {
+      score += 55;
+      continue;
+    }
+    if (words.some((word) => word.includes(term))) {
+      score += 30;
+      continue;
+    }
+    const similarity = Math.max(0, ...words.map((word) => diceCoefficient(term, word)));
+    if (term.length >= 4 && similarity >= 0.72) {
+      score += Math.round(similarity * 25);
+      continue;
+    }
+    return 0;
+  }
+
+  const acronym = words.map((word) => word[0]).join('');
+  if (query.length >= 2 && acronym.startsWith(query.replaceAll(' ', ''))) score += 140;
+  if (entry.lastmod) {
+    const ageDays = Math.max(0, (Date.now() - Date.parse(entry.lastmod)) / 86400000);
+    score += Math.max(0, 20 - Math.log10(ageDays + 1) * 8);
+  }
+  return score;
+}
+
+async function searchIndex(query) {
+  const entries = await ensureIndex();
+  return entries.map((entry) => ({entry, score: scoreEntry(entry, query)}))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score);
+}
+
+async function loadSearchTitle(entry) {
+  const cached = titleCache.get(entry.slug);
+  if (cached && cached.expiresAt > Date.now()) return cached.value || cached.promise;
+  const pending = fetchText(entry.id).then(extractSearchTitle).then((title) => {
+    if (!title) throw new Error('APK Award title is missing');
+    titleCache.set(entry.slug, {value: title, expiresAt: Date.now() + DETAIL_TTL_MS});
+    return title;
+  }).catch(() => {
+    titleCache.delete(entry.slug);
+    return entry.label;
+  });
+  titleCache.set(entry.slug, {promise: pending, expiresAt: Date.now() + 30000});
+  return pending;
 }
 
 function isDirectDownload(url) {
@@ -96,7 +261,7 @@ globalThis.source = {
   manifest: {
     id: 'apkaward-demo',
     name: 'APK Award（测试源）',
-    version: '0.2.0',
+    version: '0.3.0',
     minApiVersion: 1,
     homepage: 'https://apkaward.com',
     permissions: {
@@ -108,16 +273,25 @@ globalThis.source = {
   },
 
   async search(query, page = 1) {
-    const terms = normalize(query).split(' ').filter(Boolean);
-    if (!terms.length) return [];
-    const index = await searchIndex(terms);
-    return index.slice((page - 1) * 20, page * 20).map((entry) => ({
+    const normalized = normalizeSearch(query);
+    if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    const matches = await searchIndex(normalized);
+    const selected = matches.slice(0, 24);
+    const enriched = await mapLimit(selected, 4, async (candidate) => {
+      const label = await loadSearchTitle(candidate.entry);
+      const entry = {...candidate.entry, label};
+      return {entry, score: Math.max(candidate.score, scoreEntry(entry, normalized))};
+    });
+    const ranked = enriched.concat(matches.slice(selected.length));
+    ranked.sort((left, right) => right.score - left.score);
+    const start = Math.max(0, (Number(page) - 1) * 20);
+    return ranked.slice(start, start + 20).map(({entry}) => ({
       id: entry.id,
-      name: humanize(entry.slug),
+      name: entry.label,
       packageName: '',
       version: '',
       size: '',
-      updatedAt: entry.updatedAt,
+      updatedAt: entry.lastmod || '',
       category: '',
       iconUrl: '',
       summary: '来自 APK Award 公开 sitemap',
