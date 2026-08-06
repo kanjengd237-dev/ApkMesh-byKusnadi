@@ -283,16 +283,28 @@ class _HomePageState extends State<HomePage> {
                 ? '请输入应用名称或包名。'
                 : '已在所有启用的源中搜索“$submittedQuery”。',
           ),
-        ...results.map((app) => AppResultTile(app: app, state: widget.state)),
+        ...results.asMap().entries.map(
+          (entry) => AppResultTile(
+            app: entry.value,
+            state: widget.state,
+            showDivider: entry.key < results.length - 1,
+          ),
+        ),
       ],
     );
   }
 }
 
 class AppResultTile extends StatelessWidget {
-  const AppResultTile({required this.app, required this.state, super.key});
+  const AppResultTile({
+    required this.app,
+    required this.state,
+    this.showDivider = true,
+    super.key,
+  });
   final AppListing app;
   final AppState state;
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
@@ -304,22 +316,155 @@ class AppResultTile extends StatelessWidget {
       );
     }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
-        leading: AppIcon(url: app.iconUrl),
-        title: Text(app.name),
-        subtitle: Text(
-          '${app.summary}\n${app.version} · ${app.size} · ${app.sourceName}',
+    final theme = Theme.of(context);
+    final summary = app.summary.trim();
+    final contextLine = _appContextLine(app, summary);
+    final badges = _appBadges(app);
+
+    return Column(
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: openDetails,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppIcon(url: app.iconUrl, size: 72, borderRadius: 16),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          app.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (contextLine.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            contextLine,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        if (summary.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            summary,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        if (badges.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Wrap(spacing: 6, runSpacing: 6, children: badges),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-        isThreeLine: true,
-        onTap: openDetails,
-        trailing: IconButton(
-          tooltip: '查看详情',
-          icon: const Icon(Icons.chevron_right),
-          onPressed: openDetails,
-        ),
+        if (showDivider)
+          Divider(
+            height: 1,
+            indent: 88,
+            color: theme.colorScheme.outlineVariant.withValues(alpha: .65),
+          ),
+      ],
+    );
+  }
+}
+
+String _appContextLine(AppListing app, String summary) {
+  final values = <String>[];
+  final summaryLower = summary.toLowerCase();
+  bool isInSummary(String value) {
+    final normalized = value.toLowerCase();
+    final sourceBase = normalized.split(RegExp(r'[（(]')).first.trim();
+    return summaryLower.contains(normalized) ||
+        (sourceBase.isNotEmpty && summaryLower.contains(sourceBase));
+  }
+
+  for (final value in [app.sourceName, app.category]) {
+    final trimmed = value.trim();
+    if (trimmed.isNotEmpty &&
+        !isInSummary(trimmed) &&
+        !values.contains(trimmed)) {
+      values.add(trimmed);
+    }
+  }
+  return values.join(' · ');
+}
+
+List<Widget> _appBadges(AppListing app) {
+  final badges = <Widget>[];
+  final values = <({IconData icon, String text})>[];
+
+  void add(IconData icon, String value) {
+    final trimmed = value.trim();
+    if (trimmed.isNotEmpty && !values.any((item) => item.text == trimmed)) {
+      values.add((icon: icon, text: trimmed));
+    }
+  }
+
+  add(Icons.new_releases_outlined, app.version);
+  add(Icons.storage_outlined, app.size);
+  add(Icons.update_outlined, app.updatedAt);
+  add(Icons.code_outlined, app.packageName);
+
+  for (final value in values) {
+    badges.add(_AppInfoBadge(icon: value.icon, text: value.text));
+  }
+  return badges;
+}
+
+class _AppInfoBadge extends StatelessWidget {
+  const _AppInfoBadge({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 240),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1547,30 +1692,35 @@ class _SourceDownloadTile extends StatelessWidget {
 }
 
 class AppIcon extends StatelessWidget {
-  const AppIcon({required this.url, super.key});
+  const AppIcon({
+    required this.url,
+    this.size = 56,
+    this.borderRadius = 12,
+    super.key,
+  });
   final String url;
+  final double size;
+  final double borderRadius;
+
   @override
   Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(12),
+    borderRadius: BorderRadius.circular(borderRadius),
     child: url.isEmpty
-        ? Container(
-            width: 56,
-            height: 56,
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: const Icon(Icons.android),
-          )
+        ? _placeholder(context)
         : Image.network(
             url,
-            width: 56,
-            height: 56,
+            width: size,
+            height: size,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => Container(
-              width: 56,
-              height: 56,
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: const Icon(Icons.android),
-            ),
+            errorBuilder: (context, error, stackTrace) => _placeholder(context),
           ),
+  );
+
+  Widget _placeholder(BuildContext context) => Container(
+    width: size,
+    height: size,
+    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+    child: const Icon(Icons.android),
   );
 }
 
