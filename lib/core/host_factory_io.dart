@@ -271,6 +271,10 @@ class NativeHostApi implements SourceHostApi {
       rootSelector,
       selectors,
     );
+    _log(
+      'WebView queryAll $tabId $rootSelector -> ${result.length}',
+      category: 'WebView',
+    );
     return result;
   }
 
@@ -292,8 +296,13 @@ class NativeHostApi implements SourceHostApi {
     String rootSelector,
     Map<String, dynamic> selectors,
   ) async {
+    final itemExpression = _queryExpression(
+      selectors,
+      rootExpression: 'root',
+      stringify: false,
+    );
     final expression =
-        '''(() => Array.from(document.querySelectorAll(${jsonEncode(rootSelector)})).map(root => ${_queryExpression(selectors, rootExpression: 'root')}))()''';
+        '''(() => JSON.stringify(Array.from(document.querySelectorAll(${jsonEncode(rootSelector)})).map(root => $itemExpression)))()''';
     final value = await controller.evaluateJavascript(source: expression);
     final decoded = value is String ? jsonDecode(value) : value;
     if (decoded is! List) return const [];
@@ -306,6 +315,7 @@ class NativeHostApi implements SourceHostApi {
   String _queryExpression(
     Map<String, dynamic> selectors, {
     required String rootExpression,
+    bool stringify = true,
   }) {
     final entries = selectors.entries
         .map((entry) {
@@ -324,7 +334,10 @@ class NativeHostApi implements SourceHostApi {
           return '${jsonEncode(entry.key)}: (() => { const el = $element; if (!el) return null; return $attr === null || $attr === "text" ? (el.textContent || "").trim() : (el.getAttribute($attr) || "").trim(); })()';
         })
         .join(',');
-    return '''(() => JSON.stringify({$entries}))()''';
+    final objectExpression = '({$entries})';
+    return stringify
+        ? '''(() => JSON.stringify($objectExpression))()'''
+        : objectExpression;
   }
 
   @override

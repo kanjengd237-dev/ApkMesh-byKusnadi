@@ -77,6 +77,7 @@ class _ShellState extends State<Shell> {
   Widget build(BuildContext context) {
     final pages = [
       HomePage(state: widget.state, controller: searchController),
+      DownloadsPage(state: widget.state),
       SourcesPage(state: widget.state),
       SettingsPage(state: widget.state),
     ];
@@ -85,6 +86,11 @@ class _ShellState extends State<Shell> {
         icon: Icon(Icons.home_outlined),
         selectedIcon: Icon(Icons.home),
         label: '主页',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.download_outlined),
+        selectedIcon: Icon(Icons.download),
+        label: '下载',
       ),
       NavigationDestination(
         icon: Icon(Icons.hub_outlined),
@@ -124,6 +130,11 @@ class _ShellState extends State<Shell> {
                       icon: Icon(Icons.home_outlined),
                       selectedIcon: Icon(Icons.home),
                       label: Text('主页'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.download_outlined),
+                      selectedIcon: Icon(Icons.download),
+                      label: Text('下载'),
                     ),
                     NavigationRailDestination(
                       icon: Icon(Icons.hub_outlined),
@@ -311,6 +322,143 @@ class AppResultTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class DownloadsPage extends StatelessWidget {
+  const DownloadsPage({required this.state, super.key});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final tasks = state.downloads;
+    final active = tasks
+        .where((task) => task.status == DownloadStatus.downloading)
+        .length;
+    final completed = tasks
+        .where((task) => task.status == DownloadStatus.completed)
+        .length;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+      children: [
+        Text('下载管理', style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 8),
+        Text('$active 个进行中 · $completed 个已完成'),
+        const SizedBox(height: 20),
+        if (tasks.isEmpty)
+          const EmptyMessage(
+            icon: Icons.download_done_outlined,
+            title: '暂无下载任务',
+            detail: '从应用详情中选择文件后，任务会显示在这里。',
+          )
+        else
+          ...tasks.map((task) => _DownloadTaskTile(task: task, state: state)),
+      ],
+    );
+  }
+}
+
+class _DownloadTaskTile extends StatelessWidget {
+  const _DownloadTaskTile({required this.task, required this.state});
+  final DownloadTask task;
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (icon, color) = switch (task.status) {
+      DownloadStatus.downloading => (Icons.downloading, scheme.primary),
+      DownloadStatus.completed => (Icons.check_circle_outline, scheme.primary),
+      DownloadStatus.failed => (Icons.error_outline, scheme.error),
+    };
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            leading: Icon(icon, color: color),
+            title: Text(task.file.label),
+            subtitle: Text(_downloadTaskDetail(task)),
+            trailing: switch (task.status) {
+              DownloadStatus.downloading => const SizedBox(
+                width: 48,
+                height: 48,
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+              DownloadStatus.completed => IconButton(
+                tooltip: '安装',
+                icon: const Icon(Icons.install_mobile_outlined),
+                onPressed: () => _installDownloadTask(context, state, task),
+              ),
+              DownloadStatus.failed => IconButton(
+                tooltip: '重试下载',
+                icon: const Icon(Icons.refresh),
+                onPressed: () => state.retryDownload(task),
+              ),
+            },
+          ),
+          if (task.status == DownloadStatus.downloading)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: LinearProgressIndicator(value: task.progress),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String _downloadTaskDetail(DownloadTask task) {
+  switch (task.status) {
+    case DownloadStatus.downloading:
+      final total = task.total;
+      if (total != null && total > 0) {
+        final percent = ((task.progress ?? 0) * 100).toStringAsFixed(0);
+        return '${_formatByteCount(task.received)} / ${_formatByteCount(total)} · $percent%';
+      }
+      return task.received > 0
+          ? '已下载 ${_formatByteCount(task.received)}'
+          : '正在连接';
+    case DownloadStatus.completed:
+      return '下载完成\n${task.filePath ?? task.file.size}';
+    case DownloadStatus.failed:
+      return '下载失败\n${task.error ?? '未知错误'}';
+  }
+}
+
+String _formatByteCount(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  var value = bytes.toDouble();
+  var unit = -1;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  final digits = value >= 100 ? 0 : 1;
+  return '${value.toStringAsFixed(digits)} ${units[unit]}';
+}
+
+Future<void> _installDownloadTask(
+  BuildContext context,
+  AppState state,
+  DownloadTask task,
+) async {
+  try {
+    final installed = await state.installTask(task);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(installed ? '已交给系统安装器' : '请完成系统安装权限设置后重试')),
+    );
+  } catch (error) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('安装失败：$error')));
   }
 }
 
@@ -1285,74 +1433,10 @@ class _DetailsSheetState extends State<DetailsSheet> {
                 Text('下载文件', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 ...snapshot.data!.downloads.map(
-                  (file) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.file_download_outlined),
-                    title: Text(file.label),
-                    subtitle: Text(file.size),
-                    trailing: FilledButton(
-                      onPressed: () async {
-                        try {
-                          final path = await widget.state.download(
-                            file,
-                            widget.app.sourceId,
-                          );
-                          if (context.mounted) {
-                            final shouldInstall = await showDialog<bool>(
-                              context: context,
-                              builder: (dialogContext) => AlertDialog(
-                                title: const Text('下载完成'),
-                                content: Text(
-                                  '文件已保存到：$path\n是否交给系统安装器？请先确认来源和签名。',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, false),
-                                    child: const Text('稍后安装'),
-                                  ),
-                                  FilledButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, true),
-                                    child: const Text('安装'),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (shouldInstall == true) {
-                              try {
-                                final installed = await widget.state.install(
-                                  path,
-                                  widget.app.sourceId,
-                                );
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        installed ? '已交给系统安装器' : '系统未接受此安装请求',
-                                      ),
-                                    ),
-                                  );
-                                }
-                              } catch (error) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('安装失败：$error')),
-                                  );
-                                }
-                              }
-                            }
-                          }
-                        } catch (error) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('下载失败：$error')),
-                            );
-                          }
-                        }
-                      },
-                      child: const Text('下载'),
-                    ),
+                  (file) => _SourceDownloadTile(
+                    file: file,
+                    sourceId: widget.app.sourceId,
+                    state: widget.state,
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -1369,6 +1453,95 @@ class _DetailsSheetState extends State<DetailsSheet> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SourceDownloadTile extends StatelessWidget {
+  const _SourceDownloadTile({
+    required this.file,
+    required this.sourceId,
+    required this.state,
+  });
+
+  final SourceDownload file;
+  final String sourceId;
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: state,
+      builder: (context, _) {
+        final task = state.downloadFor(file.url);
+        final detail = task == null
+            ? file.size
+            : '${file.size}\n${_downloadTaskDetail(task)}';
+        return Column(
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                task?.status == DownloadStatus.completed
+                    ? Icons.check_circle_outline
+                    : Icons.file_download_outlined,
+              ),
+              title: Text(file.label),
+              subtitle: Text(detail),
+              trailing: SizedBox(
+                width: 112,
+                child: _downloadButton(context, task),
+              ),
+            ),
+            if (task?.status == DownloadStatus.downloading)
+              Padding(
+                padding: const EdgeInsets.only(left: 56, bottom: 8),
+                child: LinearProgressIndicator(value: task?.progress),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _downloadButton(BuildContext context, DownloadTask? task) {
+    final style = FilledButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+    );
+    if (task?.status == DownloadStatus.downloading) {
+      return FilledButton.icon(
+        style: style,
+        onPressed: null,
+        icon: const SizedBox.square(
+          dimension: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        label: const Text('下载中'),
+      );
+    }
+    if (task?.status == DownloadStatus.completed) {
+      return FilledButton.icon(
+        style: style,
+        onPressed: () => _installDownloadTask(context, state, task!),
+        icon: const Icon(Icons.install_mobile_outlined),
+        label: const Text('安装'),
+      );
+    }
+    final retry = task?.status == DownloadStatus.failed;
+    return FilledButton.icon(
+      style: style,
+      onPressed: () {
+        if (retry) {
+          state.retryDownload(task!);
+        } else {
+          state.startDownload(file, sourceId);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(retry ? '正在重新下载' : '已开始下载，可在下载页查看进度')),
+        );
+      },
+      icon: Icon(retry ? Icons.refresh : Icons.download),
+      label: Text(retry ? '重试' : '下载'),
     );
   }
 }

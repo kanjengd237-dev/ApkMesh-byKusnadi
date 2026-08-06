@@ -112,6 +112,64 @@ class SourceDownload {
   final String size;
 }
 
+enum DownloadStatus { downloading, completed, failed }
+
+class DownloadTask {
+  const DownloadTask({
+    required this.id,
+    required this.file,
+    required this.sourceId,
+    required this.status,
+    required this.startedAt,
+    this.received = 0,
+    this.total,
+    this.filePath,
+    this.error,
+    this.completedAt,
+  });
+
+  static const _notProvided = Object();
+
+  final String id;
+  final SourceDownload file;
+  final String sourceId;
+  final DownloadStatus status;
+  final DateTime startedAt;
+  final int received;
+  final int? total;
+  final String? filePath;
+  final String? error;
+  final DateTime? completedAt;
+
+  double? get progress =>
+      total != null && total! > 0 ? (received / total!).clamp(0.0, 1.0) : null;
+
+  DownloadTask copyWith({
+    DownloadStatus? status,
+    DateTime? startedAt,
+    int? received,
+    Object? total = _notProvided,
+    Object? filePath = _notProvided,
+    Object? error = _notProvided,
+    Object? completedAt = _notProvided,
+  }) => DownloadTask(
+    id: id,
+    file: file,
+    sourceId: sourceId,
+    status: status ?? this.status,
+    startedAt: startedAt ?? this.startedAt,
+    received: received ?? this.received,
+    total: identical(total, _notProvided) ? this.total : total as int?,
+    filePath: identical(filePath, _notProvided)
+        ? this.filePath
+        : filePath as String?,
+    error: identical(error, _notProvided) ? this.error : error as String?,
+    completedAt: identical(completedAt, _notProvided)
+        ? this.completedAt
+        : completedAt as DateTime?,
+  );
+}
+
 class AppDetails extends AppListing {
   const AppDetails({
     required super.id,

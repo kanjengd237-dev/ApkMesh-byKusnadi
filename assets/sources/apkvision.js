@@ -123,7 +123,7 @@ function rowField(rows, label) {
 }
 
 function extractSize(value) {
-  const match = /\b\d+(?:\.\d+)?\s*(?:KB|MB|GB)\b/i.exec(cleanText(value));
+  const match = /^\d+(?:\.\d+)?\s*(?:KB|MB|GB)\b/i.exec(cleanText(value));
   return match ? match[0] : '';
 }
 
@@ -237,14 +237,20 @@ globalThis.source = {
       app.comments = commentNodes.map((item) => cleanText(item.text)).filter(Boolean);
 
       const downloadNodes = await tab.queryAll('.b-dwn-spoiler__links a.fdl-btn', {
-        label: '.fdl-btn-title@text',
+        label: '.fdl-btn-title > div@text',
+        details: '.fdl-btn-title@text',
         url: '@href',
       });
-      const candidates = downloadNodes.map((item) => ({
-        label: downloadLabel(item.label),
-        url: absoluteUrl(item.url),
-        size: extractSize(item.label),
-      })).filter((item) => item.label && isApkVisionUrl(item.url)).slice(0, 20);
+      const candidates = downloadNodes.map((item) => {
+        const rawLabel = cleanText(item.label);
+        const details = cleanText(item.details);
+        const sizeText = details.startsWith(rawLabel) ? details.slice(rawLabel.length) : '';
+        return {
+          label: downloadLabel(rawLabel),
+          url: absoluteUrl(item.url),
+          size: extractSize(sizeText),
+        };
+      }).filter((item) => item.label && isApkVisionUrl(item.url)).slice(0, 20);
       const resolved = await mapLimit(candidates, 4, async (item) => {
         try {
           const direct = await resolveDownload(item.url);

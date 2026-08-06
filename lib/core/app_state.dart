@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'debug_log.dart';
+import 'download_notifications.dart';
 import 'host_factory.dart';
 import 'models.dart';
 import 'quickjs_source.dart';
@@ -28,9 +31,16 @@ class AppState extends ChangeNotifier {
   );
   final DebugLogStore debug = DebugLogStore();
   late final SourceHostApi host = createPlatformHostApi(debug: debug);
+  final DownloadNotifications _downloadNotifications = DownloadNotifications();
+  final List<DownloadTask> _downloads = [];
+  final Map<String, int> _pendingDownloadBytes = {};
+  final Map<String, int?> _pendingDownloadTotals = {};
+  final Map<String, Timer> _downloadProgressTimers = {};
+  int _downloadSequence = 0;
   bool _sourceRuntimeReady = false;
   String? _runtimeError;
   List<ApkSource> get sources => List.unmodifiable(_sources);
+  List<DownloadTask> get downloads => List.unmodifiable(_downloads);
   bool get sourceRuntimeReady => _sourceRuntimeReady;
   String? get runtimeError => _runtimeError;
   Map<String, String> get sourceErrors => Map.unmodifiable(registry.lastErrors);
@@ -114,24 +124,166 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String> download(
-    SourceDownload file,
-    String sourceId, {
-    void Function(int received, int? total)? onProgress,
-  }) {
-    final script = registry.scriptFor(sourceId);
-    return host.download(
-      file.url,
-      fileName:
-          RegExp(
-            r'\.(apk|apks|xapk|zip)$',
-            caseSensitive: false,
-          ).hasMatch(file.label)
-          ? file.label
-          : null,
-      policy: script.policy,
-      onProgress: onProgress,
+  DownloadTask? downloadFor(String url) {
+    for (final task in _downloads) {
+      if (task.file.url == url) return task;
+    }
+    return null;
+  }
+
+  DownloadTask startDownload(SourceDownload file, String sourceId) {
+    final existing = downloadFor(file.url);
+    if (existing != null && existing.status != DownloadStatus.failed) {
+      return existing;
+    }
+
+    final now = DateTime.now();
+    late final DownloadTask task;
+    if (existing == null) {
+      task = DownloadTask(
+        id: '${now.microsecondsSinceEpoch}-${_downloadSequence++}',
+        file: file,
+        sourceId: sourceId,
+        status: DownloadStatus.downloading,
+        startedAt: now,
+      );
+      _downloads.insert(0, task);
+    } else {
+      task = existing.copyWith(
+        status: DownloadStatus.downloading,
+        startedAt: now,
+        received: 0,
+        total: null,
+        filePath: null,
+        error: null,
+        completedAt: null,
+      );
+      _replaceDownload(task, notify: false);
+    }
+
+    debug.add('开始下载：${file.label}', category: 'Download');
+    notifyListeners();
+    unawaited(_runDownload(task.id));
+    return task;
+  }
+
+  DownloadTask retryDownload(DownloadTask task) =>
+      startDownload(task.file, task.sourceId);
+
+  Future<void> _runDownload(String taskId) async {
+    final task = _downloadById(taskId);
+    if (task == null) return;
+    final script = registry.scriptFor(task.sourceId);
+    await _downloadNotifications.requestPermission();
+    await _downloadNotifications.showProgress(
+      id: task.id,
+      title: task.file.label,
+      received: 0,
+      total: null,
     );
+
+    try {
+      final path = await host.download(
+        task.file.url,
+        fileName:
+            RegExp(
+              r'\.(apk|apks|xapk|zip)$',
+              caseSensitive: false,
+            ).hasMatch(task.file.label)
+            ? task.file.label
+            : null,
+        policy: script.policy,
+        onProgress: (received, total) =>
+            _queueDownloadProgress(task.id, received, total),
+      );
+      _flushDownloadProgress(task.id);
+      final current = _downloadById(task.id);
+      if (current == null) return;
+      final completed = current.copyWith(
+        status: DownloadStatus.completed,
+        filePath: path,
+        error: null,
+        completedAt: DateTime.now(),
+      );
+      _replaceDownload(completed);
+      debug.add('下载完成：${task.file.label} · $path', category: 'Download');
+      await _downloadNotifications.showCompleted(
+        id: task.id,
+        title: task.file.label,
+        path: path,
+      );
+    } catch (error) {
+      _flushDownloadProgress(task.id);
+      final current = _downloadById(task.id);
+      if (current == null) return;
+      _replaceDownload(
+        current.copyWith(
+          status: DownloadStatus.failed,
+          error: error.toString(),
+          completedAt: DateTime.now(),
+        ),
+      );
+      debug.add(
+        '下载失败：${task.file.label} · $error',
+        level: DebugLogLevel.error,
+        category: 'Download',
+      );
+      await _downloadNotifications.showFailed(
+        id: task.id,
+        title: task.file.label,
+        error: error.toString(),
+      );
+    }
+  }
+
+  void _queueDownloadProgress(String id, int received, int? total) {
+    _pendingDownloadBytes[id] = received;
+    _pendingDownloadTotals[id] = total;
+    _downloadProgressTimers.putIfAbsent(
+      id,
+      () => Timer(
+        const Duration(milliseconds: 250),
+        () => _flushDownloadProgress(id),
+      ),
+    );
+  }
+
+  void _flushDownloadProgress(String id) {
+    _downloadProgressTimers.remove(id)?.cancel();
+    final received = _pendingDownloadBytes.remove(id);
+    final total = _pendingDownloadTotals.remove(id);
+    final task = _downloadById(id);
+    if (received == null || task?.status != DownloadStatus.downloading) return;
+    final updated = task!.copyWith(received: received, total: total);
+    _replaceDownload(updated);
+    unawaited(
+      _downloadNotifications.showProgress(
+        id: id,
+        title: updated.file.label,
+        received: received,
+        total: total,
+      ),
+    );
+  }
+
+  DownloadTask? _downloadById(String id) {
+    for (final task in _downloads) {
+      if (task.id == id) return task;
+    }
+    return null;
+  }
+
+  void _replaceDownload(DownloadTask task, {bool notify = true}) {
+    final index = _downloads.indexWhere((item) => item.id == task.id);
+    if (index == -1) return;
+    _downloads[index] = task;
+    if (notify) notifyListeners();
+  }
+
+  Future<bool> installTask(DownloadTask task) {
+    final path = task.filePath;
+    if (path == null) throw StateError('下载文件尚未完成');
+    return install(path, task.sourceId);
   }
 
   Future<bool> install(String path, String sourceId) {
@@ -166,6 +318,10 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    for (final timer in _downloadProgressTimers.values) {
+      timer.cancel();
+    }
+    _downloadProgressTimers.clear();
     host.dispose();
     registry.dispose();
     debug.dispose();
