@@ -83,7 +83,11 @@ abstract interface class ApkSourceScript {
   String get id;
   String get name;
   SourcePolicy get policy;
-  Future<List<AppListing>> search(String query, SourceHostApi host);
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  });
   Future<AppDetails> details(String appId, SourceHostApi host);
   Future<void> dispose();
 }
@@ -187,11 +191,39 @@ class SourceRegistry {
   Future<List<AppListing>> search(
     String query,
     SourceHostApi host, {
+    int page = 1,
     Set<String>? enabledSourceIds,
     void Function(ApkSourceScript source, List<AppListing> results)?
     onSourceCompleted,
   }) async {
-    lastErrors.clear();
+    final pages = await searchPage(
+      query,
+      host,
+      page: page,
+      enabledSourceIds: enabledSourceIds,
+      onSourcePageCompleted: (source, result) {
+        if (result.succeeded) {
+          onSourceCompleted?.call(source, result.results);
+        }
+      },
+    );
+    return _rankSearchResults(
+      query,
+      pages.map((result) => result.results).toList(growable: false),
+    );
+  }
+
+  Future<List<SourceSearchPage>> searchPage(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+    Set<String>? enabledSourceIds,
+    bool clearErrors = true,
+    void Function(ApkSourceScript source, SourceSearchPage result)?
+    onSourcePageCompleted,
+  }) async {
+    if (page < 1) throw ArgumentError.value(page, 'page', '必须大于 0');
+    if (clearErrors) lastErrors.clear();
     final selectedScripts = scripts
         .where(
           (script) =>
@@ -199,22 +231,36 @@ class SourceRegistry {
         )
         .toList(growable: false);
 
-    // Start every source call before waiting for any result. The callback keeps
-    // the UI responsive while Future.wait preserves the aggregate API.
-    final batches = await Future.wait(
+    // All selected sources request the same page concurrently. A source that
+    // has ended can be removed from enabledSourceIds by the caller before the
+    // next request.
+    return Future.wait(
       selectedScripts.map((script) async {
         try {
-          final sourceResults = await script.search(query, host);
-          onSourceCompleted?.call(script, sourceResults);
-          return sourceResults;
+          final sourceResults = await script.search(query, host, page: page);
+          final result = SourceSearchPage(
+            sourceId: script.id,
+            sourceName: script.name,
+            page: page,
+            results: sourceResults,
+          );
+          onSourcePageCompleted?.call(script, result);
+          return result;
         } catch (error) {
-          // A broken source must not suppress successful results from others.
-          lastErrors[script.name] = error.toString();
-          return const <AppListing>[];
+          final message = error.toString();
+          lastErrors[script.name] = message;
+          final result = SourceSearchPage(
+            sourceId: script.id,
+            sourceName: script.name,
+            page: page,
+            results: const [],
+            error: message,
+          );
+          onSourcePageCompleted?.call(script, result);
+          return result;
         }
       }),
     );
-    return _rankSearchResults(query, batches);
   }
 
   Future<AppDetails> details(AppListing app, SourceHostApi host) {
@@ -420,7 +466,11 @@ class ApkVisionDemoScript implements ApkSourceScript, SourceCatalogScript {
   Future<AppDetails> details(String appId, SourceHostApi host) async => _detail;
 
   @override
-  Future<List<AppListing>> search(String query, SourceHostApi host) async {
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async {
     final normalized = query.trim().toLowerCase();
     if (normalized.isEmpty) return const [];
     return [_detail]

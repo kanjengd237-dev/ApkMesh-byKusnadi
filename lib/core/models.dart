@@ -86,6 +86,24 @@ class SourceHome {
   );
 }
 
+class SourceSearchPage {
+  const SourceSearchPage({
+    required this.sourceId,
+    required this.sourceName,
+    required this.page,
+    required this.results,
+    this.error,
+  });
+
+  final String sourceId;
+  final String sourceName;
+  final int page;
+  final List<AppListing> results;
+  final String? error;
+
+  bool get succeeded => error == null;
+}
+
 class AppListing {
   const AppListing({
     required this.id,

@@ -37,7 +37,7 @@ globalThis.source = {
 
 `manifest.description` 可选，用于在源管理页展示源说明。
 
-`search()` 返回应用摘要数组。每项包含 `id`、`name`、`packageName`、`version`、`size`、`updatedAt`、`category` 和 `iconUrl`；可选提供 `description`、`rating`、`author` 等应用元数据。宿主也兼容将 `desc`/`info` 作为描述、将 `score` 作为评分、将 `developer` 作为作者。列表中的源名称由宿主根据脚本 manifest 自动附加，不需要源写入 `summary`。
+`search(query, page)` 中 `page` 从 1 开始。宿主会在用户继续滚动搜索结果时请求后续页；源返回空数组表示该源没有更多结果。搜索页请求如果收到 HTTP 404，也应视为没有更多结果并返回空数组。源应保证同一查询的页码结果稳定，并避免跨页重复返回相同 `id`。其他请求失败则作为源错误处理，不应误判为分页结束。
 
 `details()` 返回完整应用对象，并增加 `description`、`screenshots`、`comments` 和 `downloads`。详情可用 `summary` 表示版本说明或简短信息；`downloads` 每项包含 `label`、`url` 和 `size`，可选 `headers` 用于需要 Referer 等请求头的下载。`screenshots` 是截图 URL 数组；源应在解析懒加载图片时同时检查 `src`、`data-src` 等属性。
 

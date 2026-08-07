@@ -334,8 +334,12 @@ class QuickJsApkSourceScript
   }
 
   @override
-  Future<List<AppListing>> search(String query, SourceHostApi host) async {
-    final value = await _call('search', query, host);
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async {
+    final value = await _callWithArguments('search', [query, page], host);
     return (value as List).map((item) => _listing(_dynamicMap(item))).toList();
   }
 

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:gal/gal.dart';
 import 'package:http/http.dart' as http;
@@ -294,6 +296,7 @@ class _HomePageState extends State<HomePage> {
   List<AppListing> results = const [];
   SourceHome home = const SourceHome();
   bool loading = false;
+  bool loadingMore = false;
   bool homeLoading = false;
   bool homeLoaded = false;
   String? error;
@@ -307,12 +310,21 @@ class _HomePageState extends State<HomePage> {
   SearchResultRanker? _searchRanker;
   Map<String, int> _searchSourceOrder = const {};
   Map<String, Map<String, int>> _searchResultOrder = {};
+  Set<String> _searchSourceIds = const {};
+  Set<String> _searchExhaustedSources = {};
+  Set<String> _searchFailedSources = {};
+  Map<String, String> _searchPageErrors = {};
+  String? _lastShownSearchError;
+  int _nextSearchPage = 2;
+  late final ScrollController _contentScrollController;
   GlobalKey<AnimatedListState> _resultsListKey = GlobalKey<AnimatedListState>();
   int _animatedResultCount = 0;
 
   @override
   void initState() {
     super.initState();
+    _contentScrollController = ScrollController()
+      ..addListener(_onContentScroll);
     widget.state.addListener(_onStateChanged);
     _loadHome();
   }
@@ -320,6 +332,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     widget.state.removeListener(_onStateChanged);
+    _contentScrollController
+      ..removeListener(_onContentScroll)
+      ..dispose();
     super.dispose();
   }
 
@@ -386,6 +401,18 @@ class _HomePageState extends State<HomePage> {
     _searchRanker = null;
     _searchSourceOrder = const {};
     _searchResultOrder = {};
+    _searchSourceIds =
+        (sourceIds ??
+                widget.state.sources
+                    .where((source) => source.status == SourceStatus.enabled)
+                    .map((source) => source.id))
+            .toSet();
+    _searchExhaustedSources = {};
+    _searchFailedSources = {};
+    _searchPageErrors = {};
+    _lastShownSearchError = null;
+    _nextSearchPage = 2;
+    loadingMore = false;
     if (query.isEmpty) {
       setState(() {
         submittedQuery = null;
@@ -413,25 +440,32 @@ class _HomePageState extends State<HomePage> {
     });
     widget.onSearchLoadingChanged?.call(true);
     try {
-      final found = await widget.state.search(
+      final pages = await widget.state.searchPage(
         query,
+        page: 1,
         sourceIds: sourceIds,
-        onSourceResults: (sourceResults) {
+        onSourcePage: (page) {
           if (!mounted || generation != _searchGeneration) return;
-          for (var index = 0; index < sourceResults.length; index++) {
-            _insertSearchResult(sourceResults[index], index);
-          }
+          _handleSearchPage(page);
         },
       );
       if (mounted && generation == _searchGeneration) {
+        final found = pages.fold<int>(
+          0,
+          (total, page) => total + page.results.length,
+        );
+        final searchError = _searchPageErrors.isNotEmpty
+            ? _formatSearchPageErrors()
+            : found == 0 && widget.state.sourceErrors.isNotEmpty
+            ? widget.state.sourceErrors.entries
+                  .map((entry) => '${entry.key}：${entry.value}')
+                  .join('\n')
+            : null;
         setState(() {
           loading = false;
-          if (found.isEmpty && widget.state.sourceErrors.isNotEmpty) {
-            error = widget.state.sourceErrors.entries
-                .map((entry) => '${entry.key}：${entry.value}')
-                .join('\n');
-          }
+          error = searchError;
         });
+        if (searchError != null) _showSearchErrorSnackBar(searchError);
         widget.onSearchLoadingChanged?.call(false);
       }
     } catch (searchError) {
@@ -440,7 +474,159 @@ class _HomePageState extends State<HomePage> {
           loading = false;
           error = searchError.toString();
         });
+        _showSearchErrorSnackBar(searchError.toString());
         widget.onSearchLoadingChanged?.call(false);
+      }
+    }
+  }
+
+  void _handleSearchPage(SourceSearchPage page) {
+    final newResults = _collectSearchPageResults(page);
+    for (final app in newResults) {
+      _insertRegisteredSearchResult(app);
+    }
+  }
+
+  List<AppListing> _collectSearchPageResults(SourceSearchPage page) {
+    if (!page.succeeded) {
+      _searchFailedSources.add(page.sourceId);
+      _searchPageErrors[page.sourceId] = page.error!;
+      return const [];
+    }
+    if (page.results.isEmpty) {
+      _searchExhaustedSources.add(page.sourceId);
+      return const [];
+    }
+
+    final resultOrder = _searchResultOrder.putIfAbsent(
+      page.sourceId,
+      () => <String, int>{},
+    );
+    final newResults = <AppListing>[];
+    for (final app in page.results) {
+      if (resultOrder.containsKey(app.id)) continue;
+      resultOrder[app.id] = resultOrder.length;
+      newResults.add(app);
+    }
+    // A repeated page cannot produce more useful results, so stop requesting
+    // it even if the source does not signal the end with an empty array.
+    if (newResults.isEmpty) _searchExhaustedSources.add(page.sourceId);
+    return newResults;
+  }
+
+  void _appendSearchResults(List<AppListing> newResults) {
+    if (newResults.isEmpty) return;
+    final sortedResults = [...newResults]..sort(_compareSearchResults);
+    final startIndex = results.length;
+    final listKey = _resultsListKey;
+    final animatedList = listKey.currentState;
+    setState(() {
+      results = [...results, ...sortedResults];
+      if (animatedList == null) _animatedResultCount = results.length;
+    });
+    if (animatedList != null) {
+      for (var index = 0; index < sortedResults.length; index++) {
+        animatedList.insertItem(
+          startIndex + index,
+          duration: const Duration(milliseconds: 260),
+        );
+      }
+      _animatedResultCount += sortedResults.length;
+    }
+  }
+
+  String _formatSearchPageErrors() => _searchPageErrors.entries
+      .map((entry) => '${entry.key}：${entry.value}')
+      .join('\n');
+
+  void _showSearchErrorSnackBar(String message) {
+    if (!mounted || message.isEmpty || message == _lastShownSearchError) {
+      return;
+    }
+    _lastShownSearchError = message;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('搜索源加载失败'),
+          action: SnackBarAction(
+            label: '详情',
+            onPressed: () => _showSearchErrorDetails(message),
+          ),
+        ),
+      );
+    });
+  }
+
+  void _showSearchErrorDetails(String message) {
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _SearchErrorSheet(message: message),
+    );
+  }
+
+  bool get _hasSearchSourcesToLoad => _searchSourceIds.any(
+    (sourceId) =>
+        !_searchExhaustedSources.contains(sourceId) &&
+        !_searchFailedSources.contains(sourceId),
+  );
+
+  void _onContentScroll() {
+    if (!mounted || submittedQuery == null || loading || loadingMore) return;
+    if (!_contentScrollController.hasClients ||
+        _contentScrollController.position.extentAfter > 480) {
+      return;
+    }
+    unawaited(_loadNextSearchPage());
+  }
+
+  Future<void> _loadNextSearchPage() async {
+    if (loading || loadingMore || !_hasSearchSourcesToLoad) return;
+    final generation = _searchGeneration;
+    final sourceIds = _searchSourceIds
+        .where(
+          (sourceId) =>
+              !_searchExhaustedSources.contains(sourceId) &&
+              !_searchFailedSources.contains(sourceId),
+        )
+        .toSet();
+    if (sourceIds.isEmpty) return;
+
+    final page = _nextSearchPage++;
+    setState(() => loadingMore = true);
+    try {
+      final pages = await widget.state.searchPage(
+        submittedQuery!,
+        page: page,
+        sourceIds: sourceIds,
+      );
+      if (!mounted || generation != _searchGeneration) return;
+      final newResults = <AppListing>[];
+      for (final result in pages) {
+        newResults.addAll(_collectSearchPageResults(result));
+      }
+      // A pagination request is one logical batch: sort only this batch and
+      // append it after the results already visible to the user.
+      _appendSearchResults(newResults);
+      if (_searchPageErrors.isNotEmpty) {
+        final searchError = _formatSearchPageErrors();
+        setState(() => error = searchError);
+        _showSearchErrorSnackBar(searchError);
+      }
+    } catch (loadError) {
+      if (mounted && generation == _searchGeneration) {
+        final message = loadError.toString();
+        setState(() => error = message);
+        _showSearchErrorSnackBar(message);
+      }
+    } finally {
+      if (mounted && generation == _searchGeneration) {
+        setState(() => loadingMore = false);
       }
     }
   }
@@ -464,13 +650,7 @@ class _HomePageState extends State<HomePage> {
     return leftResultOrder.compareTo(rightResultOrder);
   }
 
-  void _insertSearchResult(AppListing app, int sourceResultIndex) {
-    final resultOrder = _searchResultOrder.putIfAbsent(
-      app.sourceId,
-      () => <String, int>{},
-    );
-    resultOrder[app.id] = sourceResultIndex;
-
+  void _insertRegisteredSearchResult(AppListing app) {
     var insertionIndex = results.length;
     for (var index = 0; index < results.length; index++) {
       if (_compareSearchResults(app, results[index]) < 0) {
@@ -502,6 +682,7 @@ class _HomePageState extends State<HomePage> {
       submittedQuery = null;
       results = const [];
       loading = false;
+      loadingMore = false;
       error = null;
       _selectedTab = 'home';
     });
@@ -699,27 +880,22 @@ class _HomePageState extends State<HomePage> {
           );
     return [
       if (loading && visibleResults.isEmpty) const _SearchLoadingView(),
-      if (!loading && error != null)
-        Card(
-          color: Theme.of(context).colorScheme.errorContainer,
-          child: ListTile(
-            leading: Icon(
-              Icons.error_outline,
-              color: Theme.of(context).colorScheme.onErrorContainer,
-            ),
-            title: const Text('源执行失败'),
-            subtitle: Text(error!),
-          ),
-        ),
-      if (!loading && error == null && visibleResults.isEmpty)
+      if (!loading && visibleResults.isEmpty)
         EmptyMessage(
           icon: Icons.manage_search,
           title: '未找到结果',
-          detail: activeTab.sourceId == null
-              ? '已在所有启用的源中搜索“$submittedQuery”。'
-              : '当前源没有返回“$submittedQuery”的结果。',
+          detail: error == null
+              ? activeTab.sourceId == null
+                    ? '已在所有启用的源中搜索“$submittedQuery”。'
+                    : '当前源没有返回“$submittedQuery”的结果。'
+              : '源请求未完成，请打开错误详情查看原因。',
         ),
       if (visibleResults.isNotEmpty) resultList,
+      if (loadingMore)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
     ];
   }
 
@@ -738,6 +914,7 @@ class _HomePageState extends State<HomePage> {
           child: RefreshIndicator(
             onRefresh: _refreshContent,
             child: ListView(
+              controller: _contentScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
               children: [
@@ -826,6 +1003,59 @@ class _SearchLoadingViewState extends State<_SearchLoadingView>
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchErrorSheet extends StatelessWidget {
+  const _SearchErrorSheet({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.6;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '搜索错误详情',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: '复制报错信息',
+                  icon: const Icon(Icons.copy_outlined),
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: message));
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('已复制报错信息')));
+                  },
+                ),
+              ],
+            ),
+            const Divider(),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  message,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

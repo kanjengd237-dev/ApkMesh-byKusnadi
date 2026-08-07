@@ -434,6 +434,21 @@ async function fetchText(url, referer = ORIGIN) {
   });
 }
 
+function isNotFoundError(error) {
+  const message = error && error.message ? error.message : String(error || '');
+  return /\bHTTP\s+404\b/i.test(message) ||
+    /\bstatus(?:\s+code)?\s*[:=]?\s*404\b/i.test(message);
+}
+
+async function fetchSearchText(url) {
+  try {
+    return await fetchText(url);
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
 async function detailsWithDownloads(value) {
   const normalized = absoluteUrl(value);
   if (!/^https:\/\/www\.apkmirror\.com\/apk\//i.test(normalized)) {
@@ -514,7 +529,9 @@ globalThis.source = {
     if (normalized.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     const url = searchUrl(normalized, page);
     try {
-      return parseSearchResults(await fetchText(url));
+      const html = await fetchSearchText(url);
+      if (html === null) return [];
+      return parseSearchResults(html);
     } catch (error) {
       const tab = await apkmesh.browser.open(url);
       try {

@@ -101,6 +101,36 @@ void main() {
   );
 
   test(
+    'registry forwards pages and preserves an empty page as success',
+    () async {
+      final source = _PagedSource();
+      final registry = SourceRegistry(scripts: [source]);
+
+      final second = await registry.searchPage(
+        'example',
+        DemoHostApi(),
+        page: 2,
+        enabledSourceIds: {'paged'},
+      );
+      final third = await registry.searchPage(
+        'example',
+        DemoHostApi(),
+        page: 3,
+        enabledSourceIds: {'paged'},
+        clearErrors: false,
+      );
+
+      expect(source.pages, [2, 3]);
+      expect(second.single.page, 2);
+      expect(second.single.results.single.name, 'Page 2');
+      expect(third.single.page, 3);
+      expect(third.single.results, isEmpty);
+      expect(third.single.succeeded, isTrue);
+      expect(registry.lastErrors, isEmpty);
+    },
+  );
+
+  test(
     'registry ranks distinct title keywords and preserves source order on ties',
     () async {
       final registry = SourceRegistry(
@@ -198,7 +228,11 @@ class ExampleCatalogSource implements ApkSourceScript, SourceCatalogScript {
   );
 
   @override
-  Future<List<AppListing>> search(String query, SourceHostApi host) async {
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async {
     if (!query.toLowerCase().contains('example')) return const [];
     return const [_app];
   }
@@ -228,6 +262,40 @@ class ExampleCatalogSource implements ApkSourceScript, SourceCatalogScript {
   );
 }
 
+class _PagedSource implements ApkSourceScript {
+  final pages = <int>[];
+
+  @override
+  String get id => 'paged';
+
+  @override
+  String get name => 'Paged source';
+
+  @override
+  SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
+
+  @override
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async {
+    pages.add(page);
+    return switch (page) {
+      2 => [_listing(id, 'Page 2')],
+      _ => const [],
+    };
+  }
+
+  @override
+  Future<AppDetails> details(String appId, SourceHostApi host) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 class _StaticSearchSource implements ApkSourceScript {
   _StaticSearchSource(this.id, this.results);
 
@@ -242,8 +310,11 @@ class _StaticSearchSource implements ApkSourceScript {
   SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
 
   @override
-  Future<List<AppListing>> search(String query, SourceHostApi host) async =>
-      results;
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async => results;
 
   @override
   Future<AppDetails> details(String appId, SourceHostApi host) async {
@@ -287,7 +358,11 @@ class _ConcurrentSource implements ApkSourceScript {
   SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
 
   @override
-  Future<List<AppListing>> search(String query, SourceHostApi host) async {
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async {
     gate.started += 1;
     if (gate.started == 2) gate.bothStarted.complete();
     await gate.release.future;
@@ -313,7 +388,11 @@ class FailingSource implements ApkSourceScript {
   SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
 
   @override
-  Future<List<AppListing>> search(String query, SourceHostApi host) {
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) {
     throw StateError('parse failed');
   }
 

@@ -177,6 +177,21 @@ async function fetchText(url, referer = ORIGIN) {
   });
 }
 
+function isNotFoundError(error) {
+  const message = error && error.message ? error.message : String(error || '');
+  return /\bHTTP\s+404\b/i.test(message) ||
+    /\bstatus(?:\s+code)?\s*[:=]?\s*404\b/i.test(message);
+}
+
+async function fetchSearchText(url) {
+  try {
+    return await fetchText(url);
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
 function downloadHeaders(referer) {
   return {...SEARCH_HEADERS, Referer: referer};
 }
@@ -347,7 +362,8 @@ globalThis.source = {
   async search(query, page = 1) {
     const normalized = cleanText(query);
     if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
-    return parseSearchResults(await fetchText(searchUrl(normalized, page)));
+    const html = await fetchSearchText(searchUrl(normalized, page));
+    return html === null ? [] : parseSearchResults(html);
   },
 
   async category(categoryId) {

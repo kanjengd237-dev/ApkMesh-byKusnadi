@@ -335,6 +335,47 @@ class AppState extends ChangeNotifier {
     return results;
   }
 
+  Future<List<SourceSearchPage>> searchPage(
+    String query, {
+    int page = 1,
+    Set<String>? sourceIds,
+    void Function(SourceSearchPage page)? onSourcePage,
+  }) async {
+    await ready;
+    debug.add(
+      page == 1 ? '开始聚合搜索：${query.trim()}' : '开始加载搜索第 $page 页：${query.trim()}',
+      category: 'App',
+    );
+    final enabledSourceIds = _sources
+        .where(
+          (source) =>
+              source.status == SourceStatus.enabled &&
+              (sourceIds == null || sourceIds.contains(source.id)),
+        )
+        .map((source) => source.id)
+        .toSet();
+    final pages = await registry.searchPage(
+      query,
+      host,
+      page: page,
+      enabledSourceIds: enabledSourceIds,
+      clearErrors: page == 1,
+      onSourcePageCompleted: (_, result) => onSourcePage?.call(result),
+    );
+    for (final entry in sourceErrors.entries) {
+      debug.add(
+        '${entry.key} 执行失败：${entry.value}',
+        level: DebugLogLevel.error,
+        category: 'Source',
+      );
+    }
+    debug.add(
+      '搜索第 $page 页完成，结果 ${pages.fold<int>(0, (total, item) => total + item.results.length)} 条',
+      category: 'App',
+    );
+    return pages;
+  }
+
   Future<AppDetails> details(AppListing app) async {
     await ready;
     return registry.details(app, host);
