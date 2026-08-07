@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:apk_mesh/core/models.dart';
 import 'package:apk_mesh/core/source_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -38,6 +40,34 @@ void main() {
       'Example App',
     );
   });
+
+  test(
+    'registry starts all enabled searches before awaiting results',
+    () async {
+      final gate = _SearchGate();
+      final registry = SourceRegistry(
+        scripts: [
+          _ConcurrentSource('first', gate),
+          _ConcurrentSource('second', gate),
+        ],
+      );
+      final completed = <String>[];
+      final search = registry.search(
+        'example',
+        DemoHostApi(),
+        onSourceCompleted: (source, _) => completed.add(source.id),
+      );
+
+      await gate.bothStarted.future;
+      expect(gate.started, 2);
+      expect(completed, isEmpty);
+
+      gate.release.complete();
+      final results = await search;
+      expect(completed, hasLength(2));
+      expect(results, hasLength(2));
+    },
+  );
 
   test('registry aggregates optional home and category APIs', () async {
     final registry = SourceRegistry(scripts: [ExampleCatalogSource()]);
@@ -136,6 +166,41 @@ class ExampleCatalogSource implements ApkSourceScript, SourceCatalogScript {
     comments: [],
     downloads: [],
   );
+}
+
+class _SearchGate {
+  int started = 0;
+  final bothStarted = Completer<void>();
+  final release = Completer<void>();
+}
+
+class _ConcurrentSource implements ApkSourceScript {
+  _ConcurrentSource(this.id, this.gate);
+
+  @override
+  final String id;
+  final _SearchGate gate;
+
+  @override
+  String get name => 'Concurrent $id';
+
+  @override
+  SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
+
+  @override
+  Future<List<AppListing>> search(String query, SourceHostApi host) async {
+    gate.started += 1;
+    if (gate.started == 2) gate.bothStarted.complete();
+    await gate.release.future;
+    return const [ExampleCatalogSource._app];
+  }
+
+  @override
+  Future<AppDetails> details(String appId, SourceHostApi host) async =>
+      ExampleCatalogSource._app;
+
+  @override
+  Future<void> dispose() async {}
 }
 
 class FailingSource implements ApkSourceScript {

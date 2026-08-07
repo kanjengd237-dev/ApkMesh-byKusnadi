@@ -107,7 +107,10 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<List<AppListing>> search(String query) async {
+  Future<List<AppListing>> search(
+    String query, {
+    void Function(List<AppListing> results)? onSourceResults,
+  }) async {
     await ready;
     debug.add('开始聚合搜索：${query.trim()}', category: 'App');
     final results = await registry.search(
@@ -117,6 +120,9 @@ class AppState extends ChangeNotifier {
           .where((source) => source.status == SourceStatus.enabled)
           .map((source) => source.id)
           .toSet(),
+      onSourceCompleted: (_, sourceResults) {
+        if (sourceResults.isNotEmpty) onSourceResults?.call(sourceResults);
+      },
     );
     for (final entry in sourceErrors.entries) {
       debug.add(

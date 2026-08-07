@@ -6,7 +6,7 @@ void main() {
   testWidgets('shows the four primary destinations', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
 
-    expect(find.text('发现应用'), findsOneWidget);
+    expect(find.text('发现应用'), findsNothing);
     expect(find.text('主页'), findsWidgets);
     expect(find.text('下载'), findsOneWidget);
     expect(find.text('源管理'), findsOneWidget);

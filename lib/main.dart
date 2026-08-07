@@ -254,6 +254,9 @@ class _HomePageState extends State<HomePage> {
   String _selectedTab = 'home';
   String? _loadedHomeSourceId;
   final Map<String, Future<SourceCategory>> _categoryLoads = {};
+  int _searchGeneration = 0;
+  GlobalKey<AnimatedListState> _resultsListKey = GlobalKey<AnimatedListState>();
+  int _animatedResultCount = 0;
 
   @override
   void initState() {
@@ -320,10 +323,14 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> search() async {
     final query = widget.controller.text.trim();
+    final generation = ++_searchGeneration;
+    _resultsListKey = GlobalKey<AnimatedListState>();
+    _animatedResultCount = 0;
     if (query.isEmpty) {
       setState(() {
         submittedQuery = null;
         results = const [];
+        loading = false;
         error = null;
         _selectedTab = 'home';
       });
@@ -338,11 +345,38 @@ class _HomePageState extends State<HomePage> {
       _selectedTab = 'all';
     });
     try {
-      final found = await widget.state.search(query);
-      if (mounted) {
+      final found = await widget.state.search(
+        query,
+        onSourceResults: (sourceResults) {
+          if (!mounted || generation != _searchGeneration) return;
+          final insertionIndex = results.length;
+          setState(() {
+            results = [...results, ...sourceResults];
+          });
+          final listKey = _resultsListKey;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || generation != _searchGeneration) return;
+            final animatedList = listKey.currentState;
+            if (animatedList == null) {
+              _animatedResultCount = results.length;
+              return;
+            }
+            for (var index = 0; index < sourceResults.length; index++) {
+              animatedList.insertItem(
+                insertionIndex + index,
+                duration: const Duration(milliseconds: 260),
+              );
+            }
+            _animatedResultCount += sourceResults.length;
+          });
+        },
+      );
+      if (mounted && generation == _searchGeneration) {
         setState(() {
-          results = found;
           loading = false;
+          if (results.length < found.length) {
+            results = [...results, ...found.skip(results.length)];
+          }
           if (found.isEmpty && widget.state.sourceErrors.isNotEmpty) {
             error = widget.state.sourceErrors.entries
                 .map((entry) => '${entry.key}：${entry.value}')
@@ -351,7 +385,7 @@ class _HomePageState extends State<HomePage> {
         });
       }
     } catch (searchError) {
-      if (mounted) {
+      if (mounted && generation == _searchGeneration) {
         setState(() {
           loading = false;
           error = searchError.toString();
@@ -483,6 +517,27 @@ class _HomePageState extends State<HomePage> {
     ];
   }
 
+  Widget _buildAnimatedResults(BuildContext context) {
+    return AnimatedList(
+      key: _resultsListKey,
+      initialItemCount: _animatedResultCount,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemBuilder: (context, index, animation) => SizeTransition(
+        sizeFactor: animation,
+        alignment: Alignment.topCenter,
+        child: FadeTransition(
+          opacity: animation,
+          child: AppResultTile(
+            app: results[index],
+            state: widget.state,
+            showDivider: index < results.length - 1,
+          ),
+        ),
+      ),
+    );
+  }
+
   List<Widget> _buildSearchContent(
     BuildContext context,
     _ContentTab activeTab,
@@ -490,11 +545,26 @@ class _HomePageState extends State<HomePage> {
     final visibleResults = activeTab.sourceId == null
         ? results
         : results.where((app) => app.sourceId == activeTab.sourceId).toList();
+    final resultList = activeTab.sourceId == null
+        ? _buildAnimatedResults(context)
+        : Column(
+            children: visibleResults
+                .asMap()
+                .entries
+                .map(
+                  (entry) => AppResultTile(
+                    app: entry.value,
+                    state: widget.state,
+                    showDivider: entry.key < visibleResults.length - 1,
+                  ),
+                )
+                .toList(),
+          );
     return [
       if (loading)
         const Center(
           child: Padding(
-            padding: EdgeInsets.all(32),
+            padding: EdgeInsets.all(20),
             child: CircularProgressIndicator(),
           ),
         ),
@@ -518,13 +588,7 @@ class _HomePageState extends State<HomePage> {
               ? '已在所有启用的源中搜索“$submittedQuery”。'
               : '当前源没有返回“$submittedQuery”的结果。',
         ),
-      ...visibleResults.asMap().entries.map(
-        (entry) => AppResultTile(
-          app: entry.value,
-          state: widget.state,
-          showDivider: entry.key < visibleResults.length - 1,
-        ),
-      ),
+      if (visibleResults.isNotEmpty) resultList,
     ];
   }
 
@@ -533,29 +597,29 @@ class _HomePageState extends State<HomePage> {
     final showingHome = submittedQuery == null;
     final tabs = _tabs;
     final activeTab = _activeTab(tabs);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+    return Column(
       children: [
-        Text('发现应用', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 8),
-        Text(
-          showingHome ? '主页与分类' : '按源筛选搜索结果',
-          style: Theme.of(context).textTheme.bodyLarge,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: _buildTabBar(context, tabs, activeTab),
         ),
-        const SizedBox(height: 16),
-        if (!widget.state.hasEnabledSource)
-          const EmptyMessage(
-            icon: Icons.hub_outlined,
-            title: '没有启用的源',
-            detail: '请先在源管理中启用一个源。',
-          )
-        else ...[
-          _buildTabBar(context, tabs, activeTab),
-          const SizedBox(height: 16),
-          ...(showingHome
-              ? _buildHomeContent(context, activeTab)
-              : _buildSearchContent(context, activeTab)),
-        ],
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+            children: [
+              if (!widget.state.hasEnabledSource)
+                const EmptyMessage(
+                  icon: Icons.hub_outlined,
+                  title: '没有启用的源',
+                  detail: '请先在源管理中启用一个源。',
+                )
+              else
+                ...(showingHome
+                    ? _buildHomeContent(context, activeTab)
+                    : _buildSearchContent(context, activeTab)),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -808,22 +872,10 @@ class DownloadsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tasks = state.downloads;
-    final active = tasks
-        .where(
-          (task) =>
-              task.status == DownloadStatus.downloading ||
-              task.status == DownloadStatus.paused,
-        )
-        .length;
-    final completed = tasks
-        .where((task) => task.status == DownloadStatus.completed)
-        .length;
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
       children: [
         Text('下载管理', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 8),
-        Text('$active 个进行中 · $completed 个已完成'),
         const SizedBox(height: 20),
         if (tasks.isEmpty)
           const EmptyMessage(
@@ -1005,21 +1057,11 @@ class SourcesPage extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        const Text('源脚本在隔离的 QuickJS 环境中运行，仅通过受控能力访问网络和文件。'),
-        const SizedBox(height: 4),
-        const Text('单选一个主页源，由它提供主页推荐应用和分类内容。'),
         const SizedBox(height: 20),
-        RadioGroup<String>(
-          groupValue: state.homeSourceId,
-          onChanged: (value) {
-            if (value != null) state.setHomeSource(value);
-          },
-          child: Column(
-            children: state.sources
-                .map((source) => SourceTile(source: source, state: state))
-                .toList(),
-          ),
+        Column(
+          children: state.sources
+              .map((source) => SourceTile(source: source, state: state))
+              .toList(),
         ),
       ],
     );
@@ -1089,34 +1131,47 @@ class SourceTile extends StatelessWidget {
         .length;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: CircleAvatar(
-          child: Icon(source.builtIn ? Icons.inventory_2_outlined : Icons.code),
-        ),
-        title: Text(source.name),
-        subtitle: Text(
-          '${source.description}\n${source.homepage} · v${source.version} · 调试项目 $debugProjectCount 个',
-        ),
-        isThreeLine: true,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+        child: Column(
           children: [
-            if (enabled)
-              Tooltip(
-                message: '设为主页与分类源',
-                child: Radio<String>(value: source.id, enabled: enabled),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                child: Icon(
+                  source.builtIn ? Icons.inventory_2_outlined : Icons.code,
+                ),
               ),
-            Switch(
-              value: enabled,
-              onChanged: (value) => state.toggleSource(source.id, value),
+              title: Text(source.name),
+              subtitle: Text(
+                '${source.description}\n${source.homepage} · v${source.version} · 调试项目 $debugProjectCount 个',
+              ),
+              isThreeLine: true,
             ),
-            if (!source.builtIn)
-              IconButton(
-                tooltip: '删除源',
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => state.removeSource(source.id),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ChoiceChip(
+                  label: const Text('主页'),
+                  selected: source.homeSource,
+                  onSelected: enabled
+                      ? (selected) {
+                          if (selected) state.setHomeSource(source.id);
+                        }
+                      : null,
+                ),
+                if (!source.builtIn)
+                  IconButton(
+                    tooltip: '删除源',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => state.removeSource(source.id),
+                  ),
+                Switch(
+                  value: enabled,
+                  onChanged: (value) => state.toggleSource(source.id, value),
+                ),
+              ],
+            ),
           ],
         ),
       ),

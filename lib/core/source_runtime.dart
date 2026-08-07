@@ -115,21 +115,33 @@ class SourceRegistry {
     String query,
     SourceHostApi host, {
     Set<String>? enabledSourceIds,
+    void Function(ApkSourceScript source, List<AppListing> results)?
+    onSourceCompleted,
   }) async {
-    final results = <AppListing>[];
     lastErrors.clear();
-    for (final script in scripts) {
-      if (enabledSourceIds != null && !enabledSourceIds.contains(script.id)) {
-        continue;
-      }
-      try {
-        results.addAll(await script.search(query, host));
-      } catch (error) {
-        // A broken source must not suppress successful results from other sources.
-        lastErrors[script.name] = error.toString();
-      }
-    }
-    return results;
+    final selectedScripts = scripts
+        .where(
+          (script) =>
+              enabledSourceIds == null || enabledSourceIds.contains(script.id),
+        )
+        .toList(growable: false);
+
+    // Start every source call before waiting for any result. The callback keeps
+    // the UI responsive while Future.wait preserves the aggregate API.
+    final batches = await Future.wait(
+      selectedScripts.map((script) async {
+        try {
+          final sourceResults = await script.search(query, host);
+          onSourceCompleted?.call(script, sourceResults);
+          return sourceResults;
+        } catch (error) {
+          // A broken source must not suppress successful results from others.
+          lastErrors[script.name] = error.toString();
+          return const <AppListing>[];
+        }
+      }),
+    );
+    return batches.expand((batch) => batch).toList(growable: false);
   }
 
   Future<AppDetails> details(AppListing app, SourceHostApi host) {
