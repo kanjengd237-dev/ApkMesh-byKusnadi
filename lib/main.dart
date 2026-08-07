@@ -698,6 +698,7 @@ class _HomePageState extends State<HomePage> {
                 .toList(),
           );
     return [
+      if (loading && visibleResults.isEmpty) const _SearchLoadingView(),
       if (!loading && error != null)
         Card(
           color: Theme.of(context).colorScheme.errorContainer,
@@ -755,6 +756,78 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SearchLoadingView extends StatefulWidget {
+  const _SearchLoadingView();
+
+  @override
+  State<_SearchLoadingView> createState() => _SearchLoadingViewState();
+}
+
+class _SearchLoadingViewState extends State<_SearchLoadingView>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 300,
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final sweep = -1.8 + (_controller.value * 3.6);
+            return ShaderMask(
+              blendMode: BlendMode.srcIn,
+              shaderCallback: (bounds) => LinearGradient(
+                begin: Alignment(sweep, 0),
+                end: Alignment(sweep + 0.9, 0),
+                colors: [
+                  scheme.primary.withValues(alpha: 0.45),
+                  scheme.primary,
+                  scheme.onPrimary,
+                  scheme.primary,
+                  scheme.primary.withValues(alpha: 0.45),
+                ],
+                stops: const [0, 0.3, 0.5, 0.7, 1],
+              ).createShader(bounds),
+              child: child,
+            );
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.manage_search, size: 88, color: scheme.primary),
+              const SizedBox(height: 16),
+              Text(
+                '正在搜索',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
