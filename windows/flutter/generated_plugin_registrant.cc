@@ -8,10 +8,13 @@
 
 #include <flutter_inappwebview_windows/flutter_inappwebview_windows_plugin_c_api.h>
 #include <flutter_js/flutter_js_plugin.h>
+#include <gal/gal_plugin_c_api.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
   FlutterInappwebviewWindowsPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterInappwebviewWindowsPluginCApi"));
   FlutterJsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterJsPlugin"));
+  GalPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("GalPluginCApi"));
 }

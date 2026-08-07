@@ -2,6 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
+import 'package:photo_view/photo_view.dart';
+import 'package:photo_view/photo_view_gallery.dart';
 
 import 'core/app_state.dart';
 import 'core/debug_log.dart';
@@ -65,7 +69,9 @@ class Shell extends StatefulWidget {
 
 class _ShellState extends State<Shell> {
   int index = 0;
+  bool searchOpen = false;
   final searchController = TextEditingController();
+  final homeKey = GlobalKey<_HomePageState>();
 
   @override
   void dispose() {
@@ -76,7 +82,7 @@ class _ShellState extends State<Shell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      HomePage(state: widget.state, controller: searchController),
+      HomePage(key: homeKey, state: widget.state, controller: searchController),
       DownloadsPage(state: widget.state),
       SourcesPage(state: widget.state),
       SettingsPage(state: widget.state),
@@ -108,8 +114,44 @@ class _ShellState extends State<Shell> {
         final wide = constraints.maxWidth >= 760;
         return Scaffold(
           appBar: AppBar(
-            title: const Text('APK Mesh'),
+            title: searchOpen
+                ? SizedBox(
+                    width: (constraints.maxWidth - 160).clamp(140.0, 520.0),
+                    height: 46,
+                    child: TextField(
+                      controller: searchController,
+                      autofocus: true,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _submitSearch(),
+                      decoration: InputDecoration(
+                        hintText: '搜索应用名称或包名',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        suffixIcon: IconButton(
+                          tooltip: '清空搜索',
+                          onPressed: searchController.clear,
+                          icon: const Icon(Icons.clear, size: 20),
+                        ),
+                        filled: true,
+                        fillColor: Theme.of(context).colorScheme.surface,
+                        border: const OutlineInputBorder(),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  )
+                : const Text('APK Mesh'),
             actions: [
+              if (!searchOpen)
+                IconButton(
+                  tooltip: '搜索',
+                  onPressed: _openSearch,
+                  icon: const Icon(Icons.search),
+                )
+              else
+                IconButton(
+                  tooltip: '关闭搜索',
+                  onPressed: () => setState(() => searchOpen = false),
+                  icon: const Icon(Icons.close),
+                ),
               IconButton(
                 tooltip: '调试',
                 onPressed: () => _showDebugSheet(context),
@@ -166,6 +208,21 @@ class _ShellState extends State<Shell> {
     );
   }
 
+  void _openSearch() {
+    setState(() {
+      index = 0;
+      searchOpen = true;
+    });
+  }
+
+  Future<void> _submitSearch() async {
+    setState(() {
+      index = 0;
+      searchOpen = false;
+    });
+    await homeKey.currentState?.search();
+  }
+
   void _showDebugSheet(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
@@ -187,12 +244,62 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   List<AppListing> results = const [];
+  SourceHome home = const SourceHome();
   bool loading = false;
+  bool homeLoading = true;
+  bool homeLoaded = false;
   String? error;
+  String? homeError;
   String? submittedQuery;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHome();
+  }
+
+  Future<void> _loadHome() async {
+    if (homeLoaded) return;
+    setState(() {
+      homeLoading = true;
+      homeError = null;
+    });
+    try {
+      final content = await widget.state.home();
+      if (!mounted) return;
+      setState(() {
+        home = content;
+        homeLoading = false;
+        homeLoaded = true;
+        if (content.recommended.isEmpty &&
+            content.categories.isEmpty &&
+            widget.state.sourceErrors.isNotEmpty) {
+          homeError = widget.state.sourceErrors.entries
+              .map((entry) => '${entry.key}：${entry.value}')
+              .join('\n');
+        }
+      });
+    } catch (loadError) {
+      if (!mounted) return;
+      setState(() {
+        homeLoading = false;
+        homeLoaded = true;
+        homeError = loadError.toString();
+      });
+    }
+  }
 
   Future<void> search() async {
     final query = widget.controller.text.trim();
+    if (query.isEmpty) {
+      setState(() {
+        submittedQuery = null;
+        results = const [];
+        error = null;
+      });
+      await _loadHome();
+      return;
+    }
     setState(() {
       loading = true;
       error = null;
@@ -223,74 +330,226 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final showingHome = submittedQuery == null;
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
       children: [
         Text('发现应用', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 8),
-        Text('从已启用的源聚合搜索结果', style: Theme.of(context).textTheme.bodyLarge),
-        const SizedBox(height: 24),
-        TextField(
-          controller: widget.controller,
-          textInputAction: TextInputAction.search,
-          onSubmitted: (_) => search(),
-          decoration: InputDecoration(
-            hintText: '搜索应用名称或包名',
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: IconButton(
-              tooltip: '开始搜索',
-              onPressed: loading ? null : search,
-              icon: const Icon(Icons.arrow_forward),
-            ),
-          ),
+        Text(
+          showingHome ? '推荐应用与分类' : '从已启用的源聚合搜索结果',
+          style: Theme.of(context).textTheme.bodyLarge,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
         if (!widget.state.hasEnabledSource)
           const EmptyMessage(
             icon: Icons.hub_outlined,
             title: '没有启用的源',
             detail: '请先在源管理中启用一个源。',
-          ),
-        if (loading)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(32),
-              child: CircularProgressIndicator(),
-            ),
-          ),
-        if (!loading && error != null)
-          Card(
-            color: Theme.of(context).colorScheme.errorContainer,
-            child: ListTile(
-              leading: Icon(
-                Icons.error_outline,
-                color: Theme.of(context).colorScheme.onErrorContainer,
+          )
+        else if (showingHome)
+          ..._buildHome(context)
+        else ...[
+          if (loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(),
               ),
-              title: const Text('源执行失败'),
-              subtitle: Text(error!),
+            ),
+          if (!loading && error != null)
+            Card(
+              color: Theme.of(context).colorScheme.errorContainer,
+              child: ListTile(
+                leading: Icon(
+                  Icons.error_outline,
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
+                title: const Text('源执行失败'),
+                subtitle: Text(error!),
+              ),
+            ),
+          if (!loading && error == null && results.isEmpty)
+            EmptyMessage(
+              icon: Icons.manage_search,
+              title: '未找到结果',
+              detail: '已在所有启用的源中搜索“$submittedQuery”。',
+            ),
+          ...results.asMap().entries.map(
+            (entry) => AppResultTile(
+              app: entry.value,
+              state: widget.state,
+              showDivider: entry.key < results.length - 1,
             ),
           ),
-        if (!loading &&
-            error == null &&
-            results.isEmpty &&
-            widget.state.hasEnabledSource)
-          EmptyMessage(
-            icon: Icons.manage_search,
-            title: submittedQuery == null ? '输入关键词开始搜索' : '未找到结果',
-            detail: submittedQuery == null
-                ? '结果会合并所有已启用源的数据。'
-                : submittedQuery!.isEmpty
-                ? '请输入应用名称或包名。'
-                : '已在所有启用的源中搜索“$submittedQuery”。',
+        ],
+      ],
+    );
+  }
+
+  List<Widget> _buildHome(BuildContext context) {
+    if (homeLoading) {
+      return const [
+        Padding(
+          padding: EdgeInsets.all(32),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (homeError != null &&
+        home.recommended.isEmpty &&
+        home.categories.isEmpty) {
+      return [
+        Card(
+          color: Theme.of(context).colorScheme.errorContainer,
+          child: ListTile(
+            leading: const Icon(Icons.error_outline),
+            title: const Text('首页内容加载失败'),
+            subtitle: Text(homeError!),
           ),
-        ...results.asMap().entries.map(
+        ),
+      ];
+    }
+    if (home.recommended.isEmpty && home.categories.isEmpty) {
+      return const [
+        EmptyMessage(
+          icon: Icons.home_work_outlined,
+          title: '暂无首页内容',
+          detail: '已启用的源尚未提供推荐应用或分类。',
+        ),
+      ];
+    }
+
+    final widgets = <Widget>[];
+    final recommended = home.recommended.take(12).toList();
+    if (recommended.isNotEmpty) {
+      widgets.add(Text('推荐应用', style: Theme.of(context).textTheme.titleLarge));
+      widgets.add(const SizedBox(height: 8));
+      widgets.addAll(
+        recommended.asMap().entries.map(
           (entry) => AppResultTile(
             app: entry.value,
             state: widget.state,
-            showDivider: entry.key < results.length - 1,
+            showDivider: entry.key < recommended.length - 1,
           ),
         ),
-      ],
+      );
+    }
+    if (home.categories.isNotEmpty) {
+      if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 20));
+      widgets.add(Text('分类', style: Theme.of(context).textTheme.titleLarge));
+      widgets.add(const SizedBox(height: 8));
+      widgets.addAll(
+        home.categories.map(
+          (category) => _CategoryTile(
+            category: category,
+            onTap: () => _openCategory(context, category),
+          ),
+        ),
+      );
+    }
+    return widgets;
+  }
+
+  void _openCategory(BuildContext context, SourceCategory category) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => CategorySheet(category: category, state: widget.state),
+    );
+  }
+}
+
+class _CategoryTile extends StatelessWidget {
+  const _CategoryTile({required this.category, required this.onTap});
+  final SourceCategory category;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = [
+      category.sourceName,
+      category.description,
+    ].where((value) => value.trim().isNotEmpty).join(' · ');
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: const Icon(Icons.category_outlined),
+        title: Text(category.name),
+        subtitle: detail.isEmpty ? null : Text(detail),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class CategorySheet extends StatefulWidget {
+  const CategorySheet({required this.category, required this.state, super.key});
+  final SourceCategory category;
+  final AppState state;
+
+  @override
+  State<CategorySheet> createState() => _CategorySheetState();
+}
+
+class _CategorySheetState extends State<CategorySheet> {
+  late final Future<SourceCategory> category = widget.category.apps.isNotEmpty
+      ? Future<SourceCategory>.value(widget.category)
+      : widget.state.category(widget.category);
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: .78,
+      minChildSize: .45,
+      maxChildSize: .94,
+      builder: (_, controller) => FutureBuilder<SourceCategory>(
+        future: category,
+        builder: (context, snapshot) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.category.name,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ),
+                IconButton(
+                  tooltip: '关闭',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            Text(widget.category.sourceName),
+            const SizedBox(height: 20),
+            if (snapshot.connectionState == ConnectionState.waiting)
+              const Center(child: CircularProgressIndicator())
+            else if (snapshot.hasError)
+              Text('分类加载失败：${snapshot.error}')
+            else if (snapshot.data!.apps.isEmpty)
+              const EmptyMessage(
+                icon: Icons.apps_outage_outlined,
+                title: '分类暂无应用',
+                detail: '该源没有返回可用应用。',
+              )
+            else
+              ...snapshot.data!.apps.asMap().entries.map(
+                (entry) => AppResultTile(
+                  app: entry.value,
+                  state: widget.state,
+                  showDivider: entry.key < snapshot.data!.apps.length - 1,
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -478,7 +737,11 @@ class DownloadsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final tasks = state.downloads;
     final active = tasks
-        .where((task) => task.status == DownloadStatus.downloading)
+        .where(
+          (task) =>
+              task.status == DownloadStatus.downloading ||
+              task.status == DownloadStatus.paused,
+        )
         .length;
     final completed = tasks
         .where((task) => task.status == DownloadStatus.completed)
@@ -513,8 +776,10 @@ class _DownloadTaskTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final (icon, color) = switch (task.status) {
       DownloadStatus.downloading => (Icons.downloading, scheme.primary),
+      DownloadStatus.paused => (Icons.pause_circle_outline, scheme.tertiary),
       DownloadStatus.completed => (Icons.check_circle_outline, scheme.primary),
       DownloadStatus.failed => (Icons.error_outline, scheme.error),
+      DownloadStatus.canceled => (Icons.cancel_outlined, scheme.outline),
     };
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -526,12 +791,40 @@ class _DownloadTaskTile extends StatelessWidget {
             title: Text(task.file.label),
             subtitle: Text(_downloadTaskDetail(task)),
             trailing: switch (task.status) {
-              DownloadStatus.downloading => const SizedBox(
-                width: 48,
-                height: 48,
-                child: Padding(
-                  padding: EdgeInsets.all(12),
-                  child: CircularProgressIndicator(strokeWidth: 2),
+              DownloadStatus.downloading => SizedBox(
+                width: 104,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      tooltip: '暂停下载',
+                      icon: const Icon(Icons.pause),
+                      onPressed: () => state.pauseDownload(task),
+                    ),
+                    IconButton(
+                      tooltip: '取消下载',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => state.cancelDownload(task),
+                    ),
+                  ],
+                ),
+              ),
+              DownloadStatus.paused => SizedBox(
+                width: 104,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      tooltip: '继续下载',
+                      icon: const Icon(Icons.play_arrow),
+                      onPressed: () => state.resumeDownload(task),
+                    ),
+                    IconButton(
+                      tooltip: '取消下载',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => state.cancelDownload(task),
+                    ),
+                  ],
                 ),
               ),
               DownloadStatus.completed => IconButton(
@@ -544,9 +837,15 @@ class _DownloadTaskTile extends StatelessWidget {
                 icon: const Icon(Icons.refresh),
                 onPressed: () => state.retryDownload(task),
               ),
+              DownloadStatus.canceled => IconButton(
+                tooltip: '重新下载',
+                icon: const Icon(Icons.refresh),
+                onPressed: () => state.retryDownload(task),
+              ),
             },
           ),
-          if (task.status == DownloadStatus.downloading)
+          if (task.status == DownloadStatus.downloading ||
+              task.status == DownloadStatus.paused)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: LinearProgressIndicator(value: task.progress),
@@ -568,10 +867,17 @@ String _downloadTaskDetail(DownloadTask task) {
       return task.received > 0
           ? '已下载 ${_formatByteCount(task.received)}'
           : '正在连接';
+    case DownloadStatus.paused:
+      final progress = task.received > 0
+          ? '已下载 ${_formatByteCount(task.received)}'
+          : '尚未开始传输';
+      return '已暂停 · $progress';
     case DownloadStatus.completed:
       return '下载完成\n${task.filePath ?? task.file.size}';
     case DownloadStatus.failed:
       return '下载失败\n${task.error ?? '未知错误'}';
+    case DownloadStatus.canceled:
+      return '已取消';
   }
 }
 
@@ -1558,8 +1864,15 @@ class _DetailsSheetState extends State<DetailsSheet> {
                           widget.app.name,
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
-                        Text(widget.app.packageName),
-                        Text('${widget.app.version} · ${widget.app.size}'),
+                        if (widget.app.packageName.trim().isNotEmpty)
+                          Text(widget.app.packageName),
+                        if (widget.app.version.trim().isNotEmpty ||
+                            widget.app.size.trim().isNotEmpty)
+                          Text(
+                            [widget.app.version, widget.app.size]
+                                .where((value) => value.trim().isNotEmpty)
+                                .join(' · '),
+                          ),
                       ],
                     ),
                   ),
@@ -1572,33 +1885,402 @@ class _DetailsSheetState extends State<DetailsSheet> {
                   child: Center(child: CircularProgressIndicator()),
                 ),
               if (snapshot.hasError) Text('源详情加载失败：${snapshot.error}'),
-              if (snapshot.hasData) ...[
-                Text(snapshot.data!.description),
-                const SizedBox(height: 24),
-                Text('下载文件', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                ...snapshot.data!.downloads.map(
-                  (file) => _SourceDownloadTile(
-                    file: file,
-                    sourceId: widget.app.sourceId,
-                    state: widget.state,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text('评论', style: Theme.of(context).textTheme.titleMedium),
-                ...snapshot.data!.comments.map(
-                  (comment) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.comment_outlined),
-                    title: Text(comment),
-                  ),
-                ),
-              ],
+              if (snapshot.hasData)
+                ..._buildDetailContent(context, snapshot.data!),
             ],
           ),
         ),
       ),
     );
+  }
+
+  List<Widget> _buildDetailContent(BuildContext context, AppDetails detail) {
+    final content = <Widget>[];
+    if (detail.summary.trim().isNotEmpty) {
+      content.add(Text(detail.summary));
+      content.add(const SizedBox(height: 12));
+    }
+    if (detail.description.trim().isNotEmpty) {
+      content.add(_ExpandableDescription(text: detail.description));
+      content.add(const SizedBox(height: 20));
+    }
+    if (detail.screenshots.isNotEmpty) {
+      content.add(Text('截图', style: Theme.of(context).textTheme.titleMedium));
+      content.add(const SizedBox(height: 8));
+      content.add(_ScreenshotGallery(urls: detail.screenshots));
+      content.add(const SizedBox(height: 20));
+    }
+    if (detail.downloads.isNotEmpty) {
+      content.add(Text('下载文件', style: Theme.of(context).textTheme.titleMedium));
+      content.add(const SizedBox(height: 8));
+      content.addAll(
+        detail.downloads.map(
+          (file) => _SourceDownloadTile(
+            file: file,
+            sourceId: widget.app.sourceId,
+            state: widget.state,
+          ),
+        ),
+      );
+    }
+    if (detail.comments.isNotEmpty) {
+      if (content.isNotEmpty) content.add(const SizedBox(height: 20));
+      content.add(Text('评论', style: Theme.of(context).textTheme.titleMedium));
+      content.addAll(
+        detail.comments.map(
+          (comment) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.comment_outlined),
+            title: Text(comment),
+          ),
+        ),
+      );
+    }
+    return content;
+  }
+}
+
+class _ExpandableDescription extends StatefulWidget {
+  const _ExpandableDescription({required this.text});
+  final String text;
+
+  @override
+  State<_ExpandableDescription> createState() => _ExpandableDescriptionState();
+}
+
+class _ExpandableDescriptionState extends State<_ExpandableDescription> {
+  bool expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textStyle = DefaultTextStyle.of(context).style;
+        final scheme = Theme.of(context).colorScheme;
+        final suffixStyle = textStyle.copyWith(
+          color: scheme.primary,
+          fontWeight: FontWeight.w600,
+        );
+        final direction = Directionality.of(context);
+        final fullPainter = TextPainter(
+          text: TextSpan(text: widget.text, style: textStyle),
+          maxLines: 3,
+          textDirection: direction,
+        )..layout(maxWidth: constraints.maxWidth);
+        final canExpand = fullPainter.didExceedMaxLines;
+        final span = expanded || !canExpand
+            ? TextSpan(text: widget.text, style: textStyle)
+            : _collapsedSpan(
+                textStyle: textStyle,
+                suffixStyle: suffixStyle,
+                direction: direction,
+                maxWidth: constraints.maxWidth > 16
+                    ? constraints.maxWidth - 16
+                    : constraints.maxWidth,
+              );
+        final text = AnimatedSize(
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: Text.rich(
+            span,
+            maxLines: expanded || !canExpand ? null : 3,
+            overflow: TextOverflow.clip,
+          ),
+        );
+        if (!canExpand) return text;
+        return Material(
+          color: scheme.surfaceContainerLow.withValues(alpha: .45),
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(() => expanded = !expanded),
+            child: Padding(padding: const EdgeInsets.all(8), child: text),
+          ),
+        );
+      },
+    );
+  }
+
+  TextSpan _collapsedSpan({
+    required TextStyle textStyle,
+    required TextStyle suffixStyle,
+    required TextDirection direction,
+    required double maxWidth,
+  }) {
+    const suffix = '... 点击展开';
+    final codePoints = widget.text.runes.toList();
+
+    bool fits(int count) {
+      final prefix = String.fromCharCodes(codePoints.take(count));
+      final painter = TextPainter(
+        text: TextSpan(
+          children: [
+            TextSpan(text: prefix, style: textStyle),
+            TextSpan(text: suffix, style: suffixStyle),
+          ],
+        ),
+        maxLines: 3,
+        textDirection: direction,
+      )..layout(maxWidth: maxWidth);
+      return !painter.didExceedMaxLines;
+    }
+
+    var low = 0;
+    var high = codePoints.length;
+    while (low < high) {
+      final middle = (low + high + 1) ~/ 2;
+      if (fits(middle)) {
+        low = middle;
+      } else {
+        high = middle - 1;
+      }
+    }
+    return TextSpan(
+      children: [
+        TextSpan(
+          text: String.fromCharCodes(codePoints.take(low)).trimRight(),
+          style: textStyle,
+        ),
+        TextSpan(text: suffix, style: suffixStyle),
+      ],
+    );
+  }
+}
+
+class _ScreenshotGallery extends StatelessWidget {
+  const _ScreenshotGallery({required this.urls});
+  final List<String> urls;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 190,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: urls.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (context, index) => _ScreenshotThumbnail(
+          url: urls[index],
+          onTap: () => _showScreenshot(context, index),
+        ),
+      ),
+    );
+  }
+
+  void _showScreenshot(BuildContext context, int index) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _ScreenshotViewer(urls: urls, initialIndex: index),
+    );
+  }
+}
+
+class _ScreenshotThumbnail extends StatefulWidget {
+  const _ScreenshotThumbnail({required this.url, required this.onTap});
+  final String url;
+  final VoidCallback onTap;
+
+  @override
+  State<_ScreenshotThumbnail> createState() => _ScreenshotThumbnailState();
+}
+
+class _ScreenshotThumbnailState extends State<_ScreenshotThumbnail> {
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageListener;
+  double _aspectRatio = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveImage();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ScreenshotThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _removeImageListener();
+      _aspectRatio = 1;
+      _resolveImage();
+    }
+  }
+
+  void _resolveImage() {
+    final stream = NetworkImage(widget.url).resolve(const ImageConfiguration());
+    final listener = ImageStreamListener((info, _) {
+      final image = info.image;
+      if (!mounted || image.height == 0) return;
+      final ratio = image.width / image.height;
+      if ((ratio - _aspectRatio).abs() > .01) {
+        setState(() => _aspectRatio = ratio);
+      }
+    });
+    _imageStream = stream;
+    _imageListener = listener;
+    stream.addListener(listener);
+  }
+
+  void _removeImageListener() {
+    final stream = _imageStream;
+    final listener = _imageListener;
+    if (stream != null && listener != null) stream.removeListener(listener);
+    _imageStream = null;
+    _imageListener = null;
+  }
+
+  @override
+  void dispose() {
+    _removeImageListener();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = (190 * _aspectRatio).clamp(112.0, 360.0);
+    return SizedBox(
+      width: width,
+      height: 190,
+      child: Material(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: widget.onTap,
+          child: Image.network(
+            widget.url,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) =>
+                const Center(child: Icon(Icons.broken_image_outlined)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScreenshotViewer extends StatefulWidget {
+  const _ScreenshotViewer({required this.urls, required this.initialIndex});
+  final List<String> urls;
+  final int initialIndex;
+
+  @override
+  State<_ScreenshotViewer> createState() => _ScreenshotViewerState();
+}
+
+class _ScreenshotViewerState extends State<_ScreenshotViewer> {
+  late final PageController _pageController;
+  late int _currentIndex;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          title: Text('${_currentIndex + 1} / ${widget.urls.length}'),
+          actions: [
+            IconButton(
+              tooltip: '保存图片',
+              onPressed: _saving ? null : _saveCurrent,
+              icon: _saving
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.download_outlined),
+            ),
+            IconButton(
+              tooltip: '关闭',
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+        body: PhotoViewGallery.builder(
+          pageController: _pageController,
+          itemCount: widget.urls.length,
+          onPageChanged: (index) => setState(() => _currentIndex = index),
+          backgroundDecoration: const BoxDecoration(color: Colors.black),
+          loadingBuilder: (context, event) => const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
+          builder: (context, index) => PhotoViewGalleryPageOptions(
+            imageProvider: NetworkImage(widget.urls[index]),
+            initialScale: PhotoViewComputedScale.contained,
+            minScale: PhotoViewComputedScale.contained * .8,
+            maxScale: PhotoViewComputedScale.covered * 3,
+            errorBuilder: (_, _, _) => const Center(
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: Colors.white,
+                size: 48,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveCurrent() async {
+    setState(() => _saving = true);
+    try {
+      final response = await http.get(Uri.parse(widget.urls[_currentIndex]));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('图片请求失败：HTTP ${response.statusCode}');
+      }
+      await Gal.putImageBytes(
+        response.bodyBytes,
+        album: 'APK Mesh',
+        name: _imageName(widget.urls[_currentIndex], _currentIndex),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('图片已保存到系统相册')));
+    } on GalException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('保存图片失败：${error.toString()}')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('保存图片失败：$error')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  String _imageName(String url, int index) {
+    final path = Uri.tryParse(url)?.path ?? '';
+    final parts = path.split('/').where((part) => part.isNotEmpty).toList();
+    final last = parts.isEmpty ? null : parts.last;
+    final base = (last ?? '')
+        .replaceFirst(RegExp(r'\.[A-Za-z0-9]+$'), '')
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    return base.isEmpty ? 'apkmesh_screenshot_${index + 1}' : 'apkmesh_$base';
   }
 }
 
@@ -1619,26 +2301,30 @@ class _SourceDownloadTile extends StatelessWidget {
       animation: state,
       builder: (context, _) {
         final task = state.downloadFor(file.url);
-        final detail = task == null
-            ? file.size
-            : '${file.size}\n${_downloadTaskDetail(task)}';
+        final detail = [
+          if (file.size.trim().isNotEmpty) file.size,
+          if (task != null) _downloadTaskDetail(task),
+        ].join('\n');
         return Column(
           children: [
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                task?.status == DownloadStatus.completed
-                    ? Icons.check_circle_outline
-                    : Icons.file_download_outlined,
-              ),
+              leading: Icon(switch (task?.status) {
+                DownloadStatus.completed => Icons.check_circle_outline,
+                DownloadStatus.paused => Icons.pause_circle_outline,
+                DownloadStatus.canceled => Icons.cancel_outlined,
+                DownloadStatus.failed => Icons.error_outline,
+                _ => Icons.file_download_outlined,
+              }),
               title: Text(file.label),
-              subtitle: Text(detail),
+              subtitle: detail.isEmpty ? null : Text(detail),
               trailing: SizedBox(
                 width: 112,
                 child: _downloadButton(context, task),
               ),
             ),
-            if (task?.status == DownloadStatus.downloading)
+            if (task?.status == DownloadStatus.downloading ||
+                task?.status == DownloadStatus.paused)
               Padding(
                 padding: const EdgeInsets.only(left: 56, bottom: 8),
                 child: LinearProgressIndicator(value: task?.progress),
@@ -1654,14 +2340,37 @@ class _SourceDownloadTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10),
     );
     if (task?.status == DownloadStatus.downloading) {
-      return FilledButton.icon(
-        style: style,
-        onPressed: null,
-        icon: const SizedBox.square(
-          dimension: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        label: const Text('下载中'),
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          IconButton(
+            tooltip: '暂停下载',
+            onPressed: () => state.pauseDownload(task!),
+            icon: const Icon(Icons.pause),
+          ),
+          IconButton(
+            tooltip: '取消下载',
+            onPressed: () => state.cancelDownload(task!),
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      );
+    }
+    if (task?.status == DownloadStatus.paused) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          IconButton(
+            tooltip: '继续下载',
+            onPressed: () => state.resumeDownload(task!),
+            icon: const Icon(Icons.play_arrow),
+          ),
+          IconButton(
+            tooltip: '取消下载',
+            onPressed: () => state.cancelDownload(task!),
+            icon: const Icon(Icons.close),
+          ),
+        ],
       );
     }
     if (task?.status == DownloadStatus.completed) {
@@ -1672,7 +2381,9 @@ class _SourceDownloadTile extends StatelessWidget {
         label: const Text('安装'),
       );
     }
-    final retry = task?.status == DownloadStatus.failed;
+    final retry =
+        task?.status == DownloadStatus.failed ||
+        task?.status == DownloadStatus.canceled;
     return FilledButton.icon(
       style: style,
       onPressed: () {

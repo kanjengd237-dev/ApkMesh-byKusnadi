@@ -45,6 +45,23 @@ void main() {
     );
   });
 
+  test('registry aggregates optional home and category APIs', () async {
+    final registry = SourceRegistry(scripts: [ApkVisionDemoScript()]);
+    final home = await registry.home(
+      DemoHostApi(),
+      enabledSourceIds: {'apkvision-demo'},
+    );
+
+    expect(home.recommended.single.name, 'Minecraft');
+    expect(home.categories.single.name, 'Arcade');
+
+    final category = await registry.category(
+      home.categories.single,
+      DemoHostApi(),
+    );
+    expect(category.apps.single.name, 'Minecraft');
+  });
+
   test('registry exposes source failures for the UI', () async {
     final registry = SourceRegistry(scripts: [FailingSource()]);
     await registry.search(

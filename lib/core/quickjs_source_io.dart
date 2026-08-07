@@ -22,7 +22,8 @@ Future<ApkSourceScript?> loadQuickJsSource(
   return source;
 }
 
-class QuickJsApkSourceScript implements ApkSourceScript, DebugProjectSource {
+class QuickJsApkSourceScript
+    implements ApkSourceScript, DebugProjectSource, SourceCatalogScript {
   QuickJsApkSourceScript(this.scriptText, {this._debug}) {
     _runtime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: false);
     _installBridge();
@@ -36,6 +37,7 @@ class QuickJsApkSourceScript implements ApkSourceScript, DebugProjectSource {
   String? _sourceName;
   List<SourceDebugProject> _debugProjects = const [];
   SourceHostApi? _host;
+  bool _hasCatalog = false;
   bool _disposed = false;
 
   void _log(String message, {DebugLogLevel level = DebugLogLevel.info}) {
@@ -153,6 +155,11 @@ class QuickJsApkSourceScript implements ApkSourceScript, DebugProjectSource {
     _sourceName = manifest['name'] as String?;
     _debugProjects = _parseDebugProjects(manifest['debugProjects']);
     final permissions = _dynamicMap(manifest['permissions']);
+    _hasCatalog =
+        await _evaluateJson(
+          'JSON.stringify(typeof source.home === "function" && typeof source.category === "function")',
+        ) ==
+        true;
     final hosts = (permissions['network'] as List? ?? const [])
         .map((item) => item.toString())
         .toSet();
@@ -254,6 +261,25 @@ class QuickJsApkSourceScript implements ApkSourceScript, DebugProjectSource {
   }
 
   @override
+  bool get supportsCatalog => _hasCatalog;
+
+  @override
+  Future<SourceHome> home(SourceHostApi host) async {
+    final value = await _callWithArguments('home', const [], host);
+    final item = _dynamicMap(value);
+    return SourceHome(
+      recommended: _dynamicList(item['recommended']).map(_listing).toList(),
+      categories: _dynamicList(item['categories']).map(_category).toList(),
+    );
+  }
+
+  @override
+  Future<SourceCategory> category(String categoryId, SourceHostApi host) async {
+    final value = await _call('category', categoryId, host);
+    return _category(_dynamicMap(value));
+  }
+
+  @override
   Future<List<AppListing>> search(String query, SourceHostApi host) async {
     final value = await _call('search', query, host);
     return (value as List).map((item) => _listing(_dynamicMap(item))).toList();
@@ -277,6 +303,15 @@ class QuickJsApkSourceScript implements ApkSourceScript, DebugProjectSource {
     sourceName: name,
     iconUrl: (item['iconUrl'] ?? '').toString(),
     summary: (item['summary'] ?? '').toString(),
+  );
+
+  SourceCategory _category(Map<String, dynamic> item) => SourceCategory(
+    id: (item['id'] ?? item['url'] ?? '').toString(),
+    name: (item['name'] ?? '').toString(),
+    sourceId: id,
+    sourceName: name,
+    description: (item['description'] ?? '').toString(),
+    apps: _dynamicList(item['apps']).map(_listing).toList(),
   );
 
   AppDetails _details(Map<String, dynamic> item) => AppDetails(
@@ -305,8 +340,12 @@ class QuickJsApkSourceScript implements ApkSourceScript, DebugProjectSource {
         .toList(),
   );
 
-  List<String> _strings(dynamic value) =>
-      value is List ? value.map((item) => item.toString()).toList() : const [];
+  List<String> _strings(dynamic value) => value is List
+      ? value
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty)
+            .toList()
+      : const [];
   List<Map<String, dynamic>> _dynamicList(dynamic value) => value is List
       ? value
             .whereType<Map>()

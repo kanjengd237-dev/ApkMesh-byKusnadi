@@ -32,6 +32,7 @@ class AppState extends ChangeNotifier {
   final DebugLogStore debug = DebugLogStore();
   late final SourceHostApi host = createPlatformHostApi(debug: debug);
   final DownloadNotifications _downloadNotifications = DownloadNotifications();
+  final Completer<void> _ready = Completer<void>();
   final List<DownloadTask> _downloads = [];
   final Map<String, int> _pendingDownloadBytes = {};
   final Map<String, int?> _pendingDownloadTotals = {};
@@ -42,6 +43,7 @@ class AppState extends ChangeNotifier {
   List<ApkSource> get sources => List.unmodifiable(_sources);
   List<DownloadTask> get downloads => List.unmodifiable(_downloads);
   bool get sourceRuntimeReady => _sourceRuntimeReady;
+  Future<void> get ready => _ready.future;
   String? get runtimeError => _runtimeError;
   Map<String, String> get sourceErrors => Map.unmodifiable(registry.lastErrors);
   bool get hasEnabledSource =>
@@ -70,10 +72,13 @@ class AppState extends ChangeNotifier {
         category: 'App',
       );
       notifyListeners();
+    } finally {
+      if (!_ready.isCompleted) _ready.complete();
     }
   }
 
   Future<List<AppListing>> search(String query) async {
+    await ready;
     debug.add('开始聚合搜索：${query.trim()}', category: 'App');
     final results = await registry.search(
       query,
@@ -94,7 +99,26 @@ class AppState extends ChangeNotifier {
     return results;
   }
 
-  Future<AppDetails> details(AppListing app) => registry.details(app, host);
+  Future<AppDetails> details(AppListing app) async {
+    await ready;
+    return registry.details(app, host);
+  }
+
+  Future<SourceHome> home() async {
+    await ready;
+    return registry.home(
+      host,
+      enabledSourceIds: _sources
+          .where((source) => source.status == SourceStatus.enabled)
+          .map((source) => source.id)
+          .toSet(),
+    );
+  }
+
+  Future<SourceCategory> category(SourceCategory category) async {
+    await ready;
+    return registry.category(category, host);
+  }
 
   Future<DebugProjectResult> runDebugProject(
     SourceDebugProject project,
@@ -133,7 +157,14 @@ class AppState extends ChangeNotifier {
 
   DownloadTask startDownload(SourceDownload file, String sourceId) {
     final existing = downloadFor(file.url);
-    if (existing != null && existing.status != DownloadStatus.failed) {
+    if (existing != null && existing.status == DownloadStatus.downloading) {
+      return existing;
+    }
+    if (existing != null && existing.status == DownloadStatus.paused) {
+      unawaited(resumeDownload(existing));
+      return existing;
+    }
+    if (existing != null && existing.status == DownloadStatus.completed) {
       return existing;
     }
 
@@ -167,8 +198,73 @@ class AppState extends ChangeNotifier {
     return task;
   }
 
-  DownloadTask retryDownload(DownloadTask task) =>
-      startDownload(task.file, task.sourceId);
+  DownloadTask retryDownload(DownloadTask task) {
+    if (task.status == DownloadStatus.paused) {
+      unawaited(resumeDownload(task));
+      return task;
+    }
+    return startDownload(task.file, task.sourceId);
+  }
+
+  Future<void> pauseDownload(DownloadTask task) async {
+    final current = _downloadById(task.id);
+    if (current?.status != DownloadStatus.downloading) return;
+    _replaceDownload(current!.copyWith(status: DownloadStatus.paused));
+    debug.add('暂停下载：${current.file.label}', category: 'Download');
+    try {
+      await host.pauseDownload(current.id);
+    } catch (error) {
+      _replaceDownload(current.copyWith(status: DownloadStatus.downloading));
+      debug.add(
+        '暂停下载失败：${current.file.label} · $error',
+        level: DebugLogLevel.error,
+        category: 'Download',
+      );
+    }
+  }
+
+  Future<void> resumeDownload(DownloadTask task) async {
+    final current = _downloadById(task.id);
+    if (current?.status != DownloadStatus.paused) return;
+    _replaceDownload(current!.copyWith(status: DownloadStatus.downloading));
+    debug.add('继续下载：${current.file.label}', category: 'Download');
+    try {
+      await host.resumeDownload(current.id);
+    } catch (error) {
+      _replaceDownload(current.copyWith(status: DownloadStatus.paused));
+      debug.add(
+        '继续下载失败：${current.file.label} · $error',
+        level: DebugLogLevel.error,
+        category: 'Download',
+      );
+    }
+  }
+
+  Future<void> cancelDownload(DownloadTask task) async {
+    final current = _downloadById(task.id);
+    if (current == null ||
+        (current.status != DownloadStatus.downloading &&
+            current.status != DownloadStatus.paused)) {
+      return;
+    }
+    _replaceDownload(
+      current.copyWith(
+        status: DownloadStatus.canceled,
+        error: null,
+        completedAt: DateTime.now(),
+      ),
+    );
+    debug.add('取消下载：${current.file.label}', category: 'Download');
+    try {
+      await host.cancelDownload(current.id);
+    } catch (error) {
+      debug.add(
+        '取消下载清理失败：${current.file.label} · $error',
+        level: DebugLogLevel.warning,
+        category: 'Download',
+      );
+    }
+  }
 
   Future<void> _runDownload(String taskId) async {
     final task = _downloadById(taskId);
@@ -185,6 +281,7 @@ class AppState extends ChangeNotifier {
     try {
       final path = await host.download(
         task.file.url,
+        downloadId: task.id,
         fileName:
             RegExp(
               r'\.(apk|apks|xapk|zip)$',
@@ -216,6 +313,20 @@ class AppState extends ChangeNotifier {
       _flushDownloadProgress(task.id);
       final current = _downloadById(task.id);
       if (current == null) return;
+      if (current.status == DownloadStatus.canceled ||
+          error is DownloadCancelledException) {
+        if (current.status != DownloadStatus.canceled) {
+          _replaceDownload(
+            current.copyWith(
+              status: DownloadStatus.canceled,
+              error: null,
+              completedAt: DateTime.now(),
+            ),
+          );
+        }
+        debug.add('已取消下载：${task.file.label}', category: 'Download');
+        return;
+      }
       _replaceDownload(
         current.copyWith(
           status: DownloadStatus.failed,

@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'debug_log.dart';
+import 'models.dart';
 import 'source_runtime.dart';
 
 SourceHostApi createPlatformHostApi({DebugLogStore? debug}) =>
@@ -26,6 +27,7 @@ class NativeHostApi implements SourceHostApi {
   final Map<String, BrowserTabDebugInfo> _tabStates = {};
   final List<BrowserTabDebugInfo> _tabHistory = [];
   final http.Client _client = http.Client();
+  final Map<String, _NativeDownloadSession> _downloadSessions = {};
 
   bool get _hasHeadlessWebView =>
       Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
@@ -352,6 +354,7 @@ class NativeHostApi implements SourceHostApi {
   @override
   Future<String> download(
     String url, {
+    String? downloadId,
     String? fileName,
     required SourcePolicy policy,
     void Function(int received, int? total)? onProgress,
@@ -367,19 +370,78 @@ class NativeHostApi implements SourceHostApi {
     final destination = File(
       p.join(directory.path, safeName.isEmpty ? 'download.apk' : safeName),
     );
-    final response = await _getWithRedirects(uri, policy);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('下载失败 HTTP ${response.statusCode}', uri: uri);
+    final sessionId =
+        downloadId ?? 'host-${DateTime.now().microsecondsSinceEpoch}';
+    final session = _NativeDownloadSession(destination);
+    _downloadSessions[sessionId] = session;
+
+    try {
+      final response = await _getWithRedirects(uri, policy);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('下载失败 HTTP ${response.statusCode}', uri: uri);
+      }
+      if (session.canceled) throw const DownloadCancelledException();
+
+      final sink = destination.openWrite();
+      session.sink = sink;
+      var received = 0;
+      session.subscription = response.stream.listen(
+        (chunk) {
+          if (session.canceled) return;
+          received += chunk.length;
+          sink.add(chunk);
+          onProgress?.call(received, response.contentLength);
+        },
+        onError: (Object error, StackTrace stack) {
+          if (!session.done.isCompleted) {
+            session.done.completeError(error, stack);
+          }
+        },
+        onDone: () {
+          if (!session.done.isCompleted) session.done.complete();
+        },
+      );
+      if (session.paused) session.subscription!.pause();
+      await session.done.future;
+      if (session.canceled) throw const DownloadCancelledException();
+      await sink.close();
+      return destination.path;
+    } catch (error) {
+      await session.subscription?.cancel();
+      await session.sink?.close();
+      if (session.canceled || error is DownloadCancelledException) {
+        if (await destination.exists()) await destination.delete();
+        throw const DownloadCancelledException();
+      }
+      rethrow;
+    } finally {
+      _downloadSessions.remove(sessionId);
     }
-    final sink = destination.openWrite();
-    var received = 0;
-    await response.stream.listen((chunk) {
-      received += chunk.length;
-      sink.add(chunk);
-      onProgress?.call(received, response.contentLength);
-    }).asFuture<void>();
-    await sink.close();
-    return destination.path;
+  }
+
+  @override
+  Future<void> pauseDownload(String downloadId) async {
+    final session = _downloadSessions[downloadId];
+    if (session == null) throw StateError('下载任务不存在');
+    session.paused = true;
+    session.subscription?.pause();
+  }
+
+  @override
+  Future<void> resumeDownload(String downloadId) async {
+    final session = _downloadSessions[downloadId];
+    if (session == null) throw StateError('下载任务不存在');
+    session.paused = false;
+    session.subscription?.resume();
+  }
+
+  @override
+  Future<void> cancelDownload(String downloadId) async {
+    final session = _downloadSessions[downloadId];
+    if (session == null) return;
+    session.canceled = true;
+    await session.subscription?.cancel();
+    if (!session.done.isCompleted) session.done.complete();
   }
 
   @override
@@ -415,6 +477,20 @@ class NativeHostApi implements SourceHostApi {
     for (final id in _tabs.keys.toList()) {
       await browserClose(id);
     }
+    for (final id in _downloadSessions.keys.toList()) {
+      await cancelDownload(id);
+    }
     _client.close();
   }
+}
+
+class _NativeDownloadSession {
+  _NativeDownloadSession(this.destination);
+
+  final File destination;
+  final done = Completer<void>();
+  StreamSubscription<List<int>>? subscription;
+  IOSink? sink;
+  bool paused = false;
+  bool canceled = false;
 }

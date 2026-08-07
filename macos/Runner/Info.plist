@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>允许将应用截图保存到照片图库</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>允许将应用截图保存到照片图库</string>
 </dict>
 </plist>

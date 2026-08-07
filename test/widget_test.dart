@@ -24,6 +24,8 @@ void main() {
 
   testWidgets('searches the bundled test source', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'minecraft');
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
@@ -34,6 +36,8 @@ void main() {
 
   testWidgets('shows a completed empty search state', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'missing-package');
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();

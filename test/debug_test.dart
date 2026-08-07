@@ -33,6 +33,9 @@ void main() {
     expect(source, contains('debugProjects: ['));
     expect(source, contains("id: 'search-keyword'"));
     expect(source, contains("id: 'app-details'"));
+    expect(source, contains('async search(query, page = 1)'));
+    expect(source, contains('async home()'));
+    expect(source, contains('async category(categoryId)'));
     expect(source, contains('async debug(projectId, input)'));
   });
 }

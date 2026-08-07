@@ -54,10 +54,14 @@ abstract interface class SourceHostApi {
 
   Future<String> download(
     String url, {
+    String? downloadId,
     String? fileName,
     required SourcePolicy policy,
     void Function(int received, int? total)? onProgress,
   });
+  Future<void> pauseDownload(String downloadId);
+  Future<void> resumeDownload(String downloadId);
+  Future<void> cancelDownload(String downloadId);
 
   Future<bool> install(String filePath, {required SourcePolicy policy});
   Future<bool> canInstallPackages();
@@ -72,6 +76,12 @@ abstract interface class ApkSourceScript {
   Future<List<AppListing>> search(String query, SourceHostApi host);
   Future<AppDetails> details(String appId, SourceHostApi host);
   Future<void> dispose();
+}
+
+abstract interface class SourceCatalogScript {
+  bool get supportsCatalog;
+  Future<SourceHome> home(SourceHostApi host);
+  Future<SourceCategory> category(String categoryId, SourceHostApi host);
 }
 
 abstract interface class DebugProjectSource {
@@ -146,6 +156,38 @@ class SourceRegistry {
     return (script as DebugProjectSource).runDebugProject(project, input, host);
   }
 
+  Future<SourceHome> home(
+    SourceHostApi host, {
+    Set<String>? enabledSourceIds,
+  }) async {
+    var result = const SourceHome();
+    lastErrors.clear();
+    for (final script in scripts) {
+      if (enabledSourceIds != null && !enabledSourceIds.contains(script.id)) {
+        continue;
+      }
+      final SourceCatalogScript? catalog = script is SourceCatalogScript
+          ? script as SourceCatalogScript
+          : null;
+      if (catalog == null || !catalog.supportsCatalog) continue;
+      try {
+        result = result.merge(await catalog.home(host));
+      } catch (error) {
+        lastErrors[script.name] = error.toString();
+      }
+    }
+    return result;
+  }
+
+  Future<SourceCategory> category(SourceCategory category, SourceHostApi host) {
+    final script = scripts.firstWhere((item) => item.id == category.sourceId);
+    if (script is! SourceCatalogScript) {
+      throw UnsupportedError('源未声明分类接口');
+    }
+    final catalog = script as SourceCatalogScript;
+    return catalog.category(category.id, host);
+  }
+
   Future<void> dispose() async {
     for (final script in scripts) {
       await script.dispose();
@@ -190,10 +232,23 @@ class DemoHostApi implements SourceHostApi {
   @override
   Future<String> download(
     String url, {
+    String? downloadId,
     String? fileName,
     required SourcePolicy policy,
     void Function(int received, int? total)? onProgress,
   }) => throw UnsupportedError('当前平台不支持文件下载');
+
+  @override
+  Future<void> pauseDownload(String downloadId) =>
+      throw UnsupportedError('当前平台不支持暂停下载');
+
+  @override
+  Future<void> resumeDownload(String downloadId) =>
+      throw UnsupportedError('当前平台不支持继续下载');
+
+  @override
+  Future<void> cancelDownload(String downloadId) =>
+      throw UnsupportedError('当前平台不支持取消下载');
 
   @override
   Future<bool> install(String filePath, {required SourcePolicy policy}) async =>
@@ -216,7 +271,9 @@ class DemoHostApi implements SourceHostApi {
   Future<void> dispose() async {}
 }
 
-class ApkVisionDemoScript implements ApkSourceScript {
+class ApkVisionDemoScript implements ApkSourceScript, SourceCatalogScript {
+  @override
+  bool get supportsCatalog => true;
   @override
   String get id => 'apkvision-demo';
 
@@ -228,6 +285,32 @@ class ApkVisionDemoScript implements ApkSourceScript {
     allowedHosts: {'apkvision.org', '*.apkvision.org'},
     allowBrowser: true,
     allowDownload: true,
+  );
+
+  @override
+  Future<SourceHome> home(SourceHostApi host) async => SourceHome(
+    recommended: [_detail],
+    categories: const [
+      SourceCategory(
+        id: 'arcade',
+        name: 'Arcade',
+        sourceId: 'apkvision-demo',
+        sourceName: 'APKVision（测试源）',
+        description: '动作与街机类应用',
+      ),
+    ],
+  );
+
+  @override
+  Future<SourceCategory> category(
+    String categoryId,
+    SourceHostApi host,
+  ) async => SourceCategory(
+    id: categoryId,
+    name: 'Arcade',
+    sourceId: id,
+    sourceName: name,
+    apps: [_detail],
   );
 
   @override

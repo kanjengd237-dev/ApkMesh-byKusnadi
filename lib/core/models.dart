@@ -33,6 +33,45 @@ class ApkSource {
   );
 }
 
+class SourceCategory {
+  const SourceCategory({
+    required this.id,
+    required this.name,
+    required this.sourceId,
+    required this.sourceName,
+    this.description = '',
+    this.apps = const [],
+  });
+
+  final String id;
+  final String name;
+  final String sourceId;
+  final String sourceName;
+  final String description;
+  final List<AppListing> apps;
+
+  SourceCategory copyWith({List<AppListing>? apps}) => SourceCategory(
+    id: id,
+    name: name,
+    sourceId: sourceId,
+    sourceName: sourceName,
+    description: description,
+    apps: apps ?? this.apps,
+  );
+}
+
+class SourceHome {
+  const SourceHome({this.recommended = const [], this.categories = const []});
+
+  final List<AppListing> recommended;
+  final List<SourceCategory> categories;
+
+  SourceHome merge(SourceHome other) => SourceHome(
+    recommended: [...recommended, ...other.recommended],
+    categories: [...categories, ...other.categories],
+  );
+}
+
 class AppListing {
   const AppListing({
     required this.id,
@@ -112,7 +151,14 @@ class SourceDownload {
   final String size;
 }
 
-enum DownloadStatus { downloading, completed, failed }
+class DownloadCancelledException implements Exception {
+  const DownloadCancelledException();
+
+  @override
+  String toString() => '下载已取消';
+}
+
+enum DownloadStatus { downloading, paused, completed, failed, canceled }
 
 class DownloadTask {
   const DownloadTask({
