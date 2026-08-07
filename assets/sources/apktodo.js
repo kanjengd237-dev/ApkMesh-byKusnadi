@@ -201,6 +201,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
+    description: '读取 APKTodo 应用元数据、截图和详情页地址，不自动下载第三方中转文件。',
     permissions: {
       network: ['apktodo.io', '*.apktodo.io'],
       browser: true,

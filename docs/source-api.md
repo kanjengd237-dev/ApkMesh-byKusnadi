@@ -12,6 +12,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: 'https://example.com',
+    description: 'Example source metadata.',
     permissions: {
       network: ['example.com', '*.example.com'],
       browser: true,
@@ -33,6 +34,8 @@ globalThis.source = {
   async details(idOrUrl) {},
 };
 ```
+
+`manifest.description` 可选，用于在源管理页展示源说明。
 
 `search()` 返回应用摘要数组。每项包含 `id`、`name`、`packageName`、`version`、`size`、`updatedAt`、`category`、`iconUrl` 和 `summary`。
 
@@ -86,4 +89,4 @@ async debug(projectId, input) {
 - `apkmesh.download(url, options)`：创建受 manifest 网络权限和下载权限约束的下载任务并返回本地文件路径。`options` 可包含 `fileName` 和额外 HTTP `headers`。
 - `apkmesh.install(filePath)`：经用户确认后调用系统安装器；源不能静默安装。Android 会在需要时先打开未知来源安装权限页面。
 
-所有能力均按 manifest 权限授权。网络重定向的每一跳都会重新检查协议和 manifest 网络权限；`network: ['*']` 是源对临时下载主机的显式信任声明，下载内容和第三方源的安全性仍由使用者自行确认。脚本没有任意文件读写、系统命令、Cookie 导出或后台安装权限。生产构建不应内置任何第三方源。
+所有能力均按 manifest 权限授权。网络重定向的每一跳都会重新检查协议和 manifest 网络权限；`network: ['*']` 是源对临时下载主机的显式信任声明，下载内容和第三方源的安全性仍由使用者自行确认。脚本没有任意文件读写、系统命令、Cookie 导出或后台安装权限。生产构建中是否内置第三方源，应根据站点授权、条款和安全审阅结果明确决定。

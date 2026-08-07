@@ -133,6 +133,26 @@ class NativeHostApi implements SourceHostApi {
     }
   }
 
+  @override
+  Future<List<int>> requestBytes(
+    String url, {
+    Map<String, String> headers = const {},
+    required SourcePolicy policy,
+  }) async {
+    _log('HTTP bytes $url', category: 'HTTP');
+    final response = await _getWithRedirects(
+      Uri.parse(url),
+      policy,
+      headers: headers,
+    );
+    final bytes = await response.stream.toBytes();
+    if (response.statusCode >= 400) {
+      throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
+    }
+    _log('HTTP bytes $url -> ${response.statusCode}', category: 'HTTP');
+    return bytes;
+  }
+
   Future<http.StreamedResponse> _getWithRedirects(
     Uri initialUri,
     SourcePolicy policy, {

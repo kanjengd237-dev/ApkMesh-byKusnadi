@@ -10,6 +10,34 @@ import 'models.dart';
 import 'source_runtime.dart';
 import 'debug_log.dart';
 
+Future<List<String>> discoverSourceAssets() async {
+  if (!Platform.isAndroid) return const [];
+  final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+  final paths = manifest
+      .listAssets()
+      .where(
+        (path) => path.startsWith('assets/sources/') && path.endsWith('.js'),
+      )
+      .toList();
+  paths.sort();
+  return paths;
+}
+
+Future<ApkSourceScript?> loadQuickJsSourceText(
+  String scriptText, {
+  required String sourceUrl,
+  DebugLogStore? debug,
+}) async {
+  if (!Platform.isAndroid) return null;
+  final source = QuickJsApkSourceScript(
+    scriptText,
+    sourceUrl: sourceUrl,
+    debug: debug,
+  );
+  await source.initialize();
+  return source;
+}
+
 Future<ApkSourceScript?> loadQuickJsSource(
   String assetPath, {
   DebugLogStore? debug,
@@ -17,28 +45,50 @@ Future<ApkSourceScript?> loadQuickJsSource(
   // QuickJS is used for the Android runtime; other native platforms retain the demo source.
   if (!Platform.isAndroid) return null;
   final script = await rootBundle.loadString(assetPath);
-  final source = QuickJsApkSourceScript(script, debug: debug);
+  final source = QuickJsApkSourceScript(
+    script,
+    sourceUrl: assetPath,
+    debug: debug,
+  );
   await source.initialize();
   return source;
 }
 
 class QuickJsApkSourceScript
-    implements ApkSourceScript, DebugProjectSource, SourceCatalogScript {
-  QuickJsApkSourceScript(this.scriptText, {this._debug}) {
+    implements
+        ApkSourceScript,
+        SourceManifestProvider,
+        DebugProjectSource,
+        SourceCatalogScript {
+  QuickJsApkSourceScript(this.scriptText, {String? sourceUrl, this._debug})
+    : _sourceUrl = sourceUrl ?? 'quickjs-source.js' {
     _runtime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: false);
     _installBridge();
   }
 
   final String scriptText;
+  final String _sourceUrl;
   final DebugLogStore? _debug;
   late final JavascriptRuntime _runtime;
   late final SourcePolicy _policy;
   String? _sourceId;
   String? _sourceName;
+  String? _sourceVersion;
+  String? _sourceHomepage;
+  String? _sourceDescription;
   List<SourceDebugProject> _debugProjects = const [];
   SourceHostApi? _host;
   bool _hasCatalog = false;
   bool _disposed = false;
+
+  @override
+  String get version => _sourceVersion ?? '0.0.0';
+
+  @override
+  String get homepage => _sourceHomepage ?? '';
+
+  @override
+  String get description => _sourceDescription ?? '内置 QuickJS 源';
 
   void _log(String message, {DebugLogLevel level = DebugLogLevel.info}) {
     debugPrint('[APK Mesh] $message');
@@ -147,13 +197,16 @@ class QuickJsApkSourceScript
       };
     ''';
     _runtime.evaluate(bootstrap);
-    _runtime.evaluate(scriptText, sourceUrl: 'apkvision.js');
+    _runtime.evaluate(scriptText, sourceUrl: _sourceUrl);
     final manifestResult = await _evaluateJson(
       'JSON.stringify(source.manifest)',
     );
     final manifest = (manifestResult as Map).cast<String, dynamic>();
     _sourceId = manifest['id'] as String?;
     _sourceName = manifest['name'] as String?;
+    _sourceVersion = manifest['version']?.toString();
+    _sourceHomepage = manifest['homepage']?.toString();
+    _sourceDescription = manifest['description']?.toString();
     _debugProjects = _parseDebugProjects(manifest['debugProjects']);
     final permissions = _dynamicMap(manifest['permissions']);
     _hasCatalog =
@@ -215,7 +268,7 @@ class QuickJsApkSourceScript
   Future<dynamic> _evaluateJson(String expression) async {
     var result = await _runtime.evaluateAsync(
       expression,
-      sourceUrl: 'apkvision.js',
+      sourceUrl: _sourceUrl,
     );
     _runtime.executePendingJob();
     if (result.stringResult == '[object Promise]' ||

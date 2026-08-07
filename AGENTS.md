@@ -68,7 +68,7 @@ NativeHostApi (HTTP + Headless WebView + download/install)
 ```
 
 - `main.dart` 的 `Shell` 提供主页、下载、源管理、设置四个一级入口；详情、调试和截图查看器以 sheet/dialog 形式打开。
-- `AppState.initialize()` 当前在 Android 上加载 `assets/sources/apkvision.js` 和 `assets/sources/apkmirror.js`，并按源 ID 替换注册表中的演示实现。应用不会自动扫描或注册 `assets/sources/` 中的所有文件；`apktodo.js` 当前主要用于独立调试器和本地源测试，不能仅因为它位于 assets 目录就假定已启用。
+- `AppState.initialize()` 当前在 Android 上通过 Flutter `AssetManifest` 自动扫描并加载 `assets/sources/` 下的所有 `.js` 源脚本，源管理元数据来自各脚本的 manifest；不支持 QuickJS 的平台保留内置演示源。新增源脚本只要纳入 `assets/sources/` 资产即可被发现。
 - `SourceRegistry.search()` 并发调用启用源，保留单个源错误并聚合其他成功结果；修改此行为时必须同步更新测试和 UI 的错误展示逻辑。
 - `quickjs_source_io.dart` 目前只在 Android 创建 QuickJS 源运行时；`quickjs_source_stub.dart` 在不支持平台返回空实现。`host_factory_io.dart` 的隐藏 WebView 支持 Android/iOS/macOS，APK 安装仅支持 Android；Linux/Windows 没有隐藏 WebView 实现，Web 使用 stub 宿主。
 - Android 原生 `MainActivity.kt` 通过 `com.apkmesh/install` 和 `com.apkmesh/download_notifications` 两个 MethodChannel 提供安装权限检查、未知来源权限跳转和下载通知。

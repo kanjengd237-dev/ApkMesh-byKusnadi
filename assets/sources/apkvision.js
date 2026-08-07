@@ -222,6 +222,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
+    description: '内置 APKVision 测试源，用于验证搜索、详情和下载接口。',
     permissions: {
       network: ['apkvision.org', '*.apkvision.org'],
       browser: true,

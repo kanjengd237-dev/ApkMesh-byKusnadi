@@ -473,6 +473,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
+    description: 'APKMirror 版本搜索、详情、变体和下载源。',
     permissions: {
       network: ['*'],
       browser: true,

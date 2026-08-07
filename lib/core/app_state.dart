@@ -7,6 +7,7 @@ import 'download_notifications.dart';
 import 'host_factory.dart';
 import 'models.dart';
 import 'quickjs_source.dart';
+import 'source_import.dart';
 import 'source_runtime.dart';
 
 class AppState extends ChangeNotifier {
@@ -21,17 +22,6 @@ class AppState extends ChangeNotifier {
         status: SourceStatus.enabled,
         builtIn: true,
         homeSource: true,
-        lastSync: DateTime.now(),
-      ),
-      ApkSource(
-        id: 'apkmirror',
-        name: 'APKMirror',
-        homepage: 'www.apkmirror.com',
-        version: '1.0.0',
-        description:
-            'APKMirror release search, details, variants, and downloads.',
-        status: SourceStatus.enabled,
-        builtIn: true,
         lastSync: DateTime.now(),
       ),
     ];
@@ -71,14 +61,44 @@ class AppState extends ChangeNotifier {
 
   List<SourceDebugProject> get debugProjects => registry.debugProjects;
 
+  ApkSource _sourceForScript(ApkSourceScript script, {required bool builtIn}) {
+    final SourceManifestProvider? manifest = script is SourceManifestProvider
+        ? script as SourceManifestProvider
+        : null;
+    return ApkSource(
+      id: script.id,
+      name: script.name,
+      homepage: manifest?.homepage ?? '',
+      version: manifest?.version ?? '0.0.0',
+      description: manifest?.description ?? '内置 QuickJS 源',
+      status: SourceStatus.enabled,
+      builtIn: builtIn,
+      lastSync: DateTime.now(),
+    );
+  }
+
+  void _registerBuiltInScript(ApkSourceScript script) {
+    final source = _sourceForScript(script, builtIn: true);
+    final index = _sources.indexWhere((item) => item.id == source.id);
+    if (index == -1) {
+      _sources = [..._sources, source];
+      return;
+    }
+
+    final existing = _sources[index];
+    _sources[index] = source.copyWith(
+      status: existing.status,
+      homeSource: existing.homeSource,
+    );
+  }
+
   Future<void> initialize() async {
-    debug.add('正在加载内置 QuickJS 源', category: 'App');
+    debug.add('正在扫描内置 QuickJS 源', category: 'App');
     var loadedCount = 0;
     try {
-      for (final assetPath in const [
-        'assets/sources/apkvision.js',
-        'assets/sources/apkmirror.js',
-      ]) {
+      final assetPaths = await discoverSourceAssets();
+      debug.add('发现 ${assetPaths.length} 个内置源脚本', category: 'App');
+      for (final assetPath in assetPaths) {
         try {
           final quickJsSource = await loadQuickJsSource(
             assetPath,
@@ -86,6 +106,7 @@ class AppState extends ChangeNotifier {
           );
           if (quickJsSource != null) {
             registry.replace(quickJsSource);
+            _registerBuiltInScript(quickJsSource);
             loadedCount += 1;
             debug.add('已加载源：$assetPath', category: 'App');
           }
@@ -105,6 +126,78 @@ class AppState extends ChangeNotifier {
     } finally {
       if (!_ready.isCompleted) _ready.complete();
     }
+  }
+
+  Future<SourceImportResult> importSourceBytes(
+    Uint8List bytes,
+    String fileName,
+  ) async {
+    await ready;
+    final entries = sourceScriptsFromBytes(bytes, fileName);
+    final imported = <ApkSource>[];
+    final failures = <String, String>{};
+    final loaded = <({String name, ApkSourceScript script})>[];
+
+    for (final entry in entries) {
+      try {
+        if (entry.error != null || entry.text == null) {
+          throw entry.error ?? const FormatException('无法读取 JS 源脚本');
+        }
+        final script = await loadQuickJsSourceText(
+          entry.text!,
+          sourceUrl: entry.name,
+          debug: debug,
+        );
+        if (script == null) {
+          throw UnsupportedError('当前平台不支持 QuickJS 源导入');
+        }
+        if (script.id == 'quickjs-source') {
+          throw const FormatException('源 manifest 缺少有效 ID');
+        }
+        loaded.add((name: entry.name, script: script));
+      } catch (error) {
+        failures[entry.name] = error.toString();
+      }
+    }
+
+    final acceptedIds = <String>{};
+    for (final item in loaded) {
+      final duplicate =
+          !acceptedIds.add(item.script.id) ||
+          _sources.any((source) => source.id == item.script.id);
+      if (duplicate) {
+        failures[item.name] = '源 ID 已存在：${item.script.id}';
+        await item.script.dispose();
+        continue;
+      }
+      registry.replace(item.script);
+      final source = _sourceForScript(item.script, builtIn: false);
+      _sources = [..._sources, source];
+      imported.add(source);
+    }
+
+    if (imported.isNotEmpty) {
+      notifyListeners();
+      debug.add(
+        '已导入 ${imported.length} 个源，失败 ${failures.length} 个',
+        category: 'App',
+      );
+    }
+    return SourceImportResult(imported: imported, failures: failures);
+  }
+
+  Future<SourceImportResult> importSourceUrl(String rawUrl) async {
+    final uri = Uri.tryParse(rawUrl.trim());
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+      throw const FormatException('源 URL 必须是 HTTPS 地址');
+    }
+    final bytes = await host.requestBytes(
+      uri.toString(),
+      policy: SourcePolicy(allowedHosts: {uri.host}),
+    );
+    final lastSegment = uri.pathSegments.isEmpty ? '' : uri.pathSegments.last;
+    final fileName = lastSegment.contains('.') ? lastSegment : 'source.js';
+    return importSourceBytes(Uint8List.fromList(bytes), fileName);
   }
 
   Future<List<AppListing>> search(
@@ -471,7 +564,10 @@ class AppState extends ChangeNotifier {
   }
 
   void removeSource(String id) {
-    _sources.removeWhere((source) => source.id == id && !source.builtIn);
+    final source = _sources.where((item) => item.id == id).firstOrNull;
+    if (source == null || source.builtIn) return;
+    _sources.removeWhere((item) => item.id == id);
+    unawaited(registry.remove(id));
     notifyListeners();
   }
 

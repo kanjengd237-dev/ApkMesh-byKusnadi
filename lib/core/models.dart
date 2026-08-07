@@ -40,6 +40,13 @@ class ApkSource {
   );
 }
 
+class SourceImportResult {
+  const SourceImportResult({required this.imported, required this.failures});
+
+  final List<ApkSource> imported;
+  final Map<String, String> failures;
+}
+
 class SourceCategory {
   const SourceCategory({
     required this.id,

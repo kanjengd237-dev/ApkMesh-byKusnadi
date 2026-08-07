@@ -40,6 +40,12 @@ abstract interface class SourceHostApi {
     required SourcePolicy policy,
   });
 
+  Future<List<int>> requestBytes(
+    String url, {
+    Map<String, String> headers = const {},
+    required SourcePolicy policy,
+  });
+
   Future<String> browserOpen(String url, {required SourcePolicy policy});
   Future<void> browserWaitFor(String tabId, String selector);
   Future<Map<String, dynamic>> browserQuery(
@@ -80,6 +86,13 @@ abstract interface class ApkSourceScript {
   Future<void> dispose();
 }
 
+/// Optional metadata exposed by scripts loaded from a manifest.
+abstract interface class SourceManifestProvider {
+  String get version;
+  String get homepage;
+  String get description;
+}
+
 abstract interface class SourceCatalogScript {
   bool get supportsCatalog;
   Future<SourceHome> home(SourceHostApi host);
@@ -110,6 +123,13 @@ class SourceRegistry {
       scripts[index] = script;
       previous.dispose();
     }
+  }
+
+  Future<void> remove(String id) async {
+    final index = scripts.indexWhere((item) => item.id == id);
+    if (index == -1) return;
+    final script = scripts.removeAt(index);
+    await script.dispose();
   }
 
   Future<List<AppListing>> search(
@@ -277,6 +297,13 @@ class DemoHostApi implements SourceHostApi {
 
   @override
   Future<String> request(
+    String url, {
+    Map<String, String> headers = const {},
+    required SourcePolicy policy,
+  }) => throw UnsupportedError('当前平台不支持源网络请求');
+
+  @override
+  Future<List<int>> requestBytes(
     String url, {
     Map<String, String> headers = const {},
     required SourcePolicy policy,
