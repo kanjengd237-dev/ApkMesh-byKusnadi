@@ -927,16 +927,27 @@ class DownloadsPage extends StatelessWidget {
             detail: '从应用详情中选择文件后，任务会显示在这里。',
           )
         else
-          ...tasks.map((task) => _DownloadTaskTile(task: task, state: state)),
+          ...tasks.asMap().entries.map(
+            (entry) => _DownloadTaskTile(
+              task: entry.value,
+              state: state,
+              showDivider: entry.key < tasks.length - 1,
+            ),
+          ),
       ],
     );
   }
 }
 
 class _DownloadTaskTile extends StatelessWidget {
-  const _DownloadTaskTile({required this.task, required this.state});
+  const _DownloadTaskTile({
+    required this.task,
+    required this.state,
+    this.showDivider = true,
+  });
   final DownloadTask task;
   final AppState state;
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
@@ -949,84 +960,118 @@ class _DownloadTaskTile extends StatelessWidget {
       DownloadStatus.canceled => (Icons.cancel_outlined, scheme.outline),
     };
     final detail = _downloadTaskDetail(task);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        children: [
-          ListTile(
-            contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-            leading: Icon(icon, color: color),
-            title: Text(task.file.label),
-            subtitle: detail == null ? null : Text(detail),
-            trailing: switch (task.status) {
-              DownloadStatus.downloading => SizedBox(
-                width: 104,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 40,
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Icon(icon, color: color),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    IconButton(
-                      tooltip: '暂停下载',
-                      icon: const Icon(Icons.pause),
-                      onPressed: () => state.pauseDownload(task),
+                    Text(
+                      task.file.label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    IconButton(
-                      tooltip: '取消下载',
-                      icon: const Icon(Icons.close),
-                      onPressed: () => state.cancelDownload(task),
-                    ),
+                    if (detail != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        detail,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    _downloadTaskControls(context, task, state),
                   ],
                 ),
               ),
-              DownloadStatus.paused => SizedBox(
-                width: 104,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      tooltip: '继续下载',
-                      icon: const Icon(Icons.play_arrow),
-                      onPressed: () => state.resumeDownload(task),
-                    ),
-                    IconButton(
-                      tooltip: '取消下载',
-                      icon: const Icon(Icons.close),
-                      onPressed: () => state.cancelDownload(task),
-                    ),
-                  ],
-                ),
-              ),
-              DownloadStatus.completed => SizedBox(
-                width: 96,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  icon: const Icon(Icons.install_mobile_outlined),
-                  label: const Text('安装'),
-                  onPressed: () => _installDownloadTask(context, state, task),
-                ),
-              ),
-              DownloadStatus.failed => IconButton(
-                tooltip: '重试下载',
-                icon: const Icon(Icons.refresh),
-                onPressed: () => state.retryDownload(task),
-              ),
-              DownloadStatus.canceled => IconButton(
-                tooltip: '重新下载',
-                icon: const Icon(Icons.refresh),
-                onPressed: () => state.retryDownload(task),
-              ),
-            },
+            ],
           ),
-          if (task.status == DownloadStatus.downloading ||
-              task.status == DownloadStatus.paused)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: LinearProgressIndicator(value: task.progress),
-            ),
-        ],
-      ),
+        ),
+        if (showDivider)
+          Divider(
+            height: 1,
+            indent: 52,
+            color: scheme.outlineVariant.withValues(alpha: .65),
+          ),
+      ],
     );
+  }
+}
+
+Widget _downloadTaskControls(
+  BuildContext context,
+  DownloadTask task,
+  AppState state,
+) {
+  switch (task.status) {
+    case DownloadStatus.downloading:
+    case DownloadStatus.paused:
+      final paused = task.status == DownloadStatus.paused;
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: LinearProgressIndicator(value: task.progress, minHeight: 4),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            tooltip: paused ? '继续下载' : '暂停下载',
+            visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+            onPressed: () =>
+                paused ? state.resumeDownload(task) : state.pauseDownload(task),
+            icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+          ),
+          IconButton(
+            tooltip: '取消下载',
+            visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+            onPressed: () => state.cancelDownload(task),
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      );
+    case DownloadStatus.completed:
+      return Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+          ),
+          icon: const Icon(Icons.install_mobile_outlined),
+          label: const Text('安装'),
+          onPressed: () => _installDownloadTask(context, state, task),
+        ),
+      );
+    case DownloadStatus.failed:
+      return Align(
+        alignment: Alignment.centerRight,
+        child: IconButton(
+          tooltip: '重试下载',
+          onPressed: () => state.retryDownload(task),
+          icon: const Icon(Icons.refresh),
+        ),
+      );
+    case DownloadStatus.canceled:
+      return const SizedBox.shrink();
   }
 }
 
@@ -2195,11 +2240,12 @@ class _DetailsSheetState extends State<DetailsSheet> {
       content.add(Text('下载文件', style: Theme.of(context).textTheme.titleMedium));
       content.add(const SizedBox(height: 8));
       content.addAll(
-        detail.downloads.map(
-          (file) => _SourceDownloadTile(
-            file: file,
+        detail.downloads.asMap().entries.map(
+          (entry) => _SourceDownloadTile(
+            file: entry.value,
             sourceId: widget.app.sourceId,
             state: widget.state,
+            showDivider: entry.key < detail.downloads.length - 1,
           ),
         ),
       );
@@ -2570,46 +2616,94 @@ class _SourceDownloadTile extends StatelessWidget {
     required this.file,
     required this.sourceId,
     required this.state,
+    this.showDivider = true,
   });
 
   final SourceDownload file;
   final String sourceId;
   final AppState state;
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: state,
       builder: (context, _) {
+        final scheme = Theme.of(context).colorScheme;
         final task = state.downloadFor(file.url);
         final taskDetail = task == null ? null : _downloadTaskDetail(task);
-        final detail = [
-          if (file.size.trim().isNotEmpty) file.size,
-          ?taskDetail,
-        ].join('\n');
+        final detail = task == null ? file.size.trim() : (taskDetail ?? '');
+        final (icon, color) = switch (task?.status) {
+          DownloadStatus.completed => (
+            Icons.check_circle_outline,
+            scheme.primary,
+          ),
+          DownloadStatus.paused => (
+            Icons.pause_circle_outline,
+            scheme.tertiary,
+          ),
+          DownloadStatus.canceled => (Icons.cancel_outlined, scheme.outline),
+          DownloadStatus.failed => (Icons.error_outline, scheme.error),
+          _ => (Icons.file_download_outlined, scheme.primary),
+        };
+
         return Column(
           children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(switch (task?.status) {
-                DownloadStatus.completed => Icons.check_circle_outline,
-                DownloadStatus.paused => Icons.pause_circle_outline,
-                DownloadStatus.canceled => Icons.cancel_outlined,
-                DownloadStatus.failed => Icons.error_outline,
-                _ => Icons.file_download_outlined,
-              }),
-              title: Text(file.label),
-              subtitle: detail.isEmpty ? null : Text(detail),
-              trailing: SizedBox(
-                width: 112,
-                child: _downloadButton(context, task),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 40,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Icon(icon, color: color),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: task == null
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _downloadTitle(context, file.label),
+                                    if (detail.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      _downloadDetail(context, detail, scheme),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              _downloadButton(context),
+                            ],
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _downloadTitle(context, file.label),
+                              if (detail.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                _downloadDetail(context, detail, scheme),
+                              ],
+                              const SizedBox(height: 8),
+                              _downloadTaskControls(context, task, state),
+                            ],
+                          ),
+                  ),
+                ],
               ),
             ),
-            if (task?.status == DownloadStatus.downloading ||
-                task?.status == DownloadStatus.paused)
-              Padding(
-                padding: const EdgeInsets.only(left: 56, bottom: 8),
-                child: LinearProgressIndicator(value: task?.progress),
+            if (showDivider)
+              Divider(
+                height: 1,
+                indent: 52,
+                color: scheme.outlineVariant.withValues(alpha: .65),
               ),
           ],
         );
@@ -2617,69 +2711,48 @@ class _SourceDownloadTile extends StatelessWidget {
     );
   }
 
-  Widget _downloadButton(BuildContext context, DownloadTask? task) {
-    final style = FilledButton.styleFrom(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+  Widget _downloadTitle(BuildContext context, String label) {
+    return Text(
+      label,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(
+        context,
+      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
     );
-    if (task?.status == DownloadStatus.downloading) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          IconButton(
-            tooltip: '暂停下载',
-            onPressed: () => state.pauseDownload(task!),
-            icon: const Icon(Icons.pause),
-          ),
-          IconButton(
-            tooltip: '取消下载',
-            onPressed: () => state.cancelDownload(task!),
-            icon: const Icon(Icons.close),
-          ),
-        ],
-      );
-    }
-    if (task?.status == DownloadStatus.paused) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          IconButton(
-            tooltip: '继续下载',
-            onPressed: () => state.resumeDownload(task!),
-            icon: const Icon(Icons.play_arrow),
-          ),
-          IconButton(
-            tooltip: '取消下载',
-            onPressed: () => state.cancelDownload(task!),
-            icon: const Icon(Icons.close),
-          ),
-        ],
-      );
-    }
-    if (task?.status == DownloadStatus.completed) {
-      return FilledButton.icon(
-        style: style,
-        onPressed: () => _installDownloadTask(context, state, task!),
-        icon: const Icon(Icons.install_mobile_outlined),
-        label: const Text('安装'),
-      );
-    }
-    final retry =
-        task?.status == DownloadStatus.failed ||
-        task?.status == DownloadStatus.canceled;
-    return FilledButton.icon(
-      style: style,
-      onPressed: () {
-        if (retry) {
-          state.retryDownload(task!);
-        } else {
+  }
+
+  Widget _downloadDetail(
+    BuildContext context,
+    String detail,
+    ColorScheme scheme,
+  ) {
+    return Text(
+      detail,
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+    );
+  }
+
+  Widget _downloadButton(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: FilledButton.icon(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+        ),
+        onPressed: () {
           state.startDownload(file, sourceId);
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(retry ? '正在重新下载' : '已开始下载，可在下载页查看进度')),
-        );
-      },
-      icon: Icon(retry ? Icons.refresh : Icons.download),
-      label: Text(retry ? '重试' : '下载'),
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('已开始下载，可在下载页查看进度')));
+        },
+        icon: const Icon(Icons.download),
+        label: const Text('下载'),
+      ),
     );
   }
 }

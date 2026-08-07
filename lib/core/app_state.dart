@@ -446,18 +446,9 @@ class AppState extends ChangeNotifier {
     if (current == null) return;
     if (current.status != DownloadStatus.downloading &&
         current.status != DownloadStatus.paused) {
-      if (current.status == DownloadStatus.canceled) {
-        await _downloadNotifications.cancel(current.id);
-      }
       return;
     }
-    _replaceDownload(
-      current.copyWith(
-        status: DownloadStatus.canceled,
-        error: null,
-        completedAt: DateTime.now(),
-      ),
-    );
+    _removeDownload(current.id);
     debug.add('取消下载：${current.file.label}', category: 'Download');
     await _downloadNotifications.cancel(current.id);
     try {
@@ -534,17 +525,8 @@ class AppState extends ChangeNotifier {
       _flushDownloadProgress(task.id);
       final current = _downloadById(task.id);
       if (current == null) return;
-      if (current.status == DownloadStatus.canceled ||
-          error is DownloadCancelledException) {
-        if (current.status != DownloadStatus.canceled) {
-          _replaceDownload(
-            current.copyWith(
-              status: DownloadStatus.canceled,
-              error: null,
-              completedAt: DateTime.now(),
-            ),
-          );
-        }
+      if (error is DownloadCancelledException) {
+        _removeDownload(current.id);
         debug.add('已取消下载：${task.file.label}', category: 'Download');
         await _downloadNotifications.cancel(task.id);
         return;
@@ -611,6 +593,16 @@ class AppState extends ChangeNotifier {
     if (index == -1) return;
     _downloads[index] = task;
     if (notify) notifyListeners();
+  }
+
+  void _removeDownload(String id) {
+    final index = _downloads.indexWhere((item) => item.id == id);
+    if (index == -1) return;
+    _downloadProgressTimers.remove(id)?.cancel();
+    _pendingDownloadBytes.remove(id);
+    _pendingDownloadTotals.remove(id);
+    _downloads.removeAt(index);
+    notifyListeners();
   }
 
   Future<bool> installTask(DownloadTask task) {
