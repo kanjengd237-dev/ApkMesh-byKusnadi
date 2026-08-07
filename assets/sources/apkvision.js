@@ -218,7 +218,7 @@ async function mapLimit(items, limit, mapper) {
 globalThis.source = {
   manifest: {
     id: 'apkvision-demo',
-    name: 'APKVision（测试源）',
+    name: 'APKVision',
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,

@@ -320,7 +320,7 @@ class ApkVisionDemoScript implements ApkSourceScript, SourceCatalogScript {
   String get id => 'apkvision-demo';
 
   @override
-  String get name => 'APKVision（测试源）';
+  String get name => 'APKVision';
 
   @override
   SourcePolicy get policy => const SourcePolicy(
@@ -337,7 +337,7 @@ class ApkVisionDemoScript implements ApkSourceScript, SourceCatalogScript {
         id: 'arcade',
         name: 'Arcade',
         sourceId: 'apkvision-demo',
-        sourceName: 'APKVision（测试源）',
+        sourceName: 'APKVision',
         description: '动作与街机类应用',
       ),
     ],
@@ -383,7 +383,7 @@ class ApkVisionDemoScript implements ApkSourceScript, SourceCatalogScript {
     size: '1000.1 MB',
     updatedAt: 'August 5, 2026',
     category: 'Arcade',
-    sourceName: 'APKVision（测试源）',
+    sourceName: 'APKVision',
     iconUrl:
         'https://apkvision.org/wp-content/uploads/2020/01/minecraft-play-with-friends.png',
     summary: 'Minecraft APK free download from APKVision.',

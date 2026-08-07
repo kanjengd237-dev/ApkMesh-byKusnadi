@@ -15,7 +15,7 @@ class AppState extends ChangeNotifier {
     _sources = [
       ApkSource(
         id: 'apkvision-demo',
-        name: 'APKVision（测试源）',
+        name: 'APKVision',
         homepage: 'apkvision.org',
         version: '1.0.0',
         description: '内置演示源，用于验证 APKVision 搜索、详情和下载接口。',

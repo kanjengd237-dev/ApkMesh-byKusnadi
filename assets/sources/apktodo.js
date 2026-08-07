@@ -38,11 +38,18 @@ function attribute(tag, name) {
   return match ? decodeHtml(match[2]).trim() : '';
 }
 
-function absoluteUrl(url) {
+function resolveUrl(url, baseUrl) {
   const value = cleanText(url);
+  if (!value) return '';
   if (value.startsWith('//')) return `https:${value}`;
-  if (value.startsWith('/')) return `${ORIGIN}${value}`;
-  return value;
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = /^https?:\/\/[^/]+/i.exec(baseUrl || '');
+  const origin = base ? base[0] : ORIGIN;
+  return value.startsWith('/') ? `${origin}${value}` : `${origin}/${value}`;
+}
+
+function absoluteUrl(url) {
+  return resolveUrl(url, ORIGIN);
 }
 
 function isApkTodoUrl(url) {
@@ -167,8 +174,104 @@ function searchUrl(query, page) {
   return `${ORIGIN}/?s=${encodeURIComponent(query)}${suffix}`;
 }
 
-async function fetchText(url) {
-  return apkmesh.request(url, {headers: SEARCH_HEADERS});
+async function fetchText(url, referer = ORIGIN) {
+  return apkmesh.request(url, {
+    headers: {...SEARCH_HEADERS, Referer: referer},
+  });
+}
+
+function downloadHeaders(referer) {
+  return {...SEARCH_HEADERS, Referer: referer};
+}
+
+function isApkDownloadUrl(url, label = '') {
+  if (/^https:\/\/files\.apktodo\.store\/[^?#]+\.(?:apk|apks|xapk|zip)(?:[?#]|$)/i.test(url)) {
+    return true;
+  }
+  return /^https:\/\/(?:www\.)?apktodo\.net\/download\/mod\/[^?#]+/i.test(url) &&
+    /\bAPK\b/i.test(label);
+}
+
+function isApkTodoLandingUrl(url) {
+  return /^https:\/\/(?:www\.)?apktodo\.net\/(?!download(?:\/|$))[^?#]+\/?$/i.test(url);
+}
+
+function downloadLabel(value) {
+  return cleanText(value)
+    .replace(/^Download\s+/i, '')
+    .replace(/\s*\[[^\]]+\]\s*$/, '')
+    .trim() || 'APK';
+}
+
+function parseDownloadTargets(html, referer) {
+  const entries = [];
+  function addTarget(openingTag, body) {
+    const url = resolveUrl(attribute(openingTag, 'href'), referer);
+    if (!url) return;
+    const text = textFromHtml(body);
+    entries.push({
+      label: downloadLabel(text),
+      url,
+      size: extractSize(text),
+      text,
+      headers: downloadHeaders(referer),
+    });
+  }
+
+  const anchorPattern = /<a\b([^>]*\bclass\s*=\s*['"][^'"]*\bitem-apk\b[^'"]*['"][^>]*)>([\s\S]*?)<\/a>/gi;
+  for (const match of html.matchAll(anchorPattern)) {
+    addTarget(`<a${match[1]}>`, match[2]);
+  }
+
+  const containerPattern = /<div\b([^>]*\bclass\s*=\s*['"][^'"]*\bitem-apk\b[^'"]*['"][^>]*)>([\s\S]*?)<\/div>/gi;
+  for (const match of html.matchAll(containerPattern)) {
+    const anchorMatch = /<a\b([^>]*)>([\s\S]*?)<\/a>/i.exec(match[2]);
+    if (anchorMatch) addTarget(`<a${anchorMatch[1]}>`, anchorMatch[2]);
+  }
+  return entries;
+}
+
+function parseDownloadLinks(html, referer) {
+  return parseDownloadTargets(html, referer)
+      .filter((item) => isApkDownloadUrl(item.url, item.text))
+      .map((item) => ({
+        label: item.label,
+        url: item.url,
+        size: item.size,
+        headers: item.headers,
+      }));
+}
+
+function uniqueDownloads(items) {
+  return items.filter((item, index, all) =>
+    all.findIndex((candidate) => candidate.url === item.url) === index,
+  );
+}
+
+async function resolveDownloads(downloadPage) {
+  const prepareHtml = await fetchText(downloadPage, downloadPage);
+  const linkMatch = /<div\b[^>]*\bid\s*=\s*['"]download-container['"][^>]*>[\s\S]*?<a\b([^>]*)>/i.exec(prepareHtml);
+  if (!linkMatch) return [];
+  const downloadTag = `<a${linkMatch[1]}>`;
+  const downloadUrl = resolveUrl(attribute(downloadTag, 'href'), downloadPage);
+  if (!downloadUrl) return [];
+
+  const downloadHtml = await fetchText(downloadUrl, downloadUrl);
+  const downloads = parseDownloadLinks(downloadHtml, downloadUrl);
+  const landingTargets = parseDownloadTargets(downloadHtml, downloadUrl)
+    .filter((item) => isApkTodoLandingUrl(item.url));
+
+  for (const landing of landingTargets) {
+    const landingHtml = await fetchText(landing.url, downloadUrl);
+    const landingLink = /<div\b[^>]*\bclass\s*=\s*['"][^'"]*\bbtn_download\b[^'"]*['"][^>]*>[\s\S]*?<a\b([^>]*)>/i.exec(landingHtml);
+    if (!landingLink) continue;
+    const landingTag = `<a${landingLink[1]}>`;
+    const landingDownloadUrl = resolveUrl(attribute(landingTag, 'href'), landing.url);
+    if (!/^https:\/\/(?:www\.)?apktodo\.net\/download\//i.test(landingDownloadUrl)) continue;
+    const landingDownloadHtml = await fetchText(landingDownloadUrl, landing.url);
+    downloads.push(...parseDownloadLinks(landingDownloadHtml, landingDownloadUrl));
+  }
+  return uniqueDownloads(downloads);
 }
 
 function parseStructuredData(nodes) {
@@ -197,15 +300,15 @@ const CATEGORIES = [
 globalThis.source = {
   manifest: {
     id: 'apktodo',
-    name: 'APKTodo（元数据测试源）',
+    name: 'APKTodo',
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 APKTodo 应用元数据、截图和详情页地址，不自动下载第三方中转文件。',
+    description: '读取 APKTodo 应用元数据、截图、详情和下载项。',
     permissions: {
-      network: ['apktodo.io', '*.apktodo.io'],
+      network: ['*'],
       browser: true,
-      download: false,
+      download: true,
       install: false,
     },
     debugProjects: [
@@ -311,12 +414,8 @@ globalThis.source = {
       app.description = cleanText(descriptionResult.description || '');
       app.screenshots = uniqueStrings(screenshots.concat(structuredScreenshots.map(absoluteUrl)));
       app.comments = uniqueStrings(commentNodes.map((item) => cleanText(item.text)));
-      // The site's /prepare -> apktodo.net -> files.apktodo.store chain is not exposed as a download.
-      app.downloads = [];
-      app.downloadPage = absoluteUrl(app.downloadPage || '');
-      app.downloadNote = app.downloadPage
-        ? '下载页需要人工核验，当前源不会自动下载第三方中转文件。'
-        : '';
+      app.downloadPage = resolveUrl(app.downloadPage || '', openUrl);
+      app.downloads = app.downloadPage ? await resolveDownloads(app.downloadPage) : [];
       return app;
     } finally {
       await tab.close();
@@ -342,7 +441,7 @@ globalThis.source = {
       const app = await this.details(value);
       return {
         title: '详情读取完成',
-        summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个（已禁用不可信中转）`,
+        summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`,
         data: {
           name: app.name,
           version: app.version,
