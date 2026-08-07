@@ -19,6 +19,10 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val progressChannelId = "apkmesh_download_progress"
     private val eventChannelId = "apkmesh_download_events"
+    private val notificationAction = "com.apkmesh.download_notification_action"
+    private var notificationChannel: MethodChannel? = null
+    private var notificationsReady = false
+    private var pendingNotificationAction: Pair<String, String>? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -47,14 +51,29 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
-        MethodChannel(
+        val downloadChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.apkmesh/download_notifications",
-        ).setMethodCallHandler { call, result ->
+        )
+        notificationChannel = downloadChannel
+        downloadChannel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "notificationsReady" -> {
+                    notificationsReady = true
+                    deliverPendingNotificationAction()
+                    result.success(null)
+                }
                 "requestPermission" -> result.success(requestNotificationPermission())
                 "showProgress" -> {
                     showDownloadProgress(call)
+                    result.success(null)
+                }
+                "showPaused" -> {
+                    showDownloadProgress(call, paused = true)
+                    result.success(null)
+                }
+                "cancel" -> {
+                    cancelDownloadNotification(call)
                     result.success(null)
                 }
                 "showCompleted" -> {
@@ -68,6 +87,39 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        handleNotificationAction(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationAction(intent)
+    }
+
+    private fun handleNotificationAction(intent: Intent?) {
+        if (intent?.action != notificationAction) return
+        val id = intent.getStringExtra("download_id") ?: return
+        val action = intent.getStringExtra("download_action") ?: return
+        if (action == "stop") {
+            notificationManager().cancel(notificationId(id))
+        }
+        if (notificationsReady) {
+            notificationChannel?.invokeMethod(
+                "notificationAction",
+                mapOf("id" to id, "action" to action),
+            )
+        } else {
+            pendingNotificationAction = id to action
+        }
+    }
+
+    private fun deliverPendingNotificationAction() {
+        val pending = pendingNotificationAction ?: return
+        pendingNotificationAction = null
+        notificationChannel?.invokeMethod(
+            "notificationAction",
+            mapOf("id" to pending.first, "action" to pending.second),
+        )
     }
 
     private fun createNotificationChannels() {
@@ -102,19 +154,24 @@ class MainActivity : FlutterActivity() {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    private fun showDownloadProgress(call: MethodCall) {
+    private fun showDownloadProgress(call: MethodCall, paused: Boolean = false) {
         if (!canPostNotifications()) return
         val id = call.argument<String>("id") ?: return
         val title = call.argument<String>("title") ?: "APK 下载"
         val received = call.argument<Number>("received")?.toLong() ?: 0L
         val total = call.argument<Number>("total")?.toLong()
         val text = if (total != null && total > 0) {
-            "${formatBytes(received)} / ${formatBytes(total)}"
+            val progress = "${formatBytes(received)} / ${formatBytes(total)}"
+            if (paused) "已暂停 · $progress" else progress
         } else {
-            "已下载 ${formatBytes(received)}"
+            val progress = "已下载 ${formatBytes(received)}"
+            if (paused) "已暂停 · $progress" else progress
         }
         val builder = notificationBuilder(progressChannelId)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(
+                if (paused) android.R.drawable.ic_media_pause
+                else android.R.drawable.stat_sys_download,
+            )
             .setContentTitle(title)
             .setContentText(text)
             .setCategory(Notification.CATEGORY_PROGRESS)
@@ -129,21 +186,42 @@ class MainActivity : FlutterActivity() {
             builder.setProgress(0, 0, true)
         }
         launchPendingIntent()?.let(builder::setContentIntent)
+        val nextAction = if (paused) "resume" else "pause"
+        val nextLabel = if (paused) "继续" else "暂停"
+        builder.addAction(
+            if (paused) android.R.drawable.ic_media_play
+            else android.R.drawable.ic_media_pause,
+            nextLabel,
+            notificationActionPendingIntent(id, nextAction),
+        )
+        builder.addAction(
+            android.R.drawable.ic_menu_close_clear_cancel,
+            "停止",
+            notificationActionPendingIntent(id, "stop"),
+        )
         notificationManager().notify(notificationId(id), builder.build())
+    }
+
+    private fun cancelDownloadNotification(call: MethodCall) {
+        val id = call.argument<String>("id") ?: return
+        notificationManager().cancel(notificationId(id))
     }
 
     private fun showDownloadCompleted(call: MethodCall) {
         if (!canPostNotifications()) return
         val id = call.argument<String>("id") ?: return
         val title = call.argument<String>("title") ?: "APK 下载"
-        val path = call.argument<String>("path") ?: ""
         val builder = notificationBuilder(eventChannelId)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("下载完成：$title")
-            .setContentText("点击返回 APK Mesh 查看")
-            .setStyle(Notification.BigTextStyle().bigText("文件已保存到：$path"))
+            .setSmallIcon(android.R.drawable.checkbox_on_background)
+            .setContentTitle(title)
+            .setContentText("可安装")
             .setAutoCancel(true)
         launchPendingIntent()?.let(builder::setContentIntent)
+        builder.addAction(
+            android.R.drawable.ic_menu_view,
+            "安装",
+            notificationActionPendingIntent(id, "install"),
+        )
         notificationManager().notify(notificationId(id), builder.build())
     }
 
@@ -168,6 +246,24 @@ class MainActivity : FlutterActivity() {
         } else {
             Notification.Builder(this)
         }
+
+    private fun notificationActionPendingIntent(
+        id: String,
+        action: String,
+    ): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            this.action = notificationAction
+            putExtra("download_id", id)
+            putExtra("download_action", action)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        return PendingIntent.getActivity(
+            this,
+            notificationId("$id:$action"),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
 
     private fun launchPendingIntent(): PendingIntent? {
         val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return null

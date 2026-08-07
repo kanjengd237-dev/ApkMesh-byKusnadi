@@ -948,6 +948,7 @@ class _DownloadTaskTile extends StatelessWidget {
       DownloadStatus.failed => (Icons.error_outline, scheme.error),
       DownloadStatus.canceled => (Icons.cancel_outlined, scheme.outline),
     };
+    final detail = _downloadTaskDetail(task);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -956,7 +957,7 @@ class _DownloadTaskTile extends StatelessWidget {
             contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
             leading: Icon(icon, color: color),
             title: Text(task.file.label),
-            subtitle: Text(_downloadTaskDetail(task)),
+            subtitle: detail == null ? null : Text(detail),
             trailing: switch (task.status) {
               DownloadStatus.downloading => SizedBox(
                 width: 104,
@@ -994,10 +995,16 @@ class _DownloadTaskTile extends StatelessWidget {
                   ],
                 ),
               ),
-              DownloadStatus.completed => IconButton(
-                tooltip: '安装',
-                icon: const Icon(Icons.install_mobile_outlined),
-                onPressed: () => _installDownloadTask(context, state, task),
+              DownloadStatus.completed => SizedBox(
+                width: 96,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  icon: const Icon(Icons.install_mobile_outlined),
+                  label: const Text('安装'),
+                  onPressed: () => _installDownloadTask(context, state, task),
+                ),
               ),
               DownloadStatus.failed => IconButton(
                 tooltip: '重试下载',
@@ -1023,7 +1030,7 @@ class _DownloadTaskTile extends StatelessWidget {
   }
 }
 
-String _downloadTaskDetail(DownloadTask task) {
+String? _downloadTaskDetail(DownloadTask task) {
   switch (task.status) {
     case DownloadStatus.downloading:
       final total = task.total;
@@ -1040,7 +1047,7 @@ String _downloadTaskDetail(DownloadTask task) {
           : '尚未开始传输';
       return '已暂停 · $progress';
     case DownloadStatus.completed:
-      return '下载完成\n${task.filePath ?? task.file.size}';
+      return null;
     case DownloadStatus.failed:
       return '下载失败\n${task.error ?? '未知错误'}';
     case DownloadStatus.canceled:
@@ -2575,9 +2582,10 @@ class _SourceDownloadTile extends StatelessWidget {
       animation: state,
       builder: (context, _) {
         final task = state.downloadFor(file.url);
+        final taskDetail = task == null ? null : _downloadTaskDetail(task);
         final detail = [
           if (file.size.trim().isNotEmpty) file.size,
-          if (task != null) _downloadTaskDetail(task),
+          ?taskDetail,
         ].join('\n');
         return Column(
           children: [

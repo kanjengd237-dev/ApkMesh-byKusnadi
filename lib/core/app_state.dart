@@ -25,6 +25,9 @@ class AppState extends ChangeNotifier {
         lastSync: DateTime.now(),
       ),
     ];
+    _downloadNotifications = DownloadNotifications(
+      onAction: _handleDownloadNotificationAction,
+    );
   }
 
   late List<ApkSource> _sources;
@@ -33,7 +36,7 @@ class AppState extends ChangeNotifier {
   );
   final DebugLogStore debug = DebugLogStore();
   late final SourceHostApi host = createPlatformHostApi(debug: debug);
-  final DownloadNotifications _downloadNotifications = DownloadNotifications();
+  late final DownloadNotifications _downloadNotifications;
   final Completer<void> _ready = Completer<void>();
   final List<DownloadTask> _downloads = [];
   final Map<String, int> _pendingDownloadBytes = {};
@@ -277,6 +280,33 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void _handleDownloadNotificationAction(String id, String action) {
+    final task = _downloadById(id);
+    if (task == null) return;
+    switch (action) {
+      case 'pause':
+        unawaited(pauseDownload(task));
+      case 'resume':
+        unawaited(resumeDownload(task));
+      case 'stop':
+        unawaited(cancelDownload(task));
+      case 'install':
+        unawaited(_installFromNotification(task));
+    }
+  }
+
+  Future<void> _installFromNotification(DownloadTask task) async {
+    try {
+      await installTask(task);
+    } catch (error) {
+      debug.add(
+        '通知安装失败：${task.file.label} · $error',
+        level: DebugLogLevel.error,
+        category: 'Download',
+      );
+    }
+  }
+
   DownloadTask? downloadFor(String url) {
     for (final task in _downloads) {
       if (task.file.url == url) return task;
@@ -342,8 +372,28 @@ class AppState extends ChangeNotifier {
     debug.add('暂停下载：${current.file.label}', category: 'Download');
     try {
       await host.pauseDownload(current.id);
+      final paused = _downloadById(current.id);
+      if (paused?.status == DownloadStatus.paused) {
+        await _downloadNotifications.showPaused(
+          id: paused!.id,
+          title: paused.file.label,
+          received: paused.received,
+          total: paused.total,
+        );
+      }
     } catch (error) {
       _replaceDownload(current.copyWith(status: DownloadStatus.downloading));
+      final restored = _downloadById(current.id);
+      if (restored != null) {
+        unawaited(
+          _downloadNotifications.showProgress(
+            id: restored.id,
+            title: restored.file.label,
+            received: restored.received,
+            total: restored.total,
+          ),
+        );
+      }
       debug.add(
         '暂停下载失败：${current.file.label} · $error',
         level: DebugLogLevel.error,
@@ -359,8 +409,30 @@ class AppState extends ChangeNotifier {
     debug.add('继续下载：${current.file.label}', category: 'Download');
     try {
       await host.resumeDownload(current.id);
+      final resumed = _downloadById(current.id);
+      if (resumed?.status == DownloadStatus.downloading) {
+        unawaited(
+          _downloadNotifications.showProgress(
+            id: resumed!.id,
+            title: resumed.file.label,
+            received: resumed.received,
+            total: resumed.total,
+          ),
+        );
+      }
     } catch (error) {
       _replaceDownload(current.copyWith(status: DownloadStatus.paused));
+      final paused = _downloadById(current.id);
+      if (paused != null) {
+        unawaited(
+          _downloadNotifications.showPaused(
+            id: paused.id,
+            title: paused.file.label,
+            received: paused.received,
+            total: paused.total,
+          ),
+        );
+      }
       debug.add(
         '继续下载失败：${current.file.label} · $error',
         level: DebugLogLevel.error,
@@ -371,9 +443,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> cancelDownload(DownloadTask task) async {
     final current = _downloadById(task.id);
-    if (current == null ||
-        (current.status != DownloadStatus.downloading &&
-            current.status != DownloadStatus.paused)) {
+    if (current == null) return;
+    if (current.status != DownloadStatus.downloading &&
+        current.status != DownloadStatus.paused) {
+      if (current.status == DownloadStatus.canceled) {
+        await _downloadNotifications.cancel(current.id);
+      }
       return;
     }
     _replaceDownload(
@@ -384,6 +459,7 @@ class AppState extends ChangeNotifier {
       ),
     );
     debug.add('取消下载：${current.file.label}', category: 'Download');
+    await _downloadNotifications.cancel(current.id);
     try {
       await host.cancelDownload(current.id);
     } catch (error) {
@@ -400,12 +476,24 @@ class AppState extends ChangeNotifier {
     if (task == null) return;
     final script = registry.scriptFor(task.sourceId);
     await _downloadNotifications.requestPermission();
+    final beforeNotification = _downloadById(task.id);
+    if (beforeNotification == null ||
+        beforeNotification.status != DownloadStatus.downloading) {
+      await _downloadNotifications.cancel(task.id);
+      return;
+    }
     await _downloadNotifications.showProgress(
       id: task.id,
       title: task.file.label,
-      received: 0,
-      total: null,
+      received: beforeNotification.received,
+      total: beforeNotification.total,
     );
+    final beforeStart = _downloadById(task.id);
+    if (beforeStart == null ||
+        beforeStart.status != DownloadStatus.downloading) {
+      await _downloadNotifications.cancel(task.id);
+      return;
+    }
 
     try {
       final path = await host.download(
@@ -426,6 +514,10 @@ class AppState extends ChangeNotifier {
       _flushDownloadProgress(task.id);
       final current = _downloadById(task.id);
       if (current == null) return;
+      if (current.status == DownloadStatus.canceled) {
+        await _downloadNotifications.cancel(task.id);
+        return;
+      }
       final completed = current.copyWith(
         status: DownloadStatus.completed,
         filePath: path,
@@ -433,11 +525,10 @@ class AppState extends ChangeNotifier {
         completedAt: DateTime.now(),
       );
       _replaceDownload(completed);
-      debug.add('下载完成：${task.file.label} · $path', category: 'Download');
+      debug.add('下载完成：${task.file.label}', category: 'Download');
       await _downloadNotifications.showCompleted(
         id: task.id,
         title: task.file.label,
-        path: path,
       );
     } catch (error) {
       _flushDownloadProgress(task.id);
@@ -455,6 +546,7 @@ class AppState extends ChangeNotifier {
           );
         }
         debug.add('已取消下载：${task.file.label}', category: 'Download');
+        await _downloadNotifications.cancel(task.id);
         return;
       }
       _replaceDownload(
@@ -582,6 +674,12 @@ class AppState extends ChangeNotifier {
       timer.cancel();
     }
     _downloadProgressTimers.clear();
+    for (final task in _downloads) {
+      if (task.status == DownloadStatus.downloading ||
+          task.status == DownloadStatus.paused) {
+        unawaited(_downloadNotifications.cancel(task.id));
+      }
+    }
     host.dispose();
     registry.dispose();
     debug.dispose();
