@@ -42,6 +42,8 @@ class AppState extends ChangeNotifier {
   final Map<String, int> _pendingDownloadBytes = {};
   final Map<String, int?> _pendingDownloadTotals = {};
   final Map<String, Timer> _downloadProgressTimers = {};
+  final Map<String, ({int received, DateTime timestamp})>
+  _downloadProgressSamples = {};
   int _downloadSequence = 0;
   bool _sourceRuntimeReady = false;
   String? _runtimeError;
@@ -344,6 +346,7 @@ class AppState extends ChangeNotifier {
         startedAt: now,
         received: 0,
         total: null,
+        speedBytesPerSecond: null,
         filePath: null,
         error: null,
         completedAt: null,
@@ -351,6 +354,7 @@ class AppState extends ChangeNotifier {
       _replaceDownload(task, notify: false);
     }
 
+    _downloadProgressSamples.remove(task.id);
     debug.add('开始下载：${file.label}', category: 'Download');
     notifyListeners();
     unawaited(_runDownload(task.id));
@@ -368,7 +372,13 @@ class AppState extends ChangeNotifier {
   Future<void> pauseDownload(DownloadTask task) async {
     final current = _downloadById(task.id);
     if (current?.status != DownloadStatus.downloading) return;
-    _replaceDownload(current!.copyWith(status: DownloadStatus.paused));
+    _downloadProgressSamples.remove(current!.id);
+    _replaceDownload(
+      current.copyWith(
+        status: DownloadStatus.paused,
+        speedBytesPerSecond: null,
+      ),
+    );
     debug.add('暂停下载：${current.file.label}', category: 'Download');
     try {
       await host.pauseDownload(current.id);
@@ -382,7 +392,12 @@ class AppState extends ChangeNotifier {
         );
       }
     } catch (error) {
-      _replaceDownload(current.copyWith(status: DownloadStatus.downloading));
+      _replaceDownload(
+        current.copyWith(
+          status: DownloadStatus.downloading,
+          speedBytesPerSecond: null,
+        ),
+      );
       final restored = _downloadById(current.id);
       if (restored != null) {
         unawaited(
@@ -405,7 +420,13 @@ class AppState extends ChangeNotifier {
   Future<void> resumeDownload(DownloadTask task) async {
     final current = _downloadById(task.id);
     if (current?.status != DownloadStatus.paused) return;
-    _replaceDownload(current!.copyWith(status: DownloadStatus.downloading));
+    _downloadProgressSamples.remove(current!.id);
+    _replaceDownload(
+      current.copyWith(
+        status: DownloadStatus.downloading,
+        speedBytesPerSecond: null,
+      ),
+    );
     debug.add('继续下载：${current.file.label}', category: 'Download');
     try {
       await host.resumeDownload(current.id);
@@ -509,9 +530,11 @@ class AppState extends ChangeNotifier {
         await _downloadNotifications.cancel(task.id);
         return;
       }
+      _downloadProgressSamples.remove(task.id);
       final completed = current.copyWith(
         status: DownloadStatus.completed,
         filePath: path,
+        speedBytesPerSecond: null,
         error: null,
         completedAt: DateTime.now(),
       );
@@ -531,9 +554,11 @@ class AppState extends ChangeNotifier {
         await _downloadNotifications.cancel(task.id);
         return;
       }
+      _downloadProgressSamples.remove(task.id);
       _replaceDownload(
         current.copyWith(
           status: DownloadStatus.failed,
+          speedBytesPerSecond: null,
           error: error.toString(),
           completedAt: DateTime.now(),
         ),
@@ -568,8 +593,34 @@ class AppState extends ChangeNotifier {
     final received = _pendingDownloadBytes.remove(id);
     final total = _pendingDownloadTotals.remove(id);
     final task = _downloadById(id);
-    if (received == null || task?.status != DownloadStatus.downloading) return;
-    final updated = task!.copyWith(received: received, total: total);
+    if (received == null ||
+        task == null ||
+        task.status != DownloadStatus.downloading) {
+      return;
+    }
+
+    final now = DateTime.now();
+    final previous = _downloadProgressSamples[id];
+    final elapsed = previous == null
+        ? null
+        : now.difference(previous.timestamp).inMilliseconds;
+    final delta = previous == null ? null : received - previous.received;
+    _downloadProgressSamples[id] = (received: received, timestamp: now);
+
+    final measuredSpeed =
+        elapsed != null && elapsed > 0 && delta != null && delta >= 0
+        ? (delta * 1000 / elapsed).round()
+        : null;
+    final speed = measuredSpeed == null
+        ? task.speedBytesPerSecond
+        : task.speedBytesPerSecond == null
+        ? measuredSpeed
+        : (task.speedBytesPerSecond! * .7 + measuredSpeed * .3).round();
+    final updated = task.copyWith(
+      received: received,
+      total: total,
+      speedBytesPerSecond: speed,
+    );
     _replaceDownload(updated);
     unawaited(
       _downloadNotifications.showProgress(
@@ -601,6 +652,7 @@ class AppState extends ChangeNotifier {
     _downloadProgressTimers.remove(id)?.cancel();
     _pendingDownloadBytes.remove(id);
     _pendingDownloadTotals.remove(id);
+    _downloadProgressSamples.remove(id);
     _downloads.removeAt(index);
     notifyListeners();
   }
@@ -666,6 +718,7 @@ class AppState extends ChangeNotifier {
       timer.cancel();
     }
     _downloadProgressTimers.clear();
+    _downloadProgressSamples.clear();
     for (final task in _downloads) {
       if (task.status == DownloadStatus.downloading ||
           task.status == DownloadStatus.paused) {

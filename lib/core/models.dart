@@ -189,6 +189,7 @@ class DownloadTask {
     required this.startedAt,
     this.received = 0,
     this.total,
+    this.speedBytesPerSecond,
     this.filePath,
     this.error,
     this.completedAt,
@@ -203,6 +204,7 @@ class DownloadTask {
   final DateTime startedAt;
   final int received;
   final int? total;
+  final int? speedBytesPerSecond;
   final String? filePath;
   final String? error;
   final DateTime? completedAt;
@@ -210,11 +212,26 @@ class DownloadTask {
   double? get progress =>
       total != null && total! > 0 ? (received / total!).clamp(0.0, 1.0) : null;
 
+  Duration? get estimatedRemaining {
+    final totalBytes = total;
+    final speed = speedBytesPerSecond;
+    if (totalBytes == null ||
+        speed == null ||
+        speed <= 0 ||
+        received >= totalBytes) {
+      return null;
+    }
+    final remaining = totalBytes - received;
+    final milliseconds = (remaining * 1000 / speed).ceil();
+    return Duration(milliseconds: milliseconds);
+  }
+
   DownloadTask copyWith({
     DownloadStatus? status,
     DateTime? startedAt,
     int? received,
     Object? total = _notProvided,
+    Object? speedBytesPerSecond = _notProvided,
     Object? filePath = _notProvided,
     Object? error = _notProvided,
     Object? completedAt = _notProvided,
@@ -226,6 +243,9 @@ class DownloadTask {
     startedAt: startedAt ?? this.startedAt,
     received: received ?? this.received,
     total: identical(total, _notProvided) ? this.total : total as int?,
+    speedBytesPerSecond: identical(speedBytesPerSecond, _notProvided)
+        ? this.speedBytesPerSecond
+        : speedBytesPerSecond as int?,
     filePath: identical(filePath, _notProvided)
         ? this.filePath
         : filePath as String?,

@@ -1079,13 +1079,21 @@ String? _downloadTaskDetail(DownloadTask task) {
   switch (task.status) {
     case DownloadStatus.downloading:
       final total = task.total;
-      if (total != null && total > 0) {
-        final percent = ((task.progress ?? 0) * 100).toStringAsFixed(0);
-        return '${_formatByteCount(task.received)} / ${_formatByteCount(total)} · $percent%';
-      }
-      return task.received > 0
+      final progress = total != null && total > 0
+          ? '${_formatByteCount(task.received)} / ${_formatByteCount(total)} · ${((task.progress ?? 0) * 100).toStringAsFixed(0)}%'
+          : task.received > 0
           ? '已下载 ${_formatByteCount(task.received)}'
           : '正在连接';
+      final stats = <String>[];
+      final speed = task.speedBytesPerSecond;
+      if (speed != null && speed > 0) {
+        stats.add('速度 ${_formatByteCount(speed)}/s');
+      }
+      final remaining = task.estimatedRemaining;
+      if (remaining != null) {
+        stats.add('预计 ${_formatDownloadDuration(remaining)}');
+      }
+      return [progress, ...stats].join(' · ');
     case DownloadStatus.paused:
       final progress = task.received > 0
           ? '已下载 ${_formatByteCount(task.received)}'
@@ -1111,6 +1119,20 @@ String _formatByteCount(int bytes) {
   }
   final digits = value >= 100 ? 0 : 1;
   return '${value.toStringAsFixed(digits)} ${units[unit]}';
+}
+
+String _formatDownloadDuration(Duration duration) {
+  final totalSeconds = duration.inSeconds < 1 ? 1 : duration.inSeconds;
+  final hours = totalSeconds ~/ 3600;
+  final minutes = totalSeconds % 3600 ~/ 60;
+  final seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return minutes > 0 ? '$hours 小时 $minutes 分钟' : '$hours 小时';
+  }
+  if (minutes > 0) {
+    return seconds > 0 ? '$minutes 分钟 $seconds 秒' : '$minutes 分钟';
+  }
+  return '$seconds 秒';
 }
 
 Future<void> _installDownloadTask(

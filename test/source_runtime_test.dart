@@ -33,6 +33,27 @@ void main() {
     expect(policy.permits(Uri.parse('http://redirect.example/file')), isTrue);
     expect(policy.permits(Uri.parse('file:///tmp/app.apk')), isFalse);
   });
+
+  test('download task estimates remaining time from transfer speed', () {
+    final task = DownloadTask(
+      id: 'download-1',
+      file: SourceDownload(
+        label: 'example.apk',
+        url: 'https://example.test/example.apk',
+        size: '100 MB',
+      ),
+      sourceId: 'example-source',
+      status: DownloadStatus.downloading,
+      startedAt: DateTime(2026, 1, 1),
+      received: 50 * 1024 * 1024,
+      total: 100 * 1024 * 1024,
+      speedBytesPerSecond: 10 * 1024 * 1024,
+    );
+
+    expect(task.progress, .5);
+    expect(task.estimatedRemaining, const Duration(seconds: 5));
+  });
+
   test('registry skips disabled source ids', () async {
     final registry = SourceRegistry(scripts: [ExampleCatalogSource()]);
     final host = DemoHostApi();
