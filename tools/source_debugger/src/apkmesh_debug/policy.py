@@ -26,6 +26,8 @@ class SourcePolicy:
     @staticmethod
     def _host_matches(host: str, rule: str) -> bool:
         normalized = rule.lower().strip()
+        if normalized == "*":
+            return True
         if normalized.startswith("*."):
             suffix = normalized[1:]
             return host.endswith(suffix) and len(host) > len(suffix)

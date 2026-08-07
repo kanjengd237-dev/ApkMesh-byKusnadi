@@ -26,6 +26,7 @@ class NativeHostApi implements SourceHostApi {
   final Map<String, InAppWebViewController> _controllers = {};
   final Map<String, BrowserTabDebugInfo> _tabStates = {};
   final List<BrowserTabDebugInfo> _tabHistory = [];
+  final Map<String, Map<String, String>> _browserCookies = {};
   final http.Client _client = http.Client();
   final Map<String, _NativeDownloadSession> _downloadSessions = {};
 
@@ -140,9 +141,14 @@ class NativeHostApi implements SourceHostApi {
     var uri = initialUri;
     for (var redirects = 0; redirects < 6; redirects++) {
       _check(uri, policy, capability: true);
+      final requestHeaders = <String, String>{...headers};
+      if (!headers.keys.any((key) => key.toLowerCase() == 'cookie')) {
+        final cookies = _cookieHeader(uri);
+        if (cookies != null) requestHeaders['Cookie'] = cookies;
+      }
       final request = http.Request('GET', uri)
         ..followRedirects = false
-        ..headers.addAll(headers);
+        ..headers.addAll(requestHeaders);
       final response = await _client
           .send(request)
           .timeout(const Duration(seconds: 15));
@@ -184,7 +190,8 @@ class NativeHostApi implements SourceHostApi {
         incognito: true,
         useShouldOverrideUrlLoading: true,
         useShouldInterceptRequest: true,
-        userAgent: 'APKMesh/0.1 (+https://github.com/apkmesh/apkmesh)',
+        userAgent:
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
       ),
       initialUrlRequest: URLRequest(url: WebUri(uri.toString())),
       onWebViewCreated: (controller) {
@@ -342,11 +349,52 @@ class NativeHostApi implements SourceHostApi {
         : objectExpression;
   }
 
+  String? _cookieHeader(Uri uri) {
+    final cookies = <String, String>{};
+    for (final entry in _browserCookies.entries) {
+      final domain = entry.key;
+      if (uri.host == domain || uri.host.endsWith('.$domain')) {
+        cookies.addAll(entry.value);
+      }
+    }
+    if (cookies.isEmpty) return null;
+    return cookies.entries
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join('; ');
+  }
+
+  Future<void> _captureBrowserCookies(Uri uri) async {
+    if (!_hasHeadlessWebView) return;
+    try {
+      final cookies = await CookieManager.instance().getCookies(
+        url: WebUri(uri.toString()),
+      );
+      for (final cookie in cookies) {
+        final domain = (cookie.domain ?? uri.host).toLowerCase().replaceFirst(
+          RegExp(r'^\.'),
+          '',
+        );
+        _browserCookies.putIfAbsent(domain, () => {})[cookie.name] = cookie
+            .value
+            .toString();
+      }
+    } catch (error) {
+      _log(
+        'WebView cookie capture failed for ${uri.host}: $error',
+        level: DebugLogLevel.warning,
+        category: 'WebView',
+      );
+    }
+  }
+
   @override
   Future<void> browserClose(String tabId) async {
     _log('WebView closing $tabId', category: 'WebView');
     final tab = _tabs.remove(tabId);
+    final state = _tabStates[tabId];
     _controllers.remove(tabId);
+    final url = state == null ? null : Uri.tryParse(state.url);
+    if (url != null) await _captureBrowserCookies(url);
     await tab?.dispose();
     _setTabState(tabId, state: 'closed', active: false);
   }

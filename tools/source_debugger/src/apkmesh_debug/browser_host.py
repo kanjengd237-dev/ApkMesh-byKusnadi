@@ -80,7 +80,7 @@ class BrowserHost:
         recording: RecordingStore | None = None,
         timeout: float = 30.0,
         headed: bool = False,
-        user_agent: str = "APKMesh/0.1 (+https://github.com/apkmesh/apkmesh)",
+        user_agent: str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36",
     ) -> None:
         self.policy = policy
         self.trace = trace

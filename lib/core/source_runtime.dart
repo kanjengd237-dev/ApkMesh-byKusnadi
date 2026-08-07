@@ -19,6 +19,7 @@ class SourcePolicy {
     final host = uri.host.toLowerCase();
     return allowedHosts.any((rule) {
       final normalized = rule.toLowerCase();
+      if (normalized == '*') return true;
       if (normalized.startsWith('*.')) {
         final suffix = normalized.substring(1);
         return host.endsWith(suffix) && host.length > suffix.length;

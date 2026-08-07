@@ -60,6 +60,10 @@ function isChallengePage(html) {
   return /Enable JavaScript and cookies to continue|Just a moment\.\.\.|cf-mitigated/i.test(html || '');
 }
 
+function downloadHeaders(referer) {
+  return {...SEARCH_HEADERS, Referer: referer};
+}
+
 function extractVersion(value) {
   const match = /\bv?\d+(?:\.\d+)+(?:[ _.-]*(?:alpha|beta|rc)\b)?/i.exec(cleanText(value));
   return match ? match[0].replace(/^v/i, '') : '';
@@ -379,7 +383,7 @@ async function resolveDownload(item) {
   const redirectHtml = await fetchText(redirect, item.url);
   const direct = extractFinalDownloadUrl(redirectHtml);
   if (!direct || !isApkMirrorUrl(direct)) return null;
-  return {...item, url: direct, size: item.size || extractFileSize(extractInfoValue(html, 'File size')), headers: {Referer: item.url}};
+  return {...item, url: direct, size: item.size || extractFileSize(extractInfoValue(html, 'File size')), headers: downloadHeaders(item.url)};
 }
 
 async function resolveDownloadWithBrowser(item) {
@@ -398,7 +402,7 @@ async function resolveDownloadWithBrowser(item) {
         .map((item) => absoluteUrl(item.url || ''))
         .find((candidate) => /downloadr\d*\.apkmirror\.com|\.apk(?:m|s)?(?:[?#]|$)|download\.php/i.test(candidate)) || '';
       return direct && isApkMirrorUrl(direct)
-        ? {...item, url: direct, headers: {Referer: item.url}}
+        ? {...item, url: direct, headers: downloadHeaders(item.url)}
         : null;
     } finally {
       await second.close();
@@ -428,7 +432,7 @@ async function mapLimit(items, limit, mapper) {
 
 async function fetchText(url, referer = ORIGIN) {
   return apkmesh.request(url, {
-    headers: {...SEARCH_HEADERS, Referer: referer},
+    headers: downloadHeaders(referer),
   });
 }
 
@@ -470,7 +474,7 @@ globalThis.source = {
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
     permissions: {
-      network: ['apkmirror.com', '*.apkmirror.com'],
+      network: ['*'],
       browser: true,
       download: true,
       install: true,

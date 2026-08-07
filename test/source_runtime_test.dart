@@ -23,6 +23,16 @@ void main() {
     expect(policy.permits(Uri.parse('file:///tmp/app.apk')), isFalse);
   });
 
+  test('source policy allows an explicit any-host permission', () {
+    const policy = SourcePolicy(allowedHosts: {'*'});
+
+    expect(
+      policy.permits(Uri.parse('https://temporary.example/file.apk')),
+      isTrue,
+    );
+    expect(policy.permits(Uri.parse('http://redirect.example/file')), isTrue);
+    expect(policy.permits(Uri.parse('file:///tmp/app.apk')), isFalse);
+  });
   test('registry skips disabled source ids', () async {
     final registry = SourceRegistry(scripts: [ExampleCatalogSource()]);
     final host = DemoHostApi();
