@@ -14,6 +14,17 @@ import 'core/app_state.dart';
 import 'core/debug_log.dart';
 import 'core/models.dart';
 import 'core/source_runtime.dart';
+import 'widgets/app_icon.dart';
+import 'widgets/app_result_tile.dart';
+import 'widgets/package_lookup_sheet.dart';
+
+void _showAppDetails(BuildContext context, AppState state, AppListing app) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => DetailsSheet(app: app, state: state),
+  );
+}
 
 void main() => runApp(const ApkMeshApp());
 
@@ -829,6 +840,7 @@ class _HomePageState extends State<HomePage> {
         (entry) => AppResultTile(
           app: entry.value,
           state: widget.state,
+          onOpen: (app) => _showAppDetails(context, widget.state, app),
           showDivider: entry.key < recommended.length - 1,
         ),
       ),
@@ -849,6 +861,7 @@ class _HomePageState extends State<HomePage> {
           child: AppResultTile(
             app: results[index],
             state: widget.state,
+            onOpen: (app) => _showAppDetails(context, widget.state, app),
             showDivider: index < results.length - 1,
           ),
         ),
@@ -873,6 +886,8 @@ class _HomePageState extends State<HomePage> {
                   (entry) => AppResultTile(
                     app: entry.value,
                     state: widget.state,
+                    onOpen: (app) =>
+                        _showAppDetails(context, widget.state, app),
                     showDivider: entry.key < visibleResults.length - 1,
                   ),
                 )
@@ -1117,150 +1132,13 @@ class _CategoryTabContent extends StatelessWidget {
                 (entry) => AppResultTile(
                   app: entry.value,
                   state: state,
+                  onOpen: (app) => _showAppDetails(context, state, app),
                   showDivider: entry.key < apps.length - 1,
                 ),
               )
               .toList(),
         );
       },
-    );
-  }
-}
-
-class AppResultTile extends StatelessWidget {
-  const AppResultTile({
-    required this.app,
-    required this.state,
-    this.showDivider = true,
-    super.key,
-  });
-  final AppListing app;
-  final AppState state;
-  final bool showDivider;
-
-  @override
-  Widget build(BuildContext context) {
-    void openDetails() {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        builder: (_) => DetailsSheet(app: app, state: state),
-      );
-    }
-
-    final theme = Theme.of(context);
-    final description = app.description.trim();
-    final chips = _appInfoChips(app);
-
-    return Column(
-      children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: openDetails,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppIcon(url: app.iconUrl, size: 72, borderRadius: 16),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          app.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (description.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                        if (chips.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Wrap(spacing: 6, runSpacing: 2, children: chips),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (showDivider)
-          Divider(
-            height: 1,
-            indent: 88,
-            color: theme.colorScheme.outlineVariant.withValues(alpha: .65),
-          ),
-      ],
-    );
-  }
-}
-
-List<Widget> _appInfoChips(AppListing app) {
-  final chips = <Widget>[];
-  final values = <({IconData icon, String text})>[];
-
-  void add(IconData icon, String value) {
-    final trimmed = value.trim();
-    if (trimmed.isNotEmpty &&
-        !values.any((item) => item.icon == icon && item.text == trimmed)) {
-      values.add((icon: icon, text: trimmed));
-    }
-  }
-
-  add(
-    Icons.source_outlined,
-    app.sourceName.trim().isNotEmpty ? app.sourceName : app.sourceId,
-  );
-  add(Icons.category_outlined, app.category);
-  add(Icons.new_releases_outlined, app.version);
-  add(Icons.storage_outlined, app.size);
-  add(Icons.update_outlined, app.updatedAt);
-  add(Icons.star_outline, app.rating);
-  add(Icons.person_outline, app.author);
-  add(Icons.code_outlined, app.packageName);
-
-  for (final value in values) {
-    chips.add(_AppInfoChip(icon: value.icon, text: value.text));
-  }
-  return chips;
-}
-
-class _AppInfoChip extends StatelessWidget {
-  const _AppInfoChip({required this.icon, required this.text});
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 240),
-      child: Chip(
-        avatar: Icon(icon, size: 16, color: scheme.onSurfaceVariant),
-        label: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
-        labelPadding: EdgeInsets.zero,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: .72),
-        side: BorderSide.none,
-      ),
     );
   }
 }
@@ -1762,9 +1640,6 @@ class SourceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = source.status == SourceStatus.enabled;
-    final debugProjectCount = state.debugProjects
-        .where((project) => project.sourceId == source.id)
-        .length;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -1780,9 +1655,9 @@ class SourceTile extends StatelessWidget {
               ),
               title: Text(source.name),
               subtitle: Text(
-                '${source.description}\n${source.homepage} · v${source.version} · 调试项目 $debugProjectCount 个',
+                '${source.description}\n${source.homepage} · v${source.version}',
               ),
-              isThreeLine: true,
+              isThreeLine: false,
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -2678,7 +2553,21 @@ class _DetailsSheetState extends State<DetailsSheet> {
           future: details,
           builder: (context, snapshot) {
             final displayApp = snapshot.data ?? widget.app;
-            final metadataChips = _appInfoChips(displayApp);
+            final metadataChips = buildAppInfoChips(
+              displayApp,
+              onPackageTap: displayApp.packageName.trim().isEmpty
+                  ? null
+                  : () => showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (_) => PackageLookupSheet(
+                        packageName: displayApp.packageName,
+                        state: widget.state,
+                        onAppTap: (app) =>
+                            _showAppDetails(context, widget.state, app),
+                      ),
+                    ),
+            );
             return ListView(
               controller: controller,
               padding: const EdgeInsets.all(24),
@@ -3256,39 +3145,6 @@ class _SourceDownloadTile extends StatelessWidget {
       ),
     );
   }
-}
-
-class AppIcon extends StatelessWidget {
-  const AppIcon({
-    required this.url,
-    this.size = 56,
-    this.borderRadius = 12,
-    super.key,
-  });
-  final String url;
-  final double size;
-  final double borderRadius;
-
-  @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(borderRadius),
-    child: url.isEmpty
-        ? _placeholder(context)
-        : Image.network(
-            url,
-            width: size,
-            height: size,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => _placeholder(context),
-          ),
-  );
-
-  Widget _placeholder(BuildContext context) => Container(
-    width: size,
-    height: size,
-    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-    child: const Icon(Icons.android),
-  );
 }
 
 class EmptyMessage extends StatelessWidget {

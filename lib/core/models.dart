@@ -10,6 +10,7 @@ class ApkSource {
     required this.status,
     required this.builtIn,
     this.homeSource = false,
+    this.supportsPackageLookup = false,
     this.lastSync,
   });
 
@@ -21,11 +22,13 @@ class ApkSource {
   final SourceStatus status;
   final bool builtIn;
   final bool homeSource;
+  final bool supportsPackageLookup;
   final DateTime? lastSync;
 
   ApkSource copyWith({
     SourceStatus? status,
     bool? homeSource,
+    bool? supportsPackageLookup,
     DateTime? lastSync,
   }) => ApkSource(
     id: id,
@@ -36,6 +39,7 @@ class ApkSource {
     status: status ?? this.status,
     builtIn: builtIn,
     homeSource: homeSource ?? this.homeSource,
+    supportsPackageLookup: supportsPackageLookup ?? this.supportsPackageLookup,
     lastSync: lastSync ?? this.lastSync,
   );
 }

@@ -42,6 +42,7 @@ uv run apkmesh-debug ../../assets/sources/apkvision.js inspect
 
 ```bash
 uv run apkmesh-debug --mode live --trace traces/search.json ../../assets/sources/apkvision.js search minecraft
+uv run apkmesh-debug --mode replay --fixture-dir examples/fixtures/demo examples/fixture_demo.js package-search com.example.demo
 ```
 
 录制 HTTP 响应和浏览器最终 DOM 页面快照，生成可离线回放的目录：

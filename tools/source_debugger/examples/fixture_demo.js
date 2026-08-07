@@ -16,6 +16,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
+    packageLookup: true,
     permissions: {
       network: ['example.test'],
       browser: true,
@@ -54,6 +55,11 @@ globalThis.source = {
       page,
       packageName: 'com.example.demo',
     }];
+  },
+
+  packageLookupUrl(packageName) {
+    const normalized = String(packageName || '').trim().toLowerCase();
+    return normalized === 'com.example.demo' ? `${ORIGIN}/details/demo` : null;
   },
 
   async details(url) {

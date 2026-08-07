@@ -13,6 +13,7 @@ globalThis.source = {
     minApiVersion: 1,
     homepage: 'https://example.com',
     description: 'Example source metadata.',
+    packageLookup: true,
     permissions: {
       network: ['example.com', '*.example.com'],
       browser: true,
@@ -31,11 +32,14 @@ globalThis.source = {
     ],
   },
   async search(query, page) {},
+  async packageLookupUrl(packageName) {},
   async details(idOrUrl) {},
 };
 ```
 
 `manifest.description` 可选，用于在源管理页展示源说明。
+
+源可以通过 `packageLookup: true` 声明包名查找能力，并实现 `packageLookupUrl(packageName)`。该接口必须返回一个可以直接交给 `details()` 解析的精确 URL；返回空值表示该源不支持该包名。宿主只会对已启用且声明该能力的源调用此接口，不会遍历普通搜索结果。详情返回的包名仍会与输入值进行精确比较，单个源失败不会阻止其他源返回结果。
 
 `search(query, page)` 中 `page` 从 1 开始。宿主会在用户继续滚动搜索结果时请求后续页；源返回空数组表示该源没有更多结果。搜索页请求如果收到 HTTP 404，也应视为没有更多结果并返回空数组。源应保证同一查询的页码结果稳定，并避免跨页重复返回相同 `id`。其他请求失败则作为源错误处理，不应误判为分页结束。
 

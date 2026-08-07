@@ -84,6 +84,9 @@ class AppState extends ChangeNotifier {
       description: manifest?.description ?? '内置 QuickJS 源',
       status: SourceStatus.enabled,
       builtIn: builtIn,
+      supportsPackageLookup:
+          script is SourcePackageLookupScript &&
+          (script as SourcePackageLookupScript).supportsPackageLookup,
       lastSync: DateTime.now(),
     );
   }
@@ -332,6 +335,31 @@ class AppState extends ChangeNotifier {
       );
     }
     debug.add('聚合搜索完成，结果 ${results.length} 条', category: 'App');
+    return results;
+  }
+
+  Future<List<AppListing>> lookupByPackageName(String packageName) async {
+    await ready;
+    final normalized = packageName.trim();
+    if (normalized.isEmpty) return const [];
+    debug.add('开始按包名查找：$normalized', category: 'App');
+    final enabledSourceIds = _sources
+        .where((source) => source.status == SourceStatus.enabled)
+        .map((source) => source.id)
+        .toSet();
+    final results = await registry.lookupByPackageName(
+      normalized,
+      host,
+      enabledSourceIds: enabledSourceIds,
+    );
+    for (final entry in sourceErrors.entries) {
+      debug.add(
+        '${entry.key} 执行失败：${entry.value}',
+        level: DebugLogLevel.error,
+        category: 'Source',
+      );
+    }
+    debug.add('按包名查找完成，结果 ${results.length} 条', category: 'App');
     return results;
   }
 

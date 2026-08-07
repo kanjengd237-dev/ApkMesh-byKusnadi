@@ -59,7 +59,8 @@ class QuickJsApkSourceScript
         ApkSourceScript,
         SourceManifestProvider,
         DebugProjectSource,
-        SourceCatalogScript {
+        SourceCatalogScript,
+        SourcePackageLookupScript {
   QuickJsApkSourceScript(this.scriptText, {String? sourceUrl, this._debug})
     : _sourceUrl = sourceUrl ?? 'quickjs-source.js' {
     _runtime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: false);
@@ -79,6 +80,7 @@ class QuickJsApkSourceScript
   List<SourceDebugProject> _debugProjects = const [];
   SourceHostApi? _host;
   bool _hasCatalog = false;
+  bool _hasPackageLookup = false;
   bool _disposed = false;
 
   @override
@@ -214,6 +216,12 @@ class QuickJsApkSourceScript
           'JSON.stringify(typeof source.home === "function" && typeof source.category === "function")',
         ) ==
         true;
+    _hasPackageLookup =
+        manifest['packageLookup'] == true &&
+        await _evaluateJson(
+              'JSON.stringify(typeof source.packageLookupUrl === "function")',
+            ) ==
+            true;
     final hosts = (permissions['network'] as List? ?? const [])
         .map((item) => item.toString())
         .toSet();
@@ -304,10 +312,17 @@ class QuickJsApkSourceScript
     }
     try {
       final result = await _evaluateJson(
-        '(async () => JSON.stringify(await source.$method(${arguments.map(jsonEncode).join(', ')})))()',
+        '(async () => { '
+        'const value = await source.$method(${arguments.map(jsonEncode).join(', ')}); '
+        'return {__apkmeshResult: value === undefined ? null : value}; '
+        '})()',
       );
+      if (result is! Map || !result.containsKey('__apkmeshResult')) {
+        throw const FormatException('QuickJS 调用结果格式无效');
+      }
+      final value = result['__apkmeshResult'];
       _log('QuickJS call $method completed');
-      return result;
+      return value;
     } catch (error) {
       _log('QuickJS call $method failed: $error', level: DebugLogLevel.error);
       rethrow;
@@ -331,6 +346,21 @@ class QuickJsApkSourceScript
   Future<SourceCategory> category(String categoryId, SourceHostApi host) async {
     final value = await _call('category', categoryId, host);
     return _category(_dynamicMap(value));
+  }
+
+  @override
+  bool get supportsPackageLookup => _hasPackageLookup;
+
+  @override
+  Future<String?> packageLookupUrl(
+    String packageName,
+    SourceHostApi host,
+  ) async {
+    final value = await _callWithArguments('packageLookupUrl', [
+      packageName,
+    ], host);
+    final url = value?.toString().trim() ?? '';
+    return url.isEmpty ? null : url;
   }
 
   @override

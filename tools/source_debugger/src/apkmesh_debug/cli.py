@@ -74,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("query")
     search.add_argument("--page", type=int, default=1)
 
+    package_search = commands.add_parser(
+        "package-search", help="call source.packageLookupUrl(packageName) and source.details()"
+    )
+    package_search.add_argument("package_name")
+
     details = commands.add_parser("details", help="call source.details(idOrUrl)")
     details.add_argument("id_or_url")
 
@@ -150,10 +155,22 @@ def _run_operation(runtime: SourceRuntime, args: argparse.Namespace) -> Any:
                 "browser": manifest.allow_browser,
                 "download": manifest.allow_download,
                 "install": manifest.allow_install,
+                "packageLookup": manifest.package_lookup,
             },
         }
     if args.operation == "search":
         return runtime.call("search", args.query, args.page)
+    if args.operation == "package-search":
+        if not manifest.package_lookup:
+            raise ValueError("source does not declare packageLookup")
+        lookup_url = runtime.call("packageLookupUrl", args.package_name)
+        if not isinstance(lookup_url, str) or not lookup_url.strip():
+            return []
+        detail = runtime.call("details", lookup_url)
+        if not isinstance(detail, dict):
+            return []
+        actual = str(detail.get("packageName", "")).strip()
+        return [detail] if actual.casefold() == args.package_name.strip().casefold() else []
     if args.operation == "details":
         return runtime.call("details", args.id_or_url)
     if args.operation == "debug":

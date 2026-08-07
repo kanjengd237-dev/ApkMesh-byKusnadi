@@ -110,6 +110,12 @@ abstract interface class ApkSourceScript {
   Future<void> dispose();
 }
 
+/// Optional source capability for exact Android package-name lookup.
+abstract interface class SourcePackageLookupScript {
+  bool get supportsPackageLookup;
+  Future<String?> packageLookupUrl(String packageName, SourceHostApi host);
+}
+
 /// Optional metadata exposed by scripts loaded from a manifest.
 abstract interface class SourceManifestProvider {
   String get version;
@@ -286,6 +292,48 @@ class SourceRegistry {
     return script.details(app.id, host);
   }
 
+  Future<List<AppListing>> lookupByPackageName(
+    String packageName,
+    SourceHostApi host, {
+    Set<String>? enabledSourceIds,
+  }) async {
+    final normalized = packageName.trim();
+    if (normalized.isEmpty) return const [];
+    lastErrors.clear();
+    final selectedScripts = scripts
+        .where((script) {
+          if (enabledSourceIds != null &&
+              !enabledSourceIds.contains(script.id)) {
+            return false;
+          }
+          return script is SourcePackageLookupScript &&
+              (script as SourcePackageLookupScript).supportsPackageLookup;
+        })
+        .toList(growable: false);
+
+    final batches = await Future.wait(
+      selectedScripts.map((script) async {
+        final packageSource = script as SourcePackageLookupScript;
+        try {
+          final url = (await packageSource.packageLookupUrl(
+            normalized,
+            host,
+          ))?.trim();
+          if (url == null || url.isEmpty) return const <AppListing>[];
+          final details = await script.details(url, host);
+          return details.packageName.trim().toLowerCase() ==
+                  normalized.toLowerCase()
+              ? <AppListing>[details]
+              : const <AppListing>[];
+        } catch (error) {
+          lastErrors[script.name] = error.toString();
+          return const <AppListing>[];
+        }
+      }),
+    );
+    return batches.expand((batch) => batch).toList(growable: false);
+  }
+
   ApkSourceScript scriptFor(String sourceId) =>
       scripts.firstWhere((item) => item.id == sourceId);
 
@@ -447,9 +495,12 @@ class DemoHostApi implements SourceHostApi {
   Future<void> dispose() async {}
 }
 
-class ApkVisionDemoScript implements ApkSourceScript, SourceCatalogScript {
+class ApkVisionDemoScript
+    implements ApkSourceScript, SourceCatalogScript, SourcePackageLookupScript {
   @override
   bool get supportsCatalog => true;
+  @override
+  bool get supportsPackageLookup => false;
   @override
   String get id => 'apkvision-demo';
 
@@ -508,6 +559,12 @@ class ApkVisionDemoScript implements ApkSourceScript, SourceCatalogScript {
         )
         .toList();
   }
+
+  @override
+  Future<String?> packageLookupUrl(
+    String packageName,
+    SourceHostApi host,
+  ) async => null;
 
   @override
   Future<void> dispose() async {}

@@ -186,6 +186,27 @@ void main() {
 
     expect(registry.lastErrors['Failing source'], contains('parse failed'));
   });
+
+  test(
+    'registry looks up package names only through capable enabled source URLs',
+    () async {
+      final capable = _PackageSource('capable', supports: true);
+      final incapable = _PackageSource('incapable', supports: false);
+      final registry = SourceRegistry(scripts: [capable, incapable]);
+
+      final results = await registry.lookupByPackageName(
+        'test.example.app',
+        DemoHostApi(),
+        enabledSourceIds: {'capable', 'incapable'},
+      );
+
+      expect(results.map((app) => app.sourceId), ['example-source']);
+      expect(capable.urlLookups, 1);
+      expect(capable.detailLookups, 1);
+      expect(incapable.urlLookups, 0);
+      expect(incapable.detailLookups, 0);
+    },
+  );
 }
 
 class ExampleCatalogSource implements ApkSourceScript, SourceCatalogScript {
@@ -260,6 +281,50 @@ class ExampleCatalogSource implements ApkSourceScript, SourceCatalogScript {
     comments: [],
     downloads: [],
   );
+}
+
+class _PackageSource implements ApkSourceScript, SourcePackageLookupScript {
+  _PackageSource(this.id, {required this.supports});
+
+  @override
+  final String id;
+  final bool supports;
+  int urlLookups = 0;
+  int detailLookups = 0;
+
+  @override
+  String get name => 'Package $id';
+
+  @override
+  bool get supportsPackageLookup => supports;
+
+  @override
+  SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
+
+  @override
+  Future<String?> packageLookupUrl(
+    String packageName,
+    SourceHostApi host,
+  ) async {
+    urlLookups += 1;
+    return supports ? 'https://example.test/apps/example' : null;
+  }
+
+  @override
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async => const [];
+
+  @override
+  Future<AppDetails> details(String appId, SourceHostApi host) async {
+    detailLookups += 1;
+    return ExampleCatalogSource._app;
+  }
+
+  @override
+  Future<void> dispose() async {}
 }
 
 class _PagedSource implements ApkSourceScript {

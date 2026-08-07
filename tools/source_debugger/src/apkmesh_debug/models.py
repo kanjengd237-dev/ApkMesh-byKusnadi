@@ -35,6 +35,7 @@ class SourceManifest:
     name: str
     permissions: dict[str, Any]
     debug_projects: list[dict[str, Any]]
+    package_lookup: bool
 
     @classmethod
     def from_raw(cls, value: Any) -> "SourceManifest":
@@ -61,6 +62,7 @@ class SourceManifest:
             name=name,
             permissions=permissions,
             debug_projects=[item for item in projects if isinstance(item, dict)],
+            package_lookup=value.get("packageLookup") is True,
         )
 
     @property

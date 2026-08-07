@@ -1,6 +1,7 @@
 import 'package:apk_mesh/core/app_state.dart';
 import 'package:apk_mesh/core/models.dart';
 import 'package:apk_mesh/main.dart';
+import 'package:apk_mesh/widgets/app_result_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -93,6 +94,7 @@ void main() {
 
   testWidgets('details hides summary and shows metadata chips', (tester) async {
     final state = AppState();
+    await state.initialize();
     const app = AppDetails(
       id: 'https://example.test/apps/example',
       sourceId: 'example-source',
@@ -126,6 +128,9 @@ void main() {
     expect(find.text('Example description'), findsOneWidget);
     expect(find.text('Example source'), findsOneWidget);
     expect(find.byType(Chip), findsNWidgets(8));
+    await tester.tap(find.text('test.example.app'));
+    await tester.pumpAndSettle();
+    expect(find.text('按包名查找'), findsOneWidget);
     state.dispose();
   });
 
