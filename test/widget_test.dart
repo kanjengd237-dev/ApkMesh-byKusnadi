@@ -35,6 +35,21 @@ void main() {
     expect(find.text('输入关键词开始搜索'), findsNothing);
   });
 
+  testWidgets('returns to the home page from search results', (tester) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'missing-package');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('返回主页'), findsOneWidget);
+    await tester.tap(find.byTooltip('返回主页'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('返回主页'), findsNothing);
+    expect(find.text('未找到结果'), findsNothing);
+  });
   testWidgets('opens the source debug bottom sheet', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
     await tester.tap(find.byTooltip('调试'));

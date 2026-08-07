@@ -71,6 +71,7 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   int index = 0;
   bool searchOpen = false;
+  bool searchResultsVisible = false;
   final searchController = TextEditingController();
   final homeKey = GlobalKey<_HomePageState>();
 
@@ -118,6 +119,13 @@ class _ShellState extends State<Shell> {
             backgroundColor: Theme.of(context).colorScheme.surface,
             scrolledUnderElevation: 0,
             surfaceTintColor: Colors.transparent,
+            leading: index == 0 && searchResultsVisible
+                ? IconButton(
+                    tooltip: '返回主页',
+                    onPressed: _returnHome,
+                    icon: const Icon(Icons.arrow_back),
+                  )
+                : null,
             title: searchOpen
                 ? SizedBox(
                     width: (constraints.maxWidth - 160).clamp(140.0, 520.0),
@@ -220,11 +228,23 @@ class _ShellState extends State<Shell> {
   }
 
   Future<void> _submitSearch() async {
+    final hasQuery = searchController.text.trim().isNotEmpty;
     setState(() {
       index = 0;
       searchOpen = false;
+      searchResultsVisible = hasQuery;
     });
     await homeKey.currentState?.search();
+  }
+
+  void _returnHome() {
+    setState(() {
+      index = 0;
+      searchOpen = false;
+      searchResultsVisible = false;
+    });
+    searchController.clear();
+    homeKey.currentState?.showHome();
   }
 
   void _showDebugSheet(BuildContext context) {
@@ -396,6 +416,20 @@ class _HomePageState extends State<HomePage> {
         });
       }
     }
+  }
+
+  void showHome() {
+    ++_searchGeneration;
+    _resultsListKey = GlobalKey<AnimatedListState>();
+    _animatedResultCount = 0;
+    setState(() {
+      submittedQuery = null;
+      results = const [];
+      loading = false;
+      error = null;
+      _selectedTab = 'home';
+    });
+    _loadHome();
   }
 
   List<_ContentTab> get _tabs {
