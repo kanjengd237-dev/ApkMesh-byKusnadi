@@ -54,6 +54,26 @@ void main() {
     expect(task.estimatedRemaining, const Duration(seconds: 5));
   });
 
+  test('staged details publish metadata and per-candidate progress', () async {
+    final registry = SourceRegistry(scripts: [_StagedDetailsSource()]);
+    final updates = <AppDetailsProgress>[];
+
+    await registry.loadDetails(
+      _listing('staged', 'Staged App'),
+      DemoHostApi(),
+      onProgress: updates.add,
+    );
+
+    expect(updates, hasLength(4));
+    expect(updates.first.phase, DetailLoadPhase.resolvingDownloads);
+    expect(updates.first.details.name, 'Staged App');
+    expect(updates.first.completedDownloads, 0);
+    expect(updates[1].completedDownloads, 1);
+    expect(updates[2].downloads.last.error, 'not found');
+    expect(updates.last.phase, DetailLoadPhase.complete);
+    expect(updates.last.details.downloads.single.label, 'app.apk');
+  });
+
   test('registry skips disabled source ids', () async {
     final registry = SourceRegistry(scripts: [ExampleCatalogSource()]);
     final host = DemoHostApi();
@@ -437,6 +457,92 @@ class _ConcurrentSource implements ApkSourceScript {
   @override
   Future<AppDetails> details(String appId, SourceHostApi host) async =>
       ExampleCatalogSource._app;
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class _StagedDetailsSource
+    implements ApkSourceScript, SourceDetailProgressScript {
+  static const _detail = AppDetails(
+    id: 'staged/app',
+    sourceId: 'staged',
+    name: 'Staged App',
+    packageName: 'com.example.staged',
+    version: '1.0.0',
+    size: '1 MB',
+    updatedAt: '2026-01-01',
+    category: 'Tools',
+    sourceName: 'Staged source',
+    iconUrl: '',
+    summary: '',
+    screenshots: [],
+    comments: [],
+    downloads: [],
+  );
+
+  @override
+  String get id => 'staged';
+
+  @override
+  String get name => 'Staged source';
+
+  @override
+  SourcePolicy get policy => const SourcePolicy(allowedHosts: {'example.test'});
+
+  @override
+  bool get supportsDetailProgress => true;
+
+  @override
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async => const [];
+
+  @override
+  Future<AppDetails> details(String appId, SourceHostApi host) async => _detail;
+
+  @override
+  Future<SourceDetailsMetadata> detailsMetadata(
+    String appId,
+    SourceHostApi host,
+  ) async => SourceDetailsMetadata(
+    details: _detail,
+    downloads: const [
+      SourceDownloadCandidate(
+        label: 'Primary',
+        url: 'https://example.test/primary',
+        size: '1 MB',
+      ),
+      SourceDownloadCandidate(
+        label: 'Missing',
+        url: 'https://example.test/missing',
+        size: '1 MB',
+      ),
+    ],
+  );
+
+  @override
+  Future<List<SourceDownload>> resolveDownloads(
+    List<SourceDownloadCandidate> candidates,
+    SourceHostApi host, {
+    required void Function(
+      int index,
+      List<SourceDownload>? files,
+      String? error,
+    )
+    onProgress,
+  }) async {
+    const file = SourceDownload(
+      label: 'app.apk',
+      url: 'https://example.test/app.apk',
+      size: '1 MB',
+    );
+    onProgress(0, const [file], null);
+    onProgress(1, const [], 'not found');
+    return const [file];
+  }
 
   @override
   Future<void> dispose() async {}

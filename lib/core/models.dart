@@ -180,6 +180,70 @@ class DebugProjectResult {
   final dynamic data;
 }
 
+class SourceDownloadCandidate {
+  const SourceDownloadCandidate({
+    required this.label,
+    required this.url,
+    required this.size,
+    this.headers = const {},
+  });
+
+  final String label;
+  final String url;
+  final String size;
+  final Map<String, String> headers;
+
+  Map<String, dynamic> toJson() => {
+    'label': label,
+    'url': url,
+    'size': size,
+    'headers': headers,
+  };
+}
+
+class SourceDetailsMetadata {
+  const SourceDetailsMetadata({required this.details, required this.downloads});
+
+  final AppDetails details;
+  final List<SourceDownloadCandidate> downloads;
+}
+
+class SourceDownloadProgress {
+  const SourceDownloadProgress({
+    required this.candidate,
+    this.files,
+    this.error,
+  });
+
+  final SourceDownloadCandidate candidate;
+  final List<SourceDownload>? files;
+  final String? error;
+
+  bool get completed => files != null || error != null;
+  bool get resolving => !completed;
+}
+
+enum DetailLoadPhase { loadingDetails, resolvingDownloads, complete }
+
+class AppDetailsProgress {
+  const AppDetailsProgress({
+    required this.details,
+    required this.downloads,
+    required this.phase,
+    this.error,
+  });
+
+  final AppDetails details;
+  final List<SourceDownloadProgress> downloads;
+  final DetailLoadPhase phase;
+  final String? error;
+
+  int get totalDownloads => downloads.length;
+  int get completedDownloads =>
+      downloads.where((download) => download.completed).length;
+  bool get downloadsComplete => phase == DetailLoadPhase.complete;
+}
+
 class SourceDownload {
   const SourceDownload({
     required this.label,
@@ -435,4 +499,24 @@ class AppDetails extends AppListing {
   final List<String> screenshots;
   final List<String> comments;
   final List<SourceDownload> downloads;
+
+  AppDetails copyWith({List<SourceDownload>? downloads}) => AppDetails(
+    id: id,
+    sourceId: sourceId,
+    name: name,
+    packageName: packageName,
+    version: version,
+    size: size,
+    updatedAt: updatedAt,
+    category: category,
+    sourceName: sourceName,
+    iconUrl: iconUrl,
+    summary: summary,
+    description: description,
+    rating: rating,
+    author: author,
+    screenshots: screenshots,
+    comments: comments,
+    downloads: downloads ?? this.downloads,
+  );
 }

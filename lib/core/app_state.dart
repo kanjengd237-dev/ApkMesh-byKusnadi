@@ -404,6 +404,14 @@ class AppState extends ChangeNotifier {
     return pages;
   }
 
+  Future<void> loadDetails(
+    AppListing app, {
+    required void Function(AppDetailsProgress progress) onProgress,
+  }) async {
+    await ready;
+    return registry.loadDetails(app, host, onProgress: onProgress);
+  }
+
   Future<AppDetails> details(AppListing app) async {
     await ready;
     return registry.details(app, host);

@@ -57,6 +57,7 @@ Future<ApkSourceScript?> loadQuickJsSource(
 class QuickJsApkSourceScript
     implements
         ApkSourceScript,
+        SourceDetailProgressScript,
         SourceManifestProvider,
         DebugProjectSource,
         SourceCatalogScript,
@@ -81,6 +82,9 @@ class QuickJsApkSourceScript
   SourceHostApi? _host;
   bool _hasCatalog = false;
   bool _hasPackageLookup = false;
+  bool _hasDetailProgress = false;
+  final Map<String, void Function(Map<String, dynamic> payload)>
+  _detailProgressCallbacks = {};
   bool _disposed = false;
 
   @override
@@ -158,6 +162,14 @@ class QuickJsApkSourceScript
         policy: _policy,
       );
     });
+    _runtime.onMessage('apkmesh.detailProgress', (args) {
+      final payload = _payload(args);
+      final requestId = payload['requestId']?.toString() ?? '';
+      final update = _dynamicMap(payload['update']);
+      final callback = _detailProgressCallbacks[requestId];
+      callback?.call(update);
+      return true;
+    });
     _runtime.onMessage('apkmesh.install', (args) async {
       final payload = _payload(args);
       return _host!.install(payload['filePath'] as String, policy: _policy);
@@ -195,6 +207,10 @@ class QuickJsApkSourceScript
           },
         },
         download: (url, options = {}) => sendMessage('apkmesh.download', JSON.stringify({url, fileName: options.fileName, headers: options.headers || {}})),
+        detailProgress: (requestId, update) => sendMessage(
+          'apkmesh.detailProgress',
+          JSON.stringify({requestId, update}),
+        ),
         install: (filePath) => sendMessage('apkmesh.install', JSON.stringify({filePath})),
       };
     ''';
@@ -214,6 +230,11 @@ class QuickJsApkSourceScript
     _hasCatalog =
         await _evaluateJson(
           'JSON.stringify(typeof source.home === "function" && typeof source.category === "function")',
+        ) ==
+        true;
+    _hasDetailProgress =
+        await _evaluateJson(
+          'JSON.stringify(typeof source.detailsMetadata === "function" && typeof source.resolveDownloads === "function")',
         ) ==
         true;
     _hasPackageLookup =
@@ -378,6 +399,82 @@ class QuickJsApkSourceScript
     final value = await _call('details', appId, host);
     return _details(_dynamicMap(value));
   }
+
+  @override
+  bool get supportsDetailProgress => _hasDetailProgress;
+
+  @override
+  Future<SourceDetailsMetadata> detailsMetadata(
+    String appId,
+    SourceHostApi host,
+  ) async {
+    final value = await _call('detailsMetadata', appId, host);
+    final item = _dynamicMap(value);
+    return SourceDetailsMetadata(
+      details: _details(item),
+      downloads: _dynamicList(item['downloadCandidates'])
+          .map(_candidate)
+          .where((candidate) => candidate.url.isNotEmpty)
+          .toList(growable: false),
+    );
+  }
+
+  @override
+  Future<List<SourceDownload>> resolveDownloads(
+    List<SourceDownloadCandidate> candidates,
+    SourceHostApi host, {
+    required void Function(
+      int index,
+      List<SourceDownload>? files,
+      String? error,
+    )
+    onProgress,
+  }) async {
+    if (!_hasDetailProgress) {
+      throw UnsupportedError('源未声明分阶段详情能力');
+    }
+    final requestId =
+        '${DateTime.now().microsecondsSinceEpoch}-${identityHashCode(this)}';
+    _detailProgressCallbacks[requestId] = (update) {
+      final index = int.tryParse(update['index']?.toString() ?? '');
+      if (index == null) return;
+      final rawDownloads = update['downloads'];
+      final files = rawDownloads is List
+          ? rawDownloads
+                .whereType<Map>()
+                .map((item) => _download(item.cast<String, dynamic>()))
+                .toList(growable: false)
+          : update['download'] is Map
+          ? [_download(_dynamicMap(update['download']))]
+          : null;
+      final error = update['error']?.toString();
+      onProgress(index, files, error?.isEmpty == true ? null : error);
+    };
+    try {
+      final value = await _callWithArguments('resolveDownloads', [
+        candidates.map((candidate) => candidate.toJson()).toList(),
+        requestId,
+      ], host);
+      return _dynamicList(value).map(_download).toList(growable: false);
+    } finally {
+      _detailProgressCallbacks.remove(requestId);
+    }
+  }
+
+  SourceDownloadCandidate _candidate(Map<String, dynamic> item) =>
+      SourceDownloadCandidate(
+        label: (item['label'] ?? '').toString(),
+        url: (item['url'] ?? '').toString(),
+        size: (item['size'] ?? '').toString(),
+        headers: _stringMap(item['headers']),
+      );
+
+  SourceDownload _download(Map<String, dynamic> item) => SourceDownload(
+    label: (item['label'] ?? '').toString(),
+    url: (item['url'] ?? '').toString(),
+    size: (item['size'] ?? '').toString(),
+    headers: _stringMap(item['headers']),
+  );
 
   String _firstText(Map<String, dynamic> item, List<String> keys) {
     for (final key in keys) {

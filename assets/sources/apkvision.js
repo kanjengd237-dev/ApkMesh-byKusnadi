@@ -229,6 +229,19 @@ async function mapLimit(items, limit, mapper) {
   return results;
 }
 
+async function reportDetailProgress(requestId, index, download, error) {
+  if (!requestId) return;
+  try {
+    await apkmesh.detailProgress(requestId, {
+      index,
+      download: download || null,
+      error: error ? String(error) : null,
+    });
+  } catch (_) {
+    // Progress delivery must not abort link resolution.
+  }
+}
+
 globalThis.source = {
   manifest: {
     id: 'apkvision-demo',
@@ -292,7 +305,7 @@ globalThis.source = {
     };
   },
 
-  async details(url) {
+  async detailsMetadata(url) {
     const tab = await apkmesh.browser.open(url);
     try {
       await tab.waitFor('#MobileApplication');
@@ -350,21 +363,35 @@ globalThis.source = {
           size: extractSize(sizeText),
         };
       }).filter((item) => item.label && isApkVisionUrl(item.url)).slice(0, 20);
-      const resolved = await mapLimit(candidates, 4, async (item) => {
-        try {
-          const direct = await resolveDownload(item.url);
-          return direct ? {...item, url: direct} : null;
-        } catch (_) {
-          return null;
-        }
-      });
-      app.downloads = resolved.filter(Boolean).filter((item, index, all) =>
-        all.findIndex((candidate) => candidate.url === item.url) === index,
-      );
+      app.downloadCandidates = candidates;
       return app;
     } finally {
       await tab.close();
     }
+  },
+
+  async resolveDownloads(candidates, requestId) {
+    const resolved = await mapLimit(candidates || [], 4, async (item, index) => {
+      try {
+        const direct = await resolveDownload(item.url);
+        const download = direct ? {...item, url: direct} : null;
+        await reportDetailProgress(requestId, index, download, null);
+        return download;
+      } catch (error) {
+        await reportDetailProgress(requestId, index, null, error);
+        return null;
+      }
+    });
+    return resolved.filter(Boolean).filter((item, index, all) =>
+      all.findIndex((candidate) => candidate.url === item.url) === index,
+    );
+  },
+
+  async details(url) {
+    const app = await this.detailsMetadata(url);
+    app.downloads = await this.resolveDownloads(app.downloadCandidates);
+    delete app.downloadCandidates;
+    return app;
   },
 
   async debug(projectId, input) {

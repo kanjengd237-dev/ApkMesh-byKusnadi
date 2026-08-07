@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:apk_mesh/core/models.dart';
 import 'package:apk_mesh/core/quickjs_source_io.dart';
 import 'package:apk_mesh/core/source_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +37,72 @@ void main() {
 
       expect(home.recommended.single.name, 'Home App');
       expect(home.categories.single.id, 'tools');
+      await source.dispose();
+    },
+    skip: !Platform.isAndroid,
+  );
+
+  test(
+    'QuickJS staged details forward download progress events',
+    () async {
+      final source = QuickJsApkSourceScript('''
+      globalThis.source = {
+        manifest: {
+          id: 'staged-quickjs-test',
+          name: 'Staged QuickJS test',
+          version: '1.0.0',
+          homepage: 'https://example.test/',
+          permissions: {network: ['example.test']},
+        },
+        async search(query, page = 1) { return []; },
+        async details(url) {
+          return {
+            id: url,
+            name: 'Example App',
+            downloads: [{label: 'app.apk', url: 'https://example.test/app.apk', size: '1 MB'}],
+          };
+        },
+        async detailsMetadata(url) {
+          return {
+            id: url,
+            name: 'Example App',
+            downloadCandidates: [{label: 'APK', url: 'https://example.test/prepare', size: '1 MB'}],
+          };
+        },
+        async resolveDownloads(candidates, requestId) {
+          await apkmesh.detailProgress(requestId, {
+            index: 0,
+            download: {label: 'app.apk', url: 'https://example.test/app.apk', size: '1 MB'},
+          });
+          return [{label: 'app.apk', url: 'https://example.test/app.apk', size: '1 MB'}];
+        },
+      };
+    ''');
+
+      await source.initialize();
+      final updates = <AppDetailsProgress>[];
+      await SourceRegistry(scripts: [source]).loadDetails(
+        const AppListing(
+          id: 'https://example.test/details/app',
+          sourceId: 'staged-quickjs-test',
+          name: 'Listing',
+          packageName: '',
+          version: '',
+          size: '',
+          updatedAt: '',
+          category: '',
+          sourceName: 'Staged QuickJS test',
+          iconUrl: '',
+        ),
+        DemoHostApi(),
+        onProgress: updates.add,
+      );
+
+      expect(updates.last.details.downloads.single.label, 'app.apk');
+      expect(
+        updates[1].downloads.single.files?.single.url,
+        'https://example.test/app.apk',
+      );
       await source.dispose();
     },
     skip: !Platform.isAndroid,

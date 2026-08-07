@@ -82,8 +82,9 @@ class SourceHost:
                 file_name=payload.get("fileName"),
                 headers=self._string_map(payload.get("headers")),
             )
-        if name == "apkmesh.install":
-            return self.install(str(payload.get("filePath", "")))
+        if name == "apkmesh.detailProgress":
+            self.trace.add("detail.progress", **self._dynamic_map(payload.get("update")))
+            return True
         raise UnsupportedHostOperation(f"unknown host message: {name}")
 
     def request(self, url: str, *, headers: dict[str, str] | None = None) -> str:

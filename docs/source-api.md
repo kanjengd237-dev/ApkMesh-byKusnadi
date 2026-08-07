@@ -45,6 +45,8 @@ globalThis.source = {
 
 `details()` 返回完整应用对象，并增加 `description`、`screenshots`、`comments` 和 `downloads`。详情可用 `summary` 表示版本说明或简短信息；`downloads` 每项包含 `label`、`url` 和 `size`，可选 `headers` 用于需要 Referer 等请求头的下载。`screenshots` 是截图 URL 数组；源应在解析懒加载图片时同时检查 `src`、`data-src` 等属性。
 
+源可以额外实现分阶段详情接口：`detailsMetadata(idOrUrl)` 返回不包含最终下载直链的详情主体，并在 `downloadCandidates` 中返回待解析的下载候选项；`resolveDownloads(candidates, requestId)` 解析这些候选项。解析过程中可调用 `apkmesh.detailProgress(requestId, update)`，其中 `update` 包含候选项 `index`，以及 `download` 或 `downloads`（一个候选项可以产生多个最终文件），失败时包含 `error`。宿主会按候选项顺序逐项更新 UI；只有拿到最终下载对象后才会显示可下载操作，实际下载时仍执行源权限校验。未实现这两个可选接口的源继续使用一次性 `details()`。
+
 ## 可选主页与分类接口
 
 ```js
@@ -92,5 +94,6 @@ async debug(projectId, input) {
 - `apkmesh.browser.open(url)`：打开隔离的隐藏 WebView 标签页，支持 `waitFor`、`query` 和 `queryAll`。
 - `apkmesh.download(url, options)`：创建受 manifest 网络权限和下载权限约束的下载任务并返回本地文件路径。`options` 可包含 `fileName` 和额外 HTTP `headers`。
 - `apkmesh.install(filePath)`：经用户确认后调用系统安装器；源不能静默安装。Android 会在需要时先打开未知来源安装权限页面。
+- `apkmesh.detailProgress(requestId, update)`：向宿主报告分阶段详情中的下载项解析结果；只能用于源声明的 `resolveDownloads()` 调用，不能替代权限检查。
 
 所有能力均按 manifest 权限授权。网络重定向的每一跳都会重新检查协议和 manifest 网络权限；`network: ['*']` 是源对临时下载主机的显式信任声明，下载内容和第三方源的安全性仍由使用者自行确认。脚本没有任意文件读写、系统命令、Cookie 导出或后台安装权限。生产构建中是否内置第三方源，应根据站点授权、条款和安全审阅结果明确决定。

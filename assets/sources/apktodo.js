@@ -260,7 +260,7 @@ function uniqueDownloads(items) {
   );
 }
 
-async function resolveDownloads(downloadPage) {
+async function resolveDownloadPage(downloadPage) {
   const prepareHtml = await fetchText(downloadPage, downloadPage);
   const linkMatch = /<div\b[^>]*\bid\s*=\s*['"]download-container['"][^>]*>[\s\S]*?<a\b([^>]*)>/i.exec(prepareHtml);
   if (!linkMatch) return [];
@@ -302,6 +302,19 @@ function parseStructuredData(nodes) {
 
 function uniqueStrings(values) {
   return values.filter((value, index, all) => value && all.indexOf(value) === index);
+}
+
+async function reportDetailProgress(requestId, index, downloads, error) {
+  if (!requestId) return;
+  try {
+    await apkmesh.detailProgress(requestId, {
+      index,
+      downloads: downloads || [],
+      error: error ? String(error) : null,
+    });
+  } catch (_) {
+    // Progress delivery must not abort link resolution.
+  }
 }
 
 const CATEGORIES = [
@@ -378,7 +391,7 @@ globalThis.source = {
     };
   },
 
-  async details(url) {
+  async detailsMetadata(url) {
     const id = absoluteUrl(url);
     if (!isApkTodoUrl(id)) throw new TypeError('无效的 APKTodo 详情地址');
 
@@ -428,11 +441,35 @@ globalThis.source = {
       app.screenshots = uniqueStrings(screenshots.concat(structuredScreenshots.map(absoluteUrl)));
       app.comments = uniqueStrings(commentNodes.map((item) => cleanText(item.text)));
       app.downloadPage = resolveUrl(app.downloadPage || '', openUrl);
-      app.downloads = app.downloadPage ? await resolveDownloads(app.downloadPage) : [];
+      app.downloadCandidates = app.downloadPage
+        ? [{label: 'APK 下载链接', url: app.downloadPage, size: ''}]
+        : [];
       return app;
     } finally {
       await tab.close();
     }
+  },
+
+  async resolveDownloads(candidates, requestId) {
+    const resolved = [];
+    for (let index = 0; index < (candidates || []).length; index += 1) {
+      const candidate = candidates[index];
+      try {
+        const downloads = await resolveDownloadPage(candidate.url);
+        await reportDetailProgress(requestId, index, downloads, null);
+        resolved.push(...downloads);
+      } catch (error) {
+        await reportDetailProgress(requestId, index, [], error);
+      }
+    }
+    return uniqueDownloads(resolved);
+  },
+
+  async details(url) {
+    const app = await this.detailsMetadata(url);
+    app.downloads = await this.resolveDownloads(app.downloadCandidates);
+    delete app.downloadCandidates;
+    return app;
   },
 
   async debug(projectId, input) {

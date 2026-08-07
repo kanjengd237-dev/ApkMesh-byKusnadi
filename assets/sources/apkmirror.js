@@ -428,6 +428,31 @@ async function mapLimit(items, limit, mapper) {
   return results;
 }
 
+async function reportDetailProgress(requestId, index, download, error) {
+  if (!requestId) return;
+  try {
+    await apkmesh.detailProgress(requestId, {
+      index,
+      download: download || null,
+      error: error ? String(error) : null,
+    });
+  } catch (_) {
+    // Progress delivery must not abort link resolution.
+  }
+}
+
+async function resolveDownloadCandidate(item) {
+  try {
+    return await resolveDownload(item);
+  } catch (_) {
+    try {
+      return await resolveDownloadWithBrowser(item);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
 async function fetchText(url, referer = ORIGIN) {
   return apkmesh.request(url, {
     headers: downloadHeaders(referer),
@@ -449,7 +474,7 @@ async function fetchSearchText(url) {
   }
 }
 
-async function detailsWithDownloads(value) {
+async function detailsMetadata(value) {
   const normalized = absoluteUrl(value);
   if (!/^https:\/\/www\.apkmirror\.com\/apk\//i.test(normalized)) {
     throw new TypeError('Invalid APKMirror detail URL');
@@ -460,22 +485,18 @@ async function detailsWithDownloads(value) {
   } catch (error) {
     app = await browserDetails(normalized);
   }
-  const candidates = app._variants || [];
-  let resolved = await mapLimit(candidates, 3, async (item) => {
-    try {
-      return await resolveDownload(item);
-    } catch (_) {
-      try {
-        return await resolveDownloadWithBrowser(item);
-      } catch (_) {
-        return null;
-      }
-    }
-  });
-  app.downloads = resolved.filter(Boolean).filter((item, index, all) =>
+  app.downloadCandidates = app._variants || [];
+  delete app._variants;
+  return app;
+}
+
+async function detailsWithDownloads(value) {
+  const app = await detailsMetadata(value);
+  app.downloads = await mapLimit(app.downloadCandidates, 3, resolveDownloadCandidate);
+  app.downloads = app.downloads.filter(Boolean).filter((item, index, all) =>
     all.findIndex((candidate) => candidate.url === item.url) === index,
   );
-  delete app._variants;
+  delete app.downloadCandidates;
   return app;
 }
 
@@ -558,6 +579,21 @@ globalThis.source = {
       name: cleanText(id.replace(/\/$/, '').split('/').pop().replace(/[_-]+/g, ' ')),
       apps: parseSearchResults(await fetchText(id)),
     };
+  },
+
+  async detailsMetadata(url) {
+    return detailsMetadata(url);
+  },
+
+  async resolveDownloads(candidates, requestId) {
+    const resolved = await mapLimit(candidates || [], 3, async (item, index) => {
+      const download = await resolveDownloadCandidate(item);
+      await reportDetailProgress(requestId, index, download, download ? null : '无法解析下载链接');
+      return download;
+    });
+    return resolved.filter(Boolean).filter((item, index, all) =>
+      all.findIndex((candidate) => candidate.url === item.url) === index,
+    );
   },
 
   async details(url) {

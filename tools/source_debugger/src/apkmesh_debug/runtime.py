@@ -53,6 +53,10 @@ globalThis.apkmesh = {
     'apkmesh.install',
     JSON.stringify({filePath})
   ),
+  detailProgress: (requestId, update) => sendMessage(
+    'apkmesh.detailProgress',
+    JSON.stringify({requestId, update})
+  ),
 };
 """
 

@@ -2537,78 +2537,118 @@ class DetailsSheet extends StatefulWidget {
 }
 
 class _DetailsSheetState extends State<DetailsSheet> {
-  late final Future<AppDetails> details = widget.app is AppDetails
-      ? Future<AppDetails>.value(widget.app as AppDetails)
-      : widget.state.details(widget.app);
+  AppDetails? detail;
+  List<SourceDownloadProgress> downloads = const [];
+  DetailLoadPhase phase = DetailLoadPhase.loadingDetails;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    final app = widget.app;
+    if (app is AppDetails) {
+      detail = app;
+      downloads = app.downloads
+          .map(
+            (file) => SourceDownloadProgress(
+              candidate: SourceDownloadCandidate(
+                label: file.label,
+                url: file.url,
+                size: file.size,
+                headers: file.headers,
+              ),
+              files: [file],
+            ),
+          )
+          .toList(growable: false);
+      phase = DetailLoadPhase.complete;
+    } else {
+      unawaited(_loadDetails());
+    }
+  }
+
+  Future<void> _loadDetails() async {
+    try {
+      await widget.state.loadDetails(
+        widget.app,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() {
+            detail = progress.details;
+            downloads = progress.downloads;
+            phase = progress.phase;
+            error = progress.error;
+          });
+        },
+      );
+    } catch (value) {
+      if (!mounted) return;
+      setState(() => error = value.toString());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final displayApp = detail ?? widget.app;
+    final metadataChips = buildAppInfoChips(
+      displayApp,
+      onPackageTap: displayApp.packageName.trim().isEmpty
+          ? null
+          : () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => PackageLookupSheet(
+                packageName: displayApp.packageName,
+                state: widget.state,
+                onAppTap: (app) => _showAppDetails(context, widget.state, app),
+              ),
+            ),
+    );
     return SafeArea(
       child: DraggableScrollableSheet(
         expand: false,
         initialChildSize: .78,
         minChildSize: .45,
         maxChildSize: .94,
-        builder: (_, controller) => FutureBuilder<AppDetails>(
-          future: details,
-          builder: (context, snapshot) {
-            final displayApp = snapshot.data ?? widget.app;
-            final metadataChips = buildAppInfoChips(
-              displayApp,
-              onPackageTap: displayApp.packageName.trim().isEmpty
-                  ? null
-                  : () => showModalBottomSheet<void>(
-                      context: context,
-                      isScrollControlled: true,
-                      builder: (_) => PackageLookupSheet(
-                        packageName: displayApp.packageName,
-                        state: widget.state,
-                        onAppTap: (app) =>
-                            _showAppDetails(context, widget.state, app),
-                      ),
-                    ),
-            );
-            return ListView(
-              controller: controller,
-              padding: const EdgeInsets.all(24),
+        builder: (_, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.all(24),
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    AppIcon(url: displayApp.iconUrl),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            displayApp.name,
-                            style: Theme.of(context).textTheme.headlineSmall,
-                          ),
-                          if (metadataChips.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 2,
-                              children: metadataChips,
-                            ),
-                          ],
-                        ],
+                AppIcon(url: displayApp.iconUrl),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayApp.name,
+                        style: Theme.of(context).textTheme.headlineSmall,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                if (snapshot.connectionState == ConnectionState.waiting)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Center(child: CircularProgressIndicator()),
+                      if (metadataChips.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 2,
+                          children: metadataChips,
+                        ),
+                      ],
+                    ],
                   ),
-                if (snapshot.hasError) Text('源详情加载失败：${snapshot.error}'),
-                if (snapshot.hasData)
-                  ..._buildDetailContent(context, snapshot.data!),
+                ),
               ],
-            );
-          },
+            ),
+            const SizedBox(height: 24),
+            if (detail == null && error == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            if (error != null)
+              Text(detail == null ? '源详情加载失败：$error' : '下载链接解析失败：$error'),
+            if (detail != null) ..._buildDetailContent(context, detail!),
+          ],
         ),
       ),
     );
@@ -2626,19 +2666,65 @@ class _DetailsSheetState extends State<DetailsSheet> {
       content.add(_ScreenshotGallery(urls: detail.screenshots));
       content.add(const SizedBox(height: 20));
     }
-    if (detail.downloads.isNotEmpty) {
-      content.add(Text('下载文件', style: Theme.of(context).textTheme.titleMedium));
-      content.add(const SizedBox(height: 8));
-      content.addAll(
-        detail.downloads.asMap().entries.map(
-          (entry) => _SourceDownloadTile(
-            file: entry.value,
-            sourceId: widget.app.sourceId,
-            state: widget.state,
-            showDivider: entry.key < detail.downloads.length - 1,
-          ),
+    if (downloads.isNotEmpty || phase == DetailLoadPhase.resolvingDownloads) {
+      content.add(
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '下载文件',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            if (phase == DetailLoadPhase.resolvingDownloads &&
+                downloads.isNotEmpty)
+              Text(
+                '${downloads.where((item) => item.completed).length}/${downloads.length}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+          ],
         ),
       );
+      content.add(const SizedBox(height: 8));
+      if (downloads.isEmpty) {
+        content.add(
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('正在查找下载项…'),
+          ),
+        );
+      } else {
+        final rows = <Widget>[];
+        for (final progress in downloads) {
+          final files = progress.files;
+          if (files != null && files.isNotEmpty) {
+            rows.addAll(
+              files.map(
+                (file) => _SourceDownloadTile(
+                  file: file,
+                  sourceId: widget.app.sourceId,
+                  state: widget.state,
+                  showDivider: true,
+                ),
+              ),
+            );
+          } else {
+            rows.add(_PendingSourceDownloadTile(progress: progress));
+          }
+        }
+        for (var index = 0; index < rows.length; index += 1) {
+          if (rows[index] is _SourceDownloadTile) {
+            final tile = rows[index] as _SourceDownloadTile;
+            rows[index] = _SourceDownloadTile(
+              file: tile.file,
+              sourceId: tile.sourceId,
+              state: tile.state,
+              showDivider: index < rows.length - 1,
+            );
+          }
+        }
+        content.addAll(rows);
+      }
     }
     if (detail.comments.isNotEmpty) {
       if (content.isNotEmpty) content.add(const SizedBox(height: 20));
@@ -2654,6 +2740,75 @@ class _DetailsSheetState extends State<DetailsSheet> {
       );
     }
     return content;
+  }
+}
+
+class _PendingSourceDownloadTile extends StatelessWidget {
+  const _PendingSourceDownloadTile({required this.progress});
+
+  final SourceDownloadProgress progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final failed = progress.error != null;
+    final empty = progress.files != null && progress.files!.isEmpty;
+    final detail =
+        progress.error ?? (empty ? '未找到可用下载链接' : progress.candidate.size);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox.square(
+            dimension: 40,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: failed
+                  ? SizedBox.square(
+                      dimension: 22,
+                      child: Icon(Icons.error_outline, color: scheme.error),
+                    )
+                  : progress.resolving
+                  ? const SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : SizedBox.square(
+                      dimension: 22,
+                      child: Icon(
+                        Icons.link_off_outlined,
+                        color: scheme.outline,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  progress.candidate.label,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                if (detail.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    detail,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

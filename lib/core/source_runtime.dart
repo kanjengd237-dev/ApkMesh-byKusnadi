@@ -117,6 +117,24 @@ abstract interface class SourcePackageLookupScript {
 }
 
 /// Optional metadata exposed by scripts loaded from a manifest.
+abstract interface class SourceDetailProgressScript {
+  bool get supportsDetailProgress;
+  Future<SourceDetailsMetadata> detailsMetadata(
+    String appId,
+    SourceHostApi host,
+  );
+  Future<List<SourceDownload>> resolveDownloads(
+    List<SourceDownloadCandidate> candidates,
+    SourceHostApi host, {
+    required void Function(
+      int index,
+      List<SourceDownload>? files,
+      String? error,
+    )
+    onProgress,
+  });
+}
+
 abstract interface class SourceManifestProvider {
   String get version;
   String get homepage;
@@ -285,6 +303,81 @@ class SourceRegistry {
         }
       }),
     );
+  }
+
+  Future<void> loadDetails(
+    AppListing app,
+    SourceHostApi host, {
+    required void Function(AppDetailsProgress progress) onProgress,
+  }) async {
+    final script = scripts.firstWhere((item) => item.id == app.sourceId);
+    final SourceDetailProgressScript? detailScript =
+        script is SourceDetailProgressScript
+        ? script as SourceDetailProgressScript
+        : null;
+    if (detailScript == null || !detailScript.supportsDetailProgress) {
+      final details = await script.details(app.id, host);
+      final downloads = details.downloads
+          .map(
+            (file) => SourceDownloadProgress(
+              candidate: SourceDownloadCandidate(
+                label: file.label,
+                url: file.url,
+                size: file.size,
+                headers: file.headers,
+              ),
+              files: [file],
+            ),
+          )
+          .toList(growable: false);
+      final result = AppDetailsProgress(
+        details: details,
+        downloads: downloads,
+        phase: DetailLoadPhase.complete,
+      );
+      onProgress(result);
+      return;
+    }
+
+    final metadata = await detailScript.detailsMetadata(app.id, host);
+    final states = metadata.downloads
+        .map((candidate) => SourceDownloadProgress(candidate: candidate))
+        .toList();
+    void publish(DetailLoadPhase phase, {String? error}) {
+      onProgress(
+        AppDetailsProgress(
+          details: metadata.details,
+          downloads: List.unmodifiable(states),
+          phase: phase,
+          error: error,
+        ),
+      );
+    }
+
+    publish(DetailLoadPhase.resolvingDownloads);
+    await detailScript.resolveDownloads(
+      metadata.downloads,
+      host,
+      onProgress: (index, files, error) {
+        if (index < 0 || index >= states.length) return;
+        states[index] = SourceDownloadProgress(
+          candidate: states[index].candidate,
+          files: files,
+          error: error,
+        );
+        publish(DetailLoadPhase.resolvingDownloads);
+      },
+    );
+    final finalFiles = states
+        .where((item) => item.files != null)
+        .expand((item) => item.files!)
+        .toList(growable: false);
+    final result = AppDetailsProgress(
+      details: metadata.details.copyWith(downloads: finalFiles),
+      downloads: List.unmodifiable(states),
+      phase: DetailLoadPhase.complete,
+    );
+    onProgress(result);
   }
 
   Future<AppDetails> details(AppListing app, SourceHostApi host) {
