@@ -108,6 +108,56 @@ abstract interface class DebugProjectSource {
   );
 }
 
+List<String> _searchKeywords(String query) {
+  final unique = <String>{};
+  for (final keyword in query.toLowerCase().split(
+    RegExp(r'[\s,，、;；|/\\_-]+'),
+  )) {
+    final normalized = keyword.trim();
+    if (normalized.isNotEmpty) unique.add(normalized);
+  }
+  return unique.toList(growable: false);
+}
+
+class SearchResultRanker {
+  SearchResultRanker(String query) : _keywords = _searchKeywords(query);
+
+  final List<String> _keywords;
+
+  int score(AppListing app) {
+    final title = app.name.toLowerCase();
+    var result = 0;
+    for (final keyword in _keywords) {
+      if (title.contains(keyword)) result += 1;
+    }
+    return result;
+  }
+}
+
+List<AppListing> _rankSearchResults(
+  String query,
+  List<List<AppListing>> batches,
+) {
+  final ranker = SearchResultRanker(query);
+  final ranked = <({AppListing app, int score, int order})>[];
+  var order = 0;
+
+  // Each distinct keyword contributes at most one point. The original
+  // flattened order is the deterministic tie-breaker for equal scores.
+  for (final batch in batches) {
+    for (final app in batch) {
+      ranked.add((app: app, score: ranker.score(app), order: order));
+      order += 1;
+    }
+  }
+
+  ranked.sort((left, right) {
+    final scoreOrder = right.score.compareTo(left.score);
+    return scoreOrder == 0 ? left.order.compareTo(right.order) : scoreOrder;
+  });
+  return ranked.map((item) => item.app).toList(growable: false);
+}
+
 class SourceRegistry {
   SourceRegistry({List<ApkSourceScript> scripts = const []})
     : scripts = [...scripts];
@@ -162,7 +212,7 @@ class SourceRegistry {
         }
       }),
     );
-    return batches.expand((batch) => batch).toList(growable: false);
+    return _rankSearchResults(query, batches);
   }
 
   Future<AppDetails> details(AppListing app, SourceHostApi host) {

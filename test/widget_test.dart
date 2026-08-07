@@ -91,6 +91,44 @@ void main() {
     state.dispose();
   });
 
+  testWidgets('details hides summary and shows metadata chips', (tester) async {
+    final state = AppState();
+    const app = AppDetails(
+      id: 'https://example.test/apps/example',
+      sourceId: 'example-source',
+      name: 'Example App',
+      packageName: 'test.example.app',
+      version: '1.0.0',
+      size: '1 MB',
+      updatedAt: '2026-01-01',
+      category: 'Tools',
+      sourceName: 'Example source',
+      iconUrl: '',
+      summary: 'Legacy summary',
+      description: 'Example description',
+      rating: '4.8',
+      author: 'Example Team',
+      screenshots: [],
+      comments: [],
+      downloads: [],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DetailsSheet(app: app, state: state),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Legacy summary'), findsNothing);
+    expect(find.text('Example description'), findsOneWidget);
+    expect(find.text('Example source'), findsOneWidget);
+    expect(find.byType(Chip), findsNWidgets(8));
+    state.dispose();
+  });
+
   testWidgets('opens the source debug bottom sheet', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
     await tester.tap(find.byTooltip('调试'));

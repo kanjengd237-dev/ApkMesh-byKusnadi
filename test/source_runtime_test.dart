@@ -79,6 +79,35 @@ void main() {
     },
   );
 
+  test(
+    'registry ranks distinct title keywords and preserves source order on ties',
+    () async {
+      final registry = SourceRegistry(
+        scripts: [
+          _StaticSearchSource('first', [
+            _listing('first', 'alpha beta normal'),
+            _listing('first', 'alpha alpha beta repeated'),
+            _listing('first', 'alpha only'),
+          ]),
+          _StaticSearchSource('second', [
+            _listing('second', 'beta alpha second-source'),
+            _listing('second', 'beta only'),
+          ]),
+        ],
+      );
+
+      final results = await registry.search('alpha beta', DemoHostApi());
+
+      expect(results.map((app) => app.name), [
+        'alpha beta normal',
+        'alpha alpha beta repeated',
+        'beta alpha second-source',
+        'alpha only',
+        'beta only',
+      ]);
+    },
+  );
+
   test('registry aggregates optional home and category APIs', () async {
     final registry = SourceRegistry(scripts: [ExampleCatalogSource()]);
     final home = await registry.home(
@@ -177,6 +206,45 @@ class ExampleCatalogSource implements ApkSourceScript, SourceCatalogScript {
     downloads: [],
   );
 }
+
+class _StaticSearchSource implements ApkSourceScript {
+  _StaticSearchSource(this.id, this.results);
+
+  @override
+  final String id;
+  final List<AppListing> results;
+
+  @override
+  String get name => 'Static $id';
+
+  @override
+  SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
+
+  @override
+  Future<List<AppListing>> search(String query, SourceHostApi host) async =>
+      results;
+
+  @override
+  Future<AppDetails> details(String appId, SourceHostApi host) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+AppListing _listing(String sourceId, String name) => AppListing(
+  id: '$sourceId/$name',
+  sourceId: sourceId,
+  name: name,
+  packageName: '',
+  version: '',
+  size: '',
+  updatedAt: '',
+  category: '',
+  sourceName: sourceId,
+  iconUrl: '',
+);
 
 class _SearchGate {
   int started = 0;

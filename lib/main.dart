@@ -11,6 +11,7 @@ import 'package:photo_view/photo_view_gallery.dart';
 import 'core/app_state.dart';
 import 'core/debug_log.dart';
 import 'core/models.dart';
+import 'core/source_runtime.dart';
 
 void main() => runApp(const ApkMeshApp());
 
@@ -279,6 +280,9 @@ class _HomePageState extends State<HomePage> {
   String? _loadedHomeSourceId;
   final Map<String, Future<SourceCategory>> _categoryLoads = {};
   int _searchGeneration = 0;
+  SearchResultRanker? _searchRanker;
+  Map<String, int> _searchSourceOrder = const {};
+  Map<String, Map<String, int>> _searchResultOrder = {};
   GlobalKey<AnimatedListState> _resultsListKey = GlobalKey<AnimatedListState>();
   int _animatedResultCount = 0;
 
@@ -350,6 +354,9 @@ class _HomePageState extends State<HomePage> {
     final generation = ++_searchGeneration;
     _resultsListKey = GlobalKey<AnimatedListState>();
     _animatedResultCount = 0;
+    _searchRanker = null;
+    _searchSourceOrder = const {};
+    _searchResultOrder = {};
     if (query.isEmpty) {
       setState(() {
         submittedQuery = null;
@@ -361,6 +368,12 @@ class _HomePageState extends State<HomePage> {
       await _loadHome();
       return;
     }
+    _searchRanker = SearchResultRanker(query);
+    _searchSourceOrder = {
+      for (var index = 0; index < widget.state.sources.length; index++)
+        widget.state.sources[index].id: index,
+    };
+    _searchResultOrder = {};
     setState(() {
       loading = true;
       error = null;
@@ -373,34 +386,14 @@ class _HomePageState extends State<HomePage> {
         query,
         onSourceResults: (sourceResults) {
           if (!mounted || generation != _searchGeneration) return;
-          final insertionIndex = results.length;
-          setState(() {
-            results = [...results, ...sourceResults];
-          });
-          final listKey = _resultsListKey;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || generation != _searchGeneration) return;
-            final animatedList = listKey.currentState;
-            if (animatedList == null) {
-              _animatedResultCount = results.length;
-              return;
-            }
-            for (var index = 0; index < sourceResults.length; index++) {
-              animatedList.insertItem(
-                insertionIndex + index,
-                duration: const Duration(milliseconds: 260),
-              );
-            }
-            _animatedResultCount += sourceResults.length;
-          });
+          for (var index = 0; index < sourceResults.length; index++) {
+            _insertSearchResult(sourceResults[index], index);
+          }
         },
       );
       if (mounted && generation == _searchGeneration) {
         setState(() {
           loading = false;
-          if (results.length < found.length) {
-            results = [...results, ...found.skip(results.length)];
-          }
           if (found.isEmpty && widget.state.sourceErrors.isNotEmpty) {
             error = widget.state.sourceErrors.entries
                 .map((entry) => '${entry.key}：${entry.value}')
@@ -415,6 +408,55 @@ class _HomePageState extends State<HomePage> {
           error = searchError.toString();
         });
       }
+    }
+  }
+
+  int _compareSearchResults(AppListing left, AppListing right) {
+    final ranker = _searchRanker;
+    if (ranker == null) return 0;
+
+    final scoreOrder = ranker.score(right).compareTo(ranker.score(left));
+    if (scoreOrder != 0) return scoreOrder;
+
+    const fallbackOrder = 1 << 30;
+    final sourceOrder = (_searchSourceOrder[left.sourceId] ?? fallbackOrder)
+        .compareTo(_searchSourceOrder[right.sourceId] ?? fallbackOrder);
+    if (sourceOrder != 0) return sourceOrder;
+
+    final leftResultOrder =
+        _searchResultOrder[left.sourceId]?[left.id] ?? fallbackOrder;
+    final rightResultOrder =
+        _searchResultOrder[right.sourceId]?[right.id] ?? fallbackOrder;
+    return leftResultOrder.compareTo(rightResultOrder);
+  }
+
+  void _insertSearchResult(AppListing app, int sourceResultIndex) {
+    final resultOrder = _searchResultOrder.putIfAbsent(
+      app.sourceId,
+      () => <String, int>{},
+    );
+    resultOrder[app.id] = sourceResultIndex;
+
+    var insertionIndex = results.length;
+    for (var index = 0; index < results.length; index++) {
+      if (_compareSearchResults(app, results[index]) < 0) {
+        insertionIndex = index;
+        break;
+      }
+    }
+
+    final listKey = _resultsListKey;
+    final animatedList = listKey.currentState;
+    setState(() {
+      results = [...results]..insert(insertionIndex, app);
+      if (animatedList == null) _animatedResultCount = results.length;
+    });
+    if (animatedList != null) {
+      animatedList.insertItem(
+        insertionIndex,
+        duration: const Duration(milliseconds: 260),
+      );
+      _animatedResultCount += 1;
     }
   }
 
@@ -2081,47 +2123,50 @@ class _DetailsSheetState extends State<DetailsSheet> {
         maxChildSize: .94,
         builder: (_, controller) => FutureBuilder<AppDetails>(
           future: details,
-          builder: (context, snapshot) => ListView(
-            controller: controller,
-            padding: const EdgeInsets.all(24),
-            children: [
-              Row(
-                children: [
-                  AppIcon(url: widget.app.iconUrl),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.app.name,
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        if (widget.app.packageName.trim().isNotEmpty)
-                          Text(widget.app.packageName),
-                        if (widget.app.version.trim().isNotEmpty ||
-                            widget.app.size.trim().isNotEmpty)
+          builder: (context, snapshot) {
+            final displayApp = snapshot.data ?? widget.app;
+            final metadataChips = _appInfoChips(displayApp);
+            return ListView(
+              controller: controller,
+              padding: const EdgeInsets.all(24),
+              children: [
+                Row(
+                  children: [
+                    AppIcon(url: displayApp.iconUrl),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            [widget.app.version, widget.app.size]
-                                .where((value) => value.trim().isNotEmpty)
-                                .join(' · '),
+                            displayApp.name,
+                            style: Theme.of(context).textTheme.headlineSmall,
                           ),
-                      ],
+                          if (metadataChips.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 2,
+                              children: metadataChips,
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              if (snapshot.connectionState == ConnectionState.waiting)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(child: CircularProgressIndicator()),
+                  ],
                 ),
-              if (snapshot.hasError) Text('源详情加载失败：${snapshot.error}'),
-              if (snapshot.hasData)
-                ..._buildDetailContent(context, snapshot.data!),
-            ],
-          ),
+                const SizedBox(height: 24),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                if (snapshot.hasError) Text('源详情加载失败：${snapshot.error}'),
+                if (snapshot.hasData)
+                  ..._buildDetailContent(context, snapshot.data!),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -2129,10 +2174,6 @@ class _DetailsSheetState extends State<DetailsSheet> {
 
   List<Widget> _buildDetailContent(BuildContext context, AppDetails detail) {
     final content = <Widget>[];
-    if (detail.summary.trim().isNotEmpty) {
-      content.add(Text(detail.summary));
-      content.add(const SizedBox(height: 12));
-    }
     if (detail.description.trim().isNotEmpty) {
       content.add(_ExpandableDescription(text: detail.description));
       content.add(const SizedBox(height: 20));
