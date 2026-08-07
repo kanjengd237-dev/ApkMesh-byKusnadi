@@ -314,7 +314,7 @@ class QuickJsApkSourceScript
       final result = await _evaluateJson(
         '(async () => { '
         'const value = await source.$method(${arguments.map(jsonEncode).join(', ')}); '
-        'return {__apkmeshResult: value === undefined ? null : value}; '
+        'return JSON.stringify({__apkmeshResult: value === undefined ? null : value}); '
         '})()',
       );
       if (result is! Map || !result.containsKey('__apkmeshResult')) {
