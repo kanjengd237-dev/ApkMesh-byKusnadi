@@ -1035,6 +1035,8 @@ class _AppInfoChip extends StatelessWidget {
   }
 }
 
+enum _DownloadClearAction { all, completed }
+
 class DownloadsPage extends StatelessWidget {
   const DownloadsPage({required this.state, super.key});
   final AppState state;
@@ -1042,10 +1044,41 @@ class DownloadsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tasks = state.downloads;
+    final completedCount = tasks
+        .where((task) => task.status == DownloadStatus.completed)
+        .length;
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
       children: [
-        Text('下载管理', style: Theme.of(context).textTheme.headlineMedium),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                '下载管理',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+            ),
+            PopupMenuButton<_DownloadClearAction>(
+              enabled: tasks.isNotEmpty,
+              tooltip: '清理下载',
+              icon: const Icon(Icons.delete_sweep_outlined),
+              onSelected: (action) =>
+                  _confirmClearDownloads(context, state, action),
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: _DownloadClearAction.all,
+                  child: Text('清除全部'),
+                ),
+                PopupMenuItem(
+                  value: _DownloadClearAction.completed,
+                  enabled: completedCount > 0,
+                  child: Text('清除已下载'),
+                ),
+              ],
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
         if (tasks.isEmpty)
           const EmptyMessage(
@@ -1063,6 +1096,45 @@ class DownloadsPage extends StatelessWidget {
           ),
       ],
     );
+  }
+}
+
+Future<void> _confirmClearDownloads(
+  BuildContext context,
+  AppState state,
+  _DownloadClearAction action,
+) async {
+  final completedOnly = action == _DownloadClearAction.completed;
+  final count = state.downloads
+      .where(
+        (task) => !completedOnly || task.status == DownloadStatus.completed,
+      )
+      .length;
+  if (count == 0) return;
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(completedOnly ? '清除已下载文件？' : '清除全部下载？'),
+      content: Text(
+        completedOnly
+            ? '将删除 $count 个已下载文件及其记录。'
+            : '将删除 $count 个下载文件及其记录，进行中的任务也会取消。',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('清除'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) {
+    await state.clearDownloads(completedOnly: completedOnly);
   }
 }
 
