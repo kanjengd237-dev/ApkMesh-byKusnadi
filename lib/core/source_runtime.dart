@@ -32,6 +32,7 @@ class SourcePolicy {
 abstract interface class SourceHostApi {
   bool get supportsBrowser;
   bool get supportsInstall;
+  bool hasDownloadSession(String downloadId);
   List<BrowserTabDebugInfo> get browserTabs;
 
   Future<String> request(
@@ -70,6 +71,7 @@ abstract interface class SourceHostApi {
   Future<void> pauseDownload(String downloadId);
   Future<void> resumeDownload(String downloadId);
   Future<void> cancelDownload(String downloadId);
+  Future<void> removeDownloadFiles(String downloadId, {String? filePath});
 
   Future<bool> install(String filePath, {required SourcePolicy policy});
   Future<bool> canInstallPackages();
@@ -281,6 +283,9 @@ class SourceRegistry {
 
 class DemoHostApi implements SourceHostApi {
   @override
+  bool hasDownloadSession(String downloadId) => false;
+
+  @override
   List<BrowserTabDebugInfo> get browserTabs => const [];
 
   @override
@@ -334,6 +339,12 @@ class DemoHostApi implements SourceHostApi {
   @override
   Future<void> cancelDownload(String downloadId) =>
       throw UnsupportedError('当前平台不支持取消下载');
+
+  @override
+  Future<void> removeDownloadFiles(
+    String downloadId, {
+    String? filePath,
+  }) async {}
 
   @override
   Future<bool> install(String filePath, {required SourcePolicy policy}) async =>

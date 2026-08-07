@@ -73,6 +73,7 @@ class _ShellState extends State<Shell> {
   int index = 0;
   bool searchOpen = false;
   bool searchResultsVisible = false;
+  bool searchLoading = false;
   final searchController = TextEditingController();
   final homeKey = GlobalKey<_HomePageState>();
 
@@ -85,7 +86,12 @@ class _ShellState extends State<Shell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      HomePage(key: homeKey, state: widget.state, controller: searchController),
+      HomePage(
+        key: homeKey,
+        state: widget.state,
+        controller: searchController,
+        onSearchLoadingChanged: _handleSearchLoadingChanged,
+      ),
       DownloadsPage(state: widget.state),
       SourcesPage(state: widget.state),
       SettingsPage(state: widget.state),
@@ -120,6 +126,12 @@ class _ShellState extends State<Shell> {
             backgroundColor: Theme.of(context).colorScheme.surface,
             scrolledUnderElevation: 0,
             surfaceTintColor: Colors.transparent,
+            bottom: index == 0 && searchLoading
+                ? const PreferredSize(
+                    preferredSize: Size.fromHeight(3),
+                    child: LinearProgressIndicator(minHeight: 3),
+                  )
+                : null,
             leading: index == 0 && searchResultsVisible
                 ? IconButton(
                     tooltip: '返回主页',
@@ -228,6 +240,11 @@ class _ShellState extends State<Shell> {
     });
   }
 
+  void _handleSearchLoadingChanged(bool loading) {
+    if (!mounted || searchLoading == loading) return;
+    setState(() => searchLoading = loading);
+  }
+
   Future<void> _submitSearch() async {
     final hasQuery = searchController.text.trim().isNotEmpty;
     setState(() {
@@ -259,9 +276,15 @@ class _ShellState extends State<Shell> {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({required this.state, required this.controller, super.key});
+  const HomePage({
+    required this.state,
+    required this.controller,
+    this.onSearchLoadingChanged,
+    super.key,
+  });
   final AppState state;
   final TextEditingController controller;
+  final ValueChanged<bool>? onSearchLoadingChanged;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -271,7 +294,7 @@ class _HomePageState extends State<HomePage> {
   List<AppListing> results = const [];
   SourceHome home = const SourceHome();
   bool loading = false;
-  bool homeLoading = true;
+  bool homeLoading = false;
   bool homeLoaded = false;
   String? error;
   String? homeError;
@@ -280,6 +303,7 @@ class _HomePageState extends State<HomePage> {
   String? _loadedHomeSourceId;
   final Map<String, Future<SourceCategory>> _categoryLoads = {};
   int _searchGeneration = 0;
+  int _homeGeneration = 0;
   SearchResultRanker? _searchRanker;
   Map<String, int> _searchSourceOrder = const {};
   Map<String, Map<String, int>> _searchResultOrder = {};
@@ -305,21 +329,23 @@ class _HomePageState extends State<HomePage> {
     _categoryLoads.clear();
     setState(() {
       homeLoaded = false;
-      homeLoading = true;
+      homeLoading = false;
       _selectedTab = 'home';
     });
     _loadHome();
   }
 
-  Future<void> _loadHome() async {
-    if (homeLoaded) return;
+  Future<void> _loadHome({bool force = false}) async {
+    if ((homeLoaded && !force) || homeLoading) return;
+    if (force) _categoryLoads.clear();
+    final generation = ++_homeGeneration;
     setState(() {
       homeLoading = true;
       homeError = null;
     });
     try {
       final content = await widget.state.home();
-      if (!mounted) return;
+      if (!mounted || generation != _homeGeneration) return;
       setState(() {
         home = content;
         _loadedHomeSourceId = widget.state.homeSourceId;
@@ -340,7 +366,7 @@ class _HomePageState extends State<HomePage> {
         }
       });
     } catch (loadError) {
-      if (!mounted) return;
+      if (!mounted || generation != _homeGeneration) return;
       setState(() {
         homeLoading = false;
         homeLoaded = true;
@@ -349,8 +375,11 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> search() async {
+  Future<void> search({bool preserveSelectedTab = false}) async {
     final query = widget.controller.text.trim();
+    final refreshTab = preserveSelectedTab ? _activeTab(_tabs) : null;
+    final sourceId = refreshTab?.sourceId;
+    final sourceIds = sourceId == null ? null : {sourceId};
     final generation = ++_searchGeneration;
     _resultsListKey = GlobalKey<AnimatedListState>();
     _animatedResultCount = 0;
@@ -365,6 +394,7 @@ class _HomePageState extends State<HomePage> {
         error = null;
         _selectedTab = 'home';
       });
+      widget.onSearchLoadingChanged?.call(false);
       await _loadHome();
       return;
     }
@@ -379,11 +409,13 @@ class _HomePageState extends State<HomePage> {
       error = null;
       results = const [];
       submittedQuery = query;
-      _selectedTab = 'all';
+      _selectedTab = refreshTab?.id ?? 'all';
     });
+    widget.onSearchLoadingChanged?.call(true);
     try {
       final found = await widget.state.search(
         query,
+        sourceIds: sourceIds,
         onSourceResults: (sourceResults) {
           if (!mounted || generation != _searchGeneration) return;
           for (var index = 0; index < sourceResults.length; index++) {
@@ -400,6 +432,7 @@ class _HomePageState extends State<HomePage> {
                 .join('\n');
           }
         });
+        widget.onSearchLoadingChanged?.call(false);
       }
     } catch (searchError) {
       if (mounted && generation == _searchGeneration) {
@@ -407,6 +440,7 @@ class _HomePageState extends State<HomePage> {
           loading = false;
           error = searchError.toString();
         });
+        widget.onSearchLoadingChanged?.call(false);
       }
     }
   }
@@ -471,7 +505,30 @@ class _HomePageState extends State<HomePage> {
       error = null;
       _selectedTab = 'home';
     });
+    widget.onSearchLoadingChanged?.call(false);
     _loadHome();
+  }
+
+  Future<void> _refreshContent() async {
+    final activeTab = _activeTab(_tabs);
+    if (submittedQuery != null) {
+      await search(preserveSelectedTab: true);
+      return;
+    }
+    final category = activeTab.category;
+    if (category != null) {
+      final key = '${category.sourceId}:${category.id}';
+      final future = widget.state.category(category);
+      _categoryLoads[key] = future;
+      setState(() {});
+      try {
+        await future;
+      } catch (_) {
+        // FutureBuilder renders the category error in the refreshed tab.
+      }
+      return;
+    }
+    await _loadHome(force: true);
   }
 
   List<_ContentTab> get _tabs {
@@ -543,7 +600,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Widget> _buildHomeContent(BuildContext context, _ContentTab activeTab) {
-    if (homeLoading) {
+    if (homeLoading && !homeLoaded) {
       return const [
         Padding(
           padding: EdgeInsets.all(32),
@@ -641,13 +698,6 @@ class _HomePageState extends State<HomePage> {
                 .toList(),
           );
     return [
-      if (loading)
-        const Center(
-          child: Padding(
-            padding: EdgeInsets.all(20),
-            child: CircularProgressIndicator(),
-          ),
-        ),
       if (!loading && error != null)
         Card(
           color: Theme.of(context).colorScheme.errorContainer,
@@ -684,20 +734,24 @@ class _HomePageState extends State<HomePage> {
           child: _buildTabBar(context, tabs, activeTab),
         ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
-            children: [
-              if (!widget.state.hasEnabledSource)
-                const EmptyMessage(
-                  icon: Icons.hub_outlined,
-                  title: '没有启用的源',
-                  detail: '请先在源管理中启用一个源。',
-                )
-              else
-                ...(showingHome
-                    ? _buildHomeContent(context, activeTab)
-                    : _buildSearchContent(context, activeTab)),
-            ],
+          child: RefreshIndicator(
+            onRefresh: _refreshContent,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+              children: [
+                if (!widget.state.hasEnabledSource)
+                  const EmptyMessage(
+                    icon: Icons.hub_outlined,
+                    title: '没有启用的源',
+                    detail: '请先在源管理中启用一个源。',
+                  )
+                else
+                  ...(showingHome
+                      ? _buildHomeContent(context, activeTab)
+                      : _buildSearchContent(context, activeTab)),
+              ],
+            ),
           ),
         ),
       ],

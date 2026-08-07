@@ -40,6 +40,10 @@ class NativeHostApi implements SourceHostApi {
   bool get supportsInstall => Platform.isAndroid;
 
   @override
+  bool hasDownloadSession(String downloadId) =>
+      _downloadSessions.containsKey(downloadId);
+
+  @override
   List<BrowserTabDebugInfo> get browserTabs => [
     ..._tabStates.values,
     ..._tabHistory,
@@ -419,6 +423,49 @@ class NativeHostApi implements SourceHostApi {
     _setTabState(tabId, state: 'closed', active: false);
   }
 
+  Future<Directory> _downloadDirectory() async {
+    final directory =
+        await getDownloadsDirectory() ??
+        await getApplicationDocumentsDirectory();
+    await directory.create(recursive: true);
+    return directory;
+  }
+
+  File _partialFile(Directory directory, String sessionId) {
+    final safeId = sessionId.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    return File(p.join(directory.path, '.apkmesh-$safeId.part'));
+  }
+
+  ({int start, int? total})? _contentRange(String? value) {
+    if (value == null) return null;
+    final match = RegExp(
+      r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$',
+    ).firstMatch(value.trim());
+    if (match == null) return null;
+    return (
+      start: int.parse(match.group(1)!),
+      total: match.group(3) == '*' ? null : int.parse(match.group(3)!),
+    );
+  }
+
+  int? _responseTotal(http.StreamedResponse response, int offset) {
+    final range = _contentRange(response.headers['content-range']);
+    if (range?.total != null) return range!.total;
+    final length = response.contentLength;
+    return length == null ? null : offset + length;
+  }
+
+  Future<http.StreamedResponse> _downloadResponse(
+    Uri uri,
+    SourcePolicy policy, {
+    required Map<String, String> headers,
+    required int offset,
+  }) async {
+    final requestHeaders = <String, String>{...headers};
+    if (offset > 0) requestHeaders['Range'] = 'bytes=$offset-';
+    return await _getWithRedirects(uri, policy, headers: requestHeaders);
+  }
+
   @override
   Future<String> download(
     String url, {
@@ -430,36 +477,67 @@ class NativeHostApi implements SourceHostApi {
   }) async {
     final uri = Uri.parse(url);
     _check(uri, policy, capability: policy.allowDownload);
-    final directory =
-        await getDownloadsDirectory() ??
-        await getApplicationDocumentsDirectory();
-    await directory.create(recursive: true);
+    final directory = await _downloadDirectory();
     final requestedName = fileName ?? p.basename(uri.path).split('?').first;
     final safeName = requestedName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    final destination = File(
-      p.join(directory.path, safeName.isEmpty ? 'download.apk' : safeName),
-    );
     final sessionId =
         downloadId ?? 'host-${DateTime.now().microsecondsSinceEpoch}';
-    final session = _NativeDownloadSession(destination);
+    final baseName = safeName.isEmpty ? 'download.apk' : safeName;
+    final extension = p.extension(baseName);
+    final destinationName = extension.isEmpty
+        ? '$baseName.$sessionId'
+        : '${p.withoutExtension(baseName)}.$sessionId$extension';
+    final destination = File(p.join(directory.path, destinationName));
+    final partial = _partialFile(directory, sessionId);
+    final session = _NativeDownloadSession(destination, partial);
     _downloadSessions[sessionId] = session;
 
     try {
-      final response = await _getWithRedirects(uri, policy, headers: headers);
+      var offset = await partial.exists() ? await partial.length() : 0;
+      var response = await _downloadResponse(
+        uri,
+        policy,
+        headers: headers,
+        offset: offset,
+      );
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        await response.stream.drain<void>();
         throw HttpException('下载失败 HTTP ${response.statusCode}', uri: uri);
       }
       if (session.canceled) throw const DownloadCancelledException();
 
-      final sink = destination.openWrite();
+      final range = _contentRange(response.headers['content-range']);
+      if (offset > 0 &&
+          (response.statusCode != HttpStatus.partialContent ||
+              range?.start != offset)) {
+        await response.stream.drain<void>();
+        if (await partial.exists()) await partial.delete();
+        offset = 0;
+        response = await _downloadResponse(
+          uri,
+          policy,
+          headers: headers,
+          offset: 0,
+        );
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          await response.stream.drain<void>();
+          throw HttpException('下载失败 HTTP ${response.statusCode}', uri: uri);
+        }
+      }
+
+      final total = _responseTotal(response, offset);
+      onProgress?.call(offset, total);
+      final sink = partial.openWrite(
+        mode: offset > 0 ? FileMode.append : FileMode.write,
+      );
       session.sink = sink;
-      var received = 0;
+      var received = offset;
       session.subscription = response.stream.listen(
         (chunk) {
           if (session.canceled) return;
           received += chunk.length;
           sink.add(chunk);
-          onProgress?.call(received, response.contentLength);
+          onProgress?.call(received, total);
         },
         onError: (Object error, StackTrace stack) {
           if (!session.done.isCompleted) {
@@ -474,17 +552,25 @@ class NativeHostApi implements SourceHostApi {
       await session.done.future;
       if (session.canceled) throw const DownloadCancelledException();
       await sink.close();
+      if (total != null && received != total) {
+        throw HttpException('下载内容不完整：$received/$total', uri: uri);
+      }
+      if (await destination.exists()) await destination.delete();
+      await partial.rename(destination.path);
       return destination.path;
     } catch (error) {
       await session.subscription?.cancel();
       await session.sink?.close();
-      if (session.canceled || error is DownloadCancelledException) {
-        if (await destination.exists()) await destination.delete();
+      if (session.canceled) {
+        if (!session.preservePartialOnCancel && await partial.exists()) {
+          await partial.delete();
+        }
         throw const DownloadCancelledException();
       }
       rethrow;
     } finally {
       _downloadSessions.remove(sessionId);
+      if (!session.finished.isCompleted) session.finished.complete();
     }
   }
 
@@ -511,6 +597,33 @@ class NativeHostApi implements SourceHostApi {
     session.canceled = true;
     await session.subscription?.cancel();
     if (!session.done.isCompleted) session.done.complete();
+    await session.finished.future;
+  }
+
+  bool _isWithin(String path, Directory directory) {
+    final normalizedPath = p.normalize(path);
+    final normalizedRoot = p.normalize(directory.path);
+    return normalizedPath == normalizedRoot ||
+        normalizedPath.startsWith('$normalizedRoot${p.separator}');
+  }
+
+  @override
+  Future<void> removeDownloadFiles(
+    String downloadId, {
+    String? filePath,
+  }) async {
+    final directory = await _downloadDirectory();
+    final partial = _partialFile(directory, downloadId);
+    if (await partial.exists()) await partial.delete();
+    if (filePath == null) return;
+
+    final roots = <Directory>[directory];
+    final documents = await getApplicationDocumentsDirectory();
+    if (documents.path != directory.path) roots.add(documents);
+    if (roots.any((root) => _isWithin(filePath, root))) {
+      final file = File(filePath);
+      if (await file.exists()) await file.delete();
+    }
   }
 
   @override
@@ -547,19 +660,29 @@ class NativeHostApi implements SourceHostApi {
       await browserClose(id);
     }
     for (final id in _downloadSessions.keys.toList()) {
-      await cancelDownload(id);
+      final session = _downloadSessions[id];
+      if (session == null) continue;
+      session.canceled = true;
+      session.preservePartialOnCancel = true;
+      await session.subscription?.cancel();
+      if (!session.done.isCompleted) session.done.complete();
+      await session.finished.future;
     }
+    _downloadSessions.clear();
     _client.close();
   }
 }
 
 class _NativeDownloadSession {
-  _NativeDownloadSession(this.destination);
+  _NativeDownloadSession(this.destination, this.partial);
 
   final File destination;
+  final File partial;
   final done = Completer<void>();
+  final finished = Completer<void>();
   StreamSubscription<List<int>>? subscription;
   IOSink? sink;
   bool paused = false;
   bool canceled = false;
+  bool preservePartialOnCancel = false;
 }

@@ -169,6 +169,86 @@ class SourceDownload {
   final String url;
   final String size;
   final Map<String, String> headers;
+
+  Map<String, dynamic> toJson() => {
+    'label': label,
+    'url': url,
+    'size': size,
+    'headers': Map.fromEntries(
+      headers.entries.where(
+        (entry) => !const {
+          'authorization',
+          'cookie',
+          'proxy-authorization',
+          'set-cookie',
+        }.contains(entry.key.toLowerCase()),
+      ),
+    ),
+  };
+
+  factory SourceDownload.fromJson(Map<String, dynamic> json) {
+    final rawHeaders = json['headers'];
+    final headers = rawHeaders is Map
+        ? rawHeaders.map(
+            (key, value) => MapEntry(key.toString(), value.toString()),
+          )
+        : <String, String>{};
+    return SourceDownload(
+      label: _requiredJsonString(json, 'label'),
+      url: _requiredJsonString(json, 'url'),
+      size: (json['size'] ?? '').toString(),
+      headers: Map<String, String>.unmodifiable(headers),
+    );
+  }
+}
+
+String _requiredJsonString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! String || value.isEmpty) {
+    throw FormatException('下载任务字段无效：$key');
+  }
+  return value;
+}
+
+String? _nullableJsonString(dynamic value) => value is String ? value : null;
+
+int? _jsonInt(dynamic value) {
+  if (value is int) return value;
+  return value == null ? null : int.tryParse(value.toString());
+}
+
+DateTime _requiredJsonDateTime(Map<String, dynamic> json, String key) {
+  final value = DateTime.tryParse((json[key] ?? '').toString());
+  if (value == null) throw FormatException('下载任务时间字段无效：$key');
+  return value;
+}
+
+class DownloadPolicySnapshot {
+  const DownloadPolicySnapshot({
+    required this.allowedHosts,
+    this.allowInstall = false,
+  });
+
+  final List<String> allowedHosts;
+  final bool allowInstall;
+
+  Map<String, dynamic> toJson() => {
+    'allowedHosts': allowedHosts,
+    'allowInstall': allowInstall,
+  };
+
+  factory DownloadPolicySnapshot.fromJson(Map<String, dynamic> json) {
+    final rawHosts = json['allowedHosts'];
+    if (rawHosts is! List || rawHosts.any((host) => host is! String)) {
+      throw const FormatException('下载权限字段无效');
+    }
+    final hosts = rawHosts.cast<String>().where((host) => host.isNotEmpty);
+    if (hosts.isEmpty) throw const FormatException('下载权限主机为空');
+    return DownloadPolicySnapshot(
+      allowedHosts: List<String>.unmodifiable(hosts),
+      allowInstall: json['allowInstall'] == true,
+    );
+  }
 }
 
 class DownloadCancelledException implements Exception {
@@ -190,6 +270,7 @@ class DownloadTask {
     this.received = 0,
     this.total,
     this.speedBytesPerSecond,
+    this.policy,
     this.filePath,
     this.error,
     this.completedAt,
@@ -205,6 +286,7 @@ class DownloadTask {
   final int received;
   final int? total;
   final int? speedBytesPerSecond;
+  final DownloadPolicySnapshot? policy;
   final String? filePath;
   final String? error;
   final DateTime? completedAt;
@@ -226,12 +308,59 @@ class DownloadTask {
     return Duration(milliseconds: milliseconds);
   }
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'file': file.toJson(),
+    'sourceId': sourceId,
+    'status': status.name,
+    'startedAt': startedAt.toIso8601String(),
+    'received': received,
+    'total': total,
+    'speedBytesPerSecond': speedBytesPerSecond,
+    'policy': policy?.toJson(),
+    'filePath': filePath,
+    'error': error,
+    'completedAt': completedAt?.toIso8601String(),
+  };
+
+  factory DownloadTask.fromJson(Map<String, dynamic> json) {
+    final rawFile = json['file'];
+    if (rawFile is! Map) throw const FormatException('下载任务文件字段无效');
+    final statusName = json['status'];
+    final status = DownloadStatus.values.cast<DownloadStatus?>().firstWhere(
+      (value) => value?.name == statusName,
+      orElse: () => null,
+    );
+    if (status == null) throw const FormatException('下载任务状态无效');
+    return DownloadTask(
+      id: _requiredJsonString(json, 'id'),
+      file: SourceDownload.fromJson(Map<String, dynamic>.from(rawFile)),
+      sourceId: _requiredJsonString(json, 'sourceId'),
+      status: status,
+      startedAt: _requiredJsonDateTime(json, 'startedAt'),
+      received: (_jsonInt(json['received']) ?? 0).clamp(0, 1 << 62),
+      total: _jsonInt(json['total']),
+      speedBytesPerSecond: _jsonInt(json['speedBytesPerSecond']),
+      policy: json['policy'] is Map
+          ? DownloadPolicySnapshot.fromJson(
+              Map<String, dynamic>.from(json['policy'] as Map),
+            )
+          : null,
+      filePath: _nullableJsonString(json['filePath']),
+      error: _nullableJsonString(json['error']),
+      completedAt: json['completedAt'] == null
+          ? null
+          : DateTime.tryParse(json['completedAt'].toString()),
+    );
+  }
+
   DownloadTask copyWith({
     DownloadStatus? status,
     DateTime? startedAt,
     int? received,
     Object? total = _notProvided,
     Object? speedBytesPerSecond = _notProvided,
+    Object? policy = _notProvided,
     Object? filePath = _notProvided,
     Object? error = _notProvided,
     Object? completedAt = _notProvided,
@@ -246,6 +375,9 @@ class DownloadTask {
     speedBytesPerSecond: identical(speedBytesPerSecond, _notProvided)
         ? this.speedBytesPerSecond
         : speedBytesPerSecond as int?,
+    policy: identical(policy, _notProvided)
+        ? this.policy
+        : policy as DownloadPolicySnapshot?,
     filePath: identical(filePath, _notProvided)
         ? this.filePath
         : filePath as String?,

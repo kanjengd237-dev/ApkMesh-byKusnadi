@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'debug_log.dart';
 import 'download_notifications.dart';
+import 'download_store.dart';
 import 'host_factory.dart';
 import 'models.dart';
 import 'quickjs_source.dart';
@@ -38,13 +39,18 @@ class AppState extends ChangeNotifier {
   late final SourceHostApi host = createPlatformHostApi(debug: debug);
   late final DownloadNotifications _downloadNotifications;
   final Completer<void> _ready = Completer<void>();
+  final DownloadStore _downloadStore = createDownloadStore();
   final List<DownloadTask> _downloads = [];
+  final Set<String> _resumeAfterInitialize = {};
   final Map<String, int> _pendingDownloadBytes = {};
   final Map<String, int?> _pendingDownloadTotals = {};
   final Map<String, Timer> _downloadProgressTimers = {};
   final Map<String, ({int received, DateTime timestamp})>
   _downloadProgressSamples = {};
+  Future<void> _downloadPersistenceQueue = Future.value();
+  Timer? _downloadPersistenceTimer;
   int _downloadSequence = 0;
+  bool _isDisposing = false;
   bool _sourceRuntimeReady = false;
   String? _runtimeError;
   List<ApkSource> get sources => List.unmodifiable(_sources);
@@ -97,7 +103,96 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  Future<void> _restoreDownloads() async {
+    try {
+      final restored = await _downloadStore.load();
+      final ids = <String>{};
+      for (final task in restored) {
+        if (!ids.add(task.id)) continue;
+        if (task.status == DownloadStatus.downloading) {
+          _resumeAfterInitialize.add(task.id);
+          _downloads.add(
+            task.copyWith(
+              status: DownloadStatus.paused,
+              speedBytesPerSecond: null,
+            ),
+          );
+        } else {
+          _downloads.add(task);
+        }
+      }
+      if (_downloads.isNotEmpty) notifyListeners();
+      debug.add('恢复 ${_downloads.length} 条下载任务', category: 'Download');
+    } catch (error) {
+      debug.add(
+        '读取下载任务失败：$error',
+        level: DebugLogLevel.error,
+        category: 'Download',
+      );
+    }
+  }
+
+  void _scheduleDownloadPersistence({bool immediate = false}) {
+    if (_isDisposing && !immediate) return;
+    if (immediate) {
+      _downloadPersistenceTimer?.cancel();
+      _downloadPersistenceTimer = null;
+      _persistDownloadsNow();
+      return;
+    }
+    if (_downloadPersistenceTimer != null) return;
+    _downloadPersistenceTimer = Timer(
+      const Duration(milliseconds: 500),
+      _persistDownloadsNow,
+    );
+  }
+
+  void _persistDownloadsNow() {
+    _downloadPersistenceTimer?.cancel();
+    _downloadPersistenceTimer = null;
+    final snapshot = List<DownloadTask>.unmodifiable(_downloads);
+    _downloadPersistenceQueue = _downloadPersistenceQueue.then((_) async {
+      try {
+        await _downloadStore.save(snapshot);
+      } catch (error) {
+        debugPrint('[APK Mesh] 保存下载任务失败：$error');
+      }
+    });
+  }
+
+  Future<void> _resumeRestoredDownloads() async {
+    final ids = _resumeAfterInitialize.toList(growable: false);
+    _resumeAfterInitialize.clear();
+    for (final id in ids) {
+      if (_isDisposing) return;
+      final task = _downloadById(id);
+      if (task == null) continue;
+      try {
+        _policyForTask(task);
+      } catch (_) {
+        _replaceDownload(
+          task.copyWith(
+            status: DownloadStatus.failed,
+            error: '下载源未恢复，请重新导入源后重试',
+            completedAt: DateTime.now(),
+          ),
+        );
+        continue;
+      }
+      _replaceDownload(
+        task.copyWith(
+          status: DownloadStatus.downloading,
+          speedBytesPerSecond: null,
+          error: null,
+          completedAt: null,
+        ),
+      );
+      unawaited(_runDownload(id));
+    }
+  }
+
   Future<void> initialize() async {
+    await _restoreDownloads();
     debug.add('正在扫描内置 QuickJS 源', category: 'App');
     var loadedCount = 0;
     try {
@@ -130,6 +225,7 @@ class AppState extends ChangeNotifier {
       }
     } finally {
       if (!_ready.isCompleted) _ready.complete();
+      unawaited(_resumeRestoredDownloads());
     }
   }
 
@@ -207,17 +303,23 @@ class AppState extends ChangeNotifier {
 
   Future<List<AppListing>> search(
     String query, {
+    Set<String>? sourceIds,
     void Function(List<AppListing> results)? onSourceResults,
   }) async {
     await ready;
     debug.add('开始聚合搜索：${query.trim()}', category: 'App');
+    final enabledSourceIds = _sources
+        .where(
+          (source) =>
+              source.status == SourceStatus.enabled &&
+              (sourceIds == null || sourceIds.contains(source.id)),
+        )
+        .map((source) => source.id)
+        .toSet();
     final results = await registry.search(
       query,
       host,
-      enabledSourceIds: _sources
-          .where((source) => source.status == SourceStatus.enabled)
-          .map((source) => source.id)
-          .toSet(),
+      enabledSourceIds: enabledSourceIds,
       onSourceCompleted: (_, sourceResults) {
         if (sourceResults.isNotEmpty) onSourceResults?.call(sourceResults);
       },
@@ -316,6 +418,28 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  DownloadPolicySnapshot _policySnapshot(SourcePolicy policy) =>
+      DownloadPolicySnapshot(
+        allowedHosts: List<String>.unmodifiable(policy.allowedHosts),
+        allowInstall: policy.allowInstall,
+      );
+
+  SourcePolicy _policyForTask(DownloadTask task) {
+    try {
+      return registry.scriptFor(task.sourceId).policy;
+    } catch (_) {
+      final snapshot = task.policy;
+      if (snapshot == null) {
+        throw StateError('下载源未恢复，请重新导入源后重试');
+      }
+      return SourcePolicy(
+        allowedHosts: snapshot.allowedHosts.toSet(),
+        allowDownload: true,
+        allowInstall: snapshot.allowInstall,
+      );
+    }
+  }
+
   DownloadTask startDownload(SourceDownload file, String sourceId) {
     final existing = downloadFor(file.url);
     if (existing != null && existing.status == DownloadStatus.downloading) {
@@ -330,6 +454,11 @@ class AppState extends ChangeNotifier {
     }
 
     final now = DateTime.now();
+    final policySnapshot = _policySnapshot(
+      existing == null
+          ? registry.scriptFor(sourceId).policy
+          : _policyForTask(existing),
+    );
     late final DownloadTask task;
     if (existing == null) {
       task = DownloadTask(
@@ -338,6 +467,7 @@ class AppState extends ChangeNotifier {
         sourceId: sourceId,
         status: DownloadStatus.downloading,
         startedAt: now,
+        policy: policySnapshot,
       );
       _downloads.insert(0, task);
     } else {
@@ -347,6 +477,7 @@ class AppState extends ChangeNotifier {
         received: 0,
         total: null,
         speedBytesPerSecond: null,
+        policy: policySnapshot,
         filePath: null,
         error: null,
         completedAt: null,
@@ -355,6 +486,7 @@ class AppState extends ChangeNotifier {
     }
 
     _downloadProgressSamples.remove(task.id);
+    _scheduleDownloadPersistence();
     debug.add('开始下载：${file.label}', category: 'Download');
     notifyListeners();
     unawaited(_runDownload(task.id));
@@ -428,6 +560,10 @@ class AppState extends ChangeNotifier {
       ),
     );
     debug.add('继续下载：${current.file.label}', category: 'Download');
+    if (!host.hasDownloadSession(current.id)) {
+      unawaited(_runDownload(current.id));
+      return;
+    }
     try {
       await host.resumeDownload(current.id);
       final resumed = _downloadById(current.id);
@@ -483,10 +619,51 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> clearDownloads({required bool completedOnly}) async {
+    final targets = _downloads
+        .where(
+          (task) => !completedOnly || task.status == DownloadStatus.completed,
+        )
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+
+    for (final task in targets) {
+      if (task.status != DownloadStatus.downloading &&
+          task.status != DownloadStatus.paused) {
+        continue;
+      }
+      await _downloadNotifications.cancel(task.id);
+      try {
+        await host.cancelDownload(task.id);
+      } catch (error) {
+        debug.add(
+          '清理下载会话失败：${task.file.label} · $error',
+          level: DebugLogLevel.warning,
+          category: 'Download',
+        );
+      }
+    }
+
+    for (final task in targets) {
+      try {
+        await host.removeDownloadFiles(task.id, filePath: task.filePath);
+      } catch (error) {
+        debug.add(
+          '删除下载文件失败：${task.file.label} · $error',
+          level: DebugLogLevel.warning,
+          category: 'Download',
+        );
+      }
+      _removeDownload(task.id, notify: false);
+    }
+    notifyListeners();
+    _scheduleDownloadPersistence(immediate: true);
+  }
+
   Future<void> _runDownload(String taskId) async {
+    if (_isDisposing) return;
     final task = _downloadById(taskId);
     if (task == null) return;
-    final script = registry.scriptFor(task.sourceId);
     await _downloadNotifications.requestPermission();
     final beforeNotification = _downloadById(task.id);
     if (beforeNotification == null ||
@@ -519,7 +696,7 @@ class AppState extends ChangeNotifier {
             ).hasMatch(task.file.label)
             ? task.file.label
             : null,
-        policy: script.policy,
+        policy: _policyForTask(task),
         onProgress: (received, total) =>
             _queueDownloadProgress(task.id, received, total),
       );
@@ -545,6 +722,7 @@ class AppState extends ChangeNotifier {
         title: task.file.label,
       );
     } catch (error) {
+      if (_isDisposing) return;
       _flushDownloadProgress(task.id);
       final current = _downloadById(task.id);
       if (current == null) return;
@@ -643,10 +821,11 @@ class AppState extends ChangeNotifier {
     final index = _downloads.indexWhere((item) => item.id == task.id);
     if (index == -1) return;
     _downloads[index] = task;
+    _scheduleDownloadPersistence();
     if (notify) notifyListeners();
   }
 
-  void _removeDownload(String id) {
+  void _removeDownload(String id, {bool notify = true}) {
     final index = _downloads.indexWhere((item) => item.id == id);
     if (index == -1) return;
     _downloadProgressTimers.remove(id)?.cancel();
@@ -654,13 +833,14 @@ class AppState extends ChangeNotifier {
     _pendingDownloadTotals.remove(id);
     _downloadProgressSamples.remove(id);
     _downloads.removeAt(index);
-    notifyListeners();
+    _scheduleDownloadPersistence();
+    if (notify) notifyListeners();
   }
 
   Future<bool> installTask(DownloadTask task) {
     final path = task.filePath;
     if (path == null) throw StateError('下载文件尚未完成');
-    return install(path, task.sourceId);
+    return host.install(path, policy: _policyForTask(task));
   }
 
   Future<bool> install(String path, String sourceId) {
@@ -714,6 +894,10 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposing = true;
+    _downloadPersistenceTimer?.cancel();
+    _downloadPersistenceTimer = null;
+    if (_downloads.isNotEmpty) _persistDownloadsNow();
     for (final timer in _downloadProgressTimers.values) {
       timer.cancel();
     }
@@ -725,7 +909,7 @@ class AppState extends ChangeNotifier {
         unawaited(_downloadNotifications.cancel(task.id));
       }
     }
-    host.dispose();
+    unawaited(host.dispose());
     registry.dispose();
     debug.dispose();
     super.dispose();
