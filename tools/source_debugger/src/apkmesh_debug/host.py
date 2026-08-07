@@ -80,6 +80,7 @@ class SourceHost:
             return self.download(
                 str(payload.get("url", "")),
                 file_name=payload.get("fileName"),
+                headers=self._string_map(payload.get("headers")),
             )
         if name == "apkmesh.install":
             return self.install(str(payload.get("filePath", "")))
@@ -88,8 +89,14 @@ class SourceHost:
     def request(self, url: str, *, headers: dict[str, str] | None = None) -> str:
         return self.http.request(url, headers=headers)
 
-    def download(self, url: str, *, file_name: str | None = None) -> str:
-        return self.http.download(url, file_name=file_name)
+    def download(
+        self,
+        url: str,
+        *,
+        file_name: str | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> str:
+        return self.http.download(url, file_name=file_name, headers=headers)
 
     def install(self, file_path: str) -> bool:
         self.policy.require_capability("install")

@@ -54,6 +54,7 @@ abstract interface class SourceHostApi {
 
   Future<String> download(
     String url, {
+    Map<String, String> headers = const {},
     String? downloadId,
     String? fileName,
     required SourcePolicy policy,
@@ -232,6 +233,7 @@ class DemoHostApi implements SourceHostApi {
   @override
   Future<String> download(
     String url, {
+    Map<String, String> headers = const {},
     String? downloadId,
     String? fileName,
     required SourcePolicy policy,

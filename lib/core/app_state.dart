@@ -20,6 +20,18 @@ class AppState extends ChangeNotifier {
         description: '内置演示源，用于验证 APKVision 搜索、详情和下载接口。',
         status: SourceStatus.enabled,
         builtIn: true,
+        homeSource: true,
+        lastSync: DateTime.now(),
+      ),
+      ApkSource(
+        id: 'apkmirror',
+        name: 'APKMirror',
+        homepage: 'www.apkmirror.com',
+        version: '1.0.0',
+        description:
+            'APKMirror release search, details, variants, and downloads.',
+        status: SourceStatus.enabled,
+        builtIn: true,
         lastSync: DateTime.now(),
       ),
     ];
@@ -48,30 +60,48 @@ class AppState extends ChangeNotifier {
   Map<String, String> get sourceErrors => Map.unmodifiable(registry.lastErrors);
   bool get hasEnabledSource =>
       _sources.any((source) => source.status == SourceStatus.enabled);
+  String? get homeSourceId {
+    for (final source in _sources) {
+      if (source.homeSource && source.status == SourceStatus.enabled) {
+        return source.id;
+      }
+    }
+    return null;
+  }
+
   List<SourceDebugProject> get debugProjects => registry.debugProjects;
 
   Future<void> initialize() async {
     debug.add('正在加载内置 QuickJS 源', category: 'App');
+    var loadedCount = 0;
     try {
-      final quickJsSource = await loadQuickJsSource(
+      for (final assetPath in const [
         'assets/sources/apkvision.js',
-        debug: debug,
-      );
-      if (quickJsSource != null) {
-        registry.replace(quickJsSource);
+        'assets/sources/apkmirror.js',
+      ]) {
+        try {
+          final quickJsSource = await loadQuickJsSource(
+            assetPath,
+            debug: debug,
+          );
+          if (quickJsSource != null) {
+            registry.replace(quickJsSource);
+            loadedCount += 1;
+            debug.add('已加载源：$assetPath', category: 'App');
+          }
+        } catch (error) {
+          _runtimeError = error.toString();
+          debug.add(
+            'QuickJS 源加载失败（$assetPath）: $error',
+            level: DebugLogLevel.error,
+            category: 'App',
+          );
+        }
+      }
+      if (loadedCount > 0) {
         _sourceRuntimeReady = true;
-        debug.add('内置 QuickJS 源加载完成', category: 'App');
         notifyListeners();
       }
-    } catch (error) {
-      // Keep the deterministic demo source available when native services are unavailable.
-      _runtimeError = error.toString();
-      debug.add(
-        'QuickJS 源加载失败: $error',
-        level: DebugLogLevel.error,
-        category: 'App',
-      );
-      notifyListeners();
     } finally {
       if (!_ready.isCompleted) _ready.complete();
     }
@@ -108,15 +138,15 @@ class AppState extends ChangeNotifier {
     await ready;
     return registry.home(
       host,
-      enabledSourceIds: _sources
-          .where((source) => source.status == SourceStatus.enabled)
-          .map((source) => source.id)
-          .toSet(),
+      enabledSourceIds: homeSourceId == null ? const {} : {homeSourceId!},
     );
   }
 
   Future<SourceCategory> category(SourceCategory category) async {
     await ready;
+    if (category.sourceId != homeSourceId) {
+      throw StateError('该分类不属于当前主页源');
+    }
     return registry.category(category, host);
   }
 
@@ -281,6 +311,7 @@ class AppState extends ChangeNotifier {
     try {
       final path = await host.download(
         task.file.url,
+        headers: task.file.headers,
         downloadId: task.id,
         fileName:
             RegExp(
@@ -402,6 +433,21 @@ class AppState extends ChangeNotifier {
     return host.install(path, policy: script.policy);
   }
 
+  void setHomeSource(String id) {
+    ApkSource? selected;
+    for (final source in _sources) {
+      if (source.id == id && source.status == SourceStatus.enabled) {
+        selected = source;
+        break;
+      }
+    }
+    if (selected == null) return;
+    _sources = _sources
+        .map((item) => item.copyWith(homeSource: item.id == selected!.id))
+        .toList();
+    notifyListeners();
+  }
+
   void toggleSource(String id, bool enabled) {
     _sources = _sources
         .map(
@@ -410,6 +456,7 @@ class AppState extends ChangeNotifier {
                   status: enabled
                       ? SourceStatus.enabled
                       : SourceStatus.disabled,
+                  homeSource: enabled ? source.homeSource : false,
                 )
               : source,
         )

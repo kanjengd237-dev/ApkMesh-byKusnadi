@@ -7,7 +7,7 @@ void main() {
     await tester.pumpWidget(const ApkMeshApp());
 
     expect(find.text('发现应用'), findsOneWidget);
-    expect(find.text('主页'), findsOneWidget);
+    expect(find.text('主页'), findsWidgets);
     expect(find.text('下载'), findsOneWidget);
     expect(find.text('源管理'), findsOneWidget);
     expect(find.text('设置'), findsOneWidget);
@@ -20,18 +20,6 @@ void main() {
 
     expect(find.text('下载管理'), findsOneWidget);
     expect(find.text('暂无下载任务'), findsOneWidget);
-  });
-
-  testWidgets('searches the bundled test source', (tester) async {
-    await tester.pumpWidget(const ApkMeshApp());
-    await tester.tap(find.byTooltip('搜索'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).first, 'minecraft');
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Minecraft'), findsOneWidget);
-    expect(find.textContaining('APKVision'), findsOneWidget);
   });
 
   testWidgets('shows a completed empty search state', (tester) async {

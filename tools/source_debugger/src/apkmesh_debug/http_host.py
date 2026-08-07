@@ -86,8 +86,9 @@ class HttpHost:
         url: str,
         *,
         file_name: str | None = None,
+        headers: dict[str, str] | None = None,
     ) -> str:
-        response = self.fetch(url, capability="download")
+        response = self.fetch(url, headers=headers, capability="download")
         if not 200 <= response.status_code < 300:
             raise HostRequestError(
                 f"download returned HTTP {response.status_code} for {url}",

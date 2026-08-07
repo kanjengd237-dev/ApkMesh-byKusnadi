@@ -101,6 +101,7 @@ class QuickJsApkSourceScript
       final payload = _payload(args);
       return _host!.download(
         payload['url'] as String,
+        headers: _stringMap(payload['headers']),
         fileName: payload['fileName'] as String?,
         policy: _policy,
       );
@@ -335,6 +336,7 @@ class QuickJsApkSourceScript
             label: (download['label'] ?? '').toString(),
             url: (download['url'] ?? '').toString(),
             size: (download['size'] ?? '').toString(),
+            headers: _stringMap(download['headers']),
           ),
         )
         .toList(),

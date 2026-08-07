@@ -354,6 +354,7 @@ class NativeHostApi implements SourceHostApi {
   @override
   Future<String> download(
     String url, {
+    Map<String, String> headers = const {},
     String? downloadId,
     String? fileName,
     required SourcePolicy policy,
@@ -376,7 +377,7 @@ class NativeHostApi implements SourceHostApi {
     _downloadSessions[sessionId] = session;
 
     try {
-      final response = await _getWithRedirects(uri, policy);
+      final response = await _getWithRedirects(uri, policy, headers: headers);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException('下载失败 HTTP ${response.statusCode}', uri: uri);
       }

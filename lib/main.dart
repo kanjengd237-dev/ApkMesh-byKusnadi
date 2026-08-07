@@ -251,10 +251,32 @@ class _HomePageState extends State<HomePage> {
   String? error;
   String? homeError;
   String? submittedQuery;
+  String _selectedTab = 'home';
+  String? _loadedHomeSourceId;
+  final Map<String, Future<SourceCategory>> _categoryLoads = {};
 
   @override
   void initState() {
     super.initState();
+    widget.state.addListener(_onStateChanged);
+    _loadHome();
+  }
+
+  @override
+  void dispose() {
+    widget.state.removeListener(_onStateChanged);
+    super.dispose();
+  }
+
+  void _onStateChanged() {
+    if (!mounted || submittedQuery != null) return;
+    if (_loadedHomeSourceId == widget.state.homeSourceId) return;
+    _categoryLoads.clear();
+    setState(() {
+      homeLoaded = false;
+      homeLoading = true;
+      _selectedTab = 'home';
+    });
     _loadHome();
   }
 
@@ -269,8 +291,15 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         home = content;
+        _loadedHomeSourceId = widget.state.homeSourceId;
         homeLoading = false;
         homeLoaded = true;
+        if (!home.categories.any(
+          (category) =>
+              'category:${category.sourceId}:${category.id}' == _selectedTab,
+        )) {
+          _selectedTab = 'home';
+        }
         if (content.recommended.isEmpty &&
             content.categories.isEmpty &&
             widget.state.sourceErrors.isNotEmpty) {
@@ -296,6 +325,7 @@ class _HomePageState extends State<HomePage> {
         submittedQuery = null;
         results = const [];
         error = null;
+        _selectedTab = 'home';
       });
       await _loadHome();
       return;
@@ -303,7 +333,9 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       loading = true;
       error = null;
+      results = const [];
       submittedQuery = query;
+      _selectedTab = 'all';
     });
     try {
       final found = await widget.state.search(query);
@@ -328,66 +360,75 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final showingHome = submittedQuery == null;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-      children: [
-        Text('发现应用', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 8),
-        Text(
-          showingHome ? '推荐应用与分类' : '从已启用的源聚合搜索结果',
-          style: Theme.of(context).textTheme.bodyLarge,
+  List<_ContentTab> get _tabs {
+    if (submittedQuery == null) {
+      return [
+        const _ContentTab(id: 'home', label: '主页'),
+        ...home.categories.map(
+          (category) => _ContentTab(
+            id: 'category:${category.sourceId}:${category.id}',
+            label: category.name,
+            category: category,
+          ),
         ),
-        const SizedBox(height: 24),
-        if (!widget.state.hasEnabledSource)
-          const EmptyMessage(
-            icon: Icons.hub_outlined,
-            title: '没有启用的源',
-            detail: '请先在源管理中启用一个源。',
-          )
-        else if (showingHome)
-          ..._buildHome(context)
-        else ...[
-          if (loading)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: CircularProgressIndicator(),
-              ),
-            ),
-          if (!loading && error != null)
-            Card(
-              color: Theme.of(context).colorScheme.errorContainer,
-              child: ListTile(
-                leading: Icon(
-                  Icons.error_outline,
-                  color: Theme.of(context).colorScheme.onErrorContainer,
-                ),
-                title: const Text('源执行失败'),
-                subtitle: Text(error!),
-              ),
-            ),
-          if (!loading && error == null && results.isEmpty)
-            EmptyMessage(
-              icon: Icons.manage_search,
-              title: '未找到结果',
-              detail: '已在所有启用的源中搜索“$submittedQuery”。',
-            ),
-          ...results.asMap().entries.map(
-            (entry) => AppResultTile(
-              app: entry.value,
-              state: widget.state,
-              showDivider: entry.key < results.length - 1,
+      ];
+    }
+    return [
+      const _ContentTab(id: 'all', label: '全部源'),
+      ...widget.state.sources
+          .where((source) => source.status == SourceStatus.enabled)
+          .map(
+            (source) => _ContentTab(
+              id: 'source:${source.id}',
+              label: source.name,
+              sourceId: source.id,
             ),
           ),
-        ],
-      ],
+    ];
+  }
+
+  _ContentTab _activeTab(List<_ContentTab> tabs) {
+    for (final tab in tabs) {
+      if (tab.id == _selectedTab) return tab;
+    }
+    return tabs.first;
+  }
+
+  Widget _buildTabBar(
+    BuildContext context,
+    List<_ContentTab> tabs,
+    _ContentTab activeTab,
+  ) {
+    final tabKey = tabs.map((tab) => tab.id).join('|');
+    final activeIndex = tabs.indexWhere((tab) => tab.id == activeTab.id);
+    return DefaultTabController(
+      key: ValueKey(tabKey),
+      length: tabs.length,
+      initialIndex: activeIndex < 0 ? 0 : activeIndex,
+      child: TabBar(
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        onTap: (index) {
+          if (index < tabs.length) {
+            setState(() => _selectedTab = tabs[index].id);
+          }
+        },
+        tabs: tabs.map((tab) => Tab(text: tab.label)).toList(),
+      ),
     );
   }
 
-  List<Widget> _buildHome(BuildContext context) {
+  Future<SourceCategory> _categoryFuture(SourceCategory category) {
+    final key = '${category.sourceId}:${category.id}';
+    return _categoryLoads.putIfAbsent(
+      key,
+      () => category.apps.isNotEmpty
+          ? Future<SourceCategory>.value(category)
+          : widget.state.category(category),
+    );
+  }
+
+  List<Widget> _buildHomeContent(BuildContext context, _ContentTab activeTab) {
     if (homeLoading) {
       return const [
         Padding(
@@ -410,146 +451,177 @@ class _HomePageState extends State<HomePage> {
         ),
       ];
     }
-    if (home.recommended.isEmpty && home.categories.isEmpty) {
-      return const [
-        EmptyMessage(
-          icon: Icons.home_work_outlined,
-          title: '暂无首页内容',
-          detail: '已启用的源尚未提供推荐应用或分类。',
+    if (activeTab.category != null) {
+      return [
+        _CategoryTabContent(
+          category: activeTab.category!,
+          future: _categoryFuture(activeTab.category!),
+          state: widget.state,
         ),
       ];
     }
-
-    final widgets = <Widget>[];
     final recommended = home.recommended.take(12).toList();
-    if (recommended.isNotEmpty) {
-      widgets.add(Text('推荐应用', style: Theme.of(context).textTheme.titleLarge));
-      widgets.add(const SizedBox(height: 8));
-      widgets.addAll(
-        recommended.asMap().entries.map(
-          (entry) => AppResultTile(
-            app: entry.value,
-            state: widget.state,
-            showDivider: entry.key < recommended.length - 1,
-          ),
+    if (recommended.isEmpty) {
+      return const [
+        EmptyMessage(
+          icon: Icons.home_work_outlined,
+          title: '暂无推荐应用',
+          detail: '当前主页源没有返回推荐应用。',
         ),
-      );
+      ];
     }
-    if (home.categories.isNotEmpty) {
-      if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 20));
-      widgets.add(Text('分类', style: Theme.of(context).textTheme.titleLarge));
-      widgets.add(const SizedBox(height: 8));
-      widgets.addAll(
-        home.categories.map(
-          (category) => _CategoryTile(
-            category: category,
-            onTap: () => _openCategory(context, category),
-          ),
+    return [
+      Text('推荐应用', style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 8),
+      ...recommended.asMap().entries.map(
+        (entry) => AppResultTile(
+          app: entry.value,
+          state: widget.state,
+          showDivider: entry.key < recommended.length - 1,
         ),
-      );
-    }
-    return widgets;
+      ),
+    ];
   }
 
-  void _openCategory(BuildContext context, SourceCategory category) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => CategorySheet(category: category, state: widget.state),
-    );
+  List<Widget> _buildSearchContent(
+    BuildContext context,
+    _ContentTab activeTab,
+  ) {
+    final visibleResults = activeTab.sourceId == null
+        ? results
+        : results.where((app) => app.sourceId == activeTab.sourceId).toList();
+    return [
+      if (loading)
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      if (!loading && error != null)
+        Card(
+          color: Theme.of(context).colorScheme.errorContainer,
+          child: ListTile(
+            leading: Icon(
+              Icons.error_outline,
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+            title: const Text('源执行失败'),
+            subtitle: Text(error!),
+          ),
+        ),
+      if (!loading && error == null && visibleResults.isEmpty)
+        EmptyMessage(
+          icon: Icons.manage_search,
+          title: '未找到结果',
+          detail: activeTab.sourceId == null
+              ? '已在所有启用的源中搜索“$submittedQuery”。'
+              : '当前源没有返回“$submittedQuery”的结果。',
+        ),
+      ...visibleResults.asMap().entries.map(
+        (entry) => AppResultTile(
+          app: entry.value,
+          state: widget.state,
+          showDivider: entry.key < visibleResults.length - 1,
+        ),
+      ),
+    ];
   }
-}
-
-class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({required this.category, required this.onTap});
-  final SourceCategory category;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final detail = [
-      category.sourceName,
-      category.description,
-    ].where((value) => value.trim().isNotEmpty).join(' · ');
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: const Icon(Icons.category_outlined),
-        title: Text(category.name),
-        subtitle: detail.isEmpty ? null : Text(detail),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      ),
+    final showingHome = submittedQuery == null;
+    final tabs = _tabs;
+    final activeTab = _activeTab(tabs);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+      children: [
+        Text('发现应用', style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 8),
+        Text(
+          showingHome ? '主页与分类' : '按源筛选搜索结果',
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+        const SizedBox(height: 16),
+        if (!widget.state.hasEnabledSource)
+          const EmptyMessage(
+            icon: Icons.hub_outlined,
+            title: '没有启用的源',
+            detail: '请先在源管理中启用一个源。',
+          )
+        else ...[
+          _buildTabBar(context, tabs, activeTab),
+          const SizedBox(height: 16),
+          ...(showingHome
+              ? _buildHomeContent(context, activeTab)
+              : _buildSearchContent(context, activeTab)),
+        ],
+      ],
     );
   }
 }
 
-class CategorySheet extends StatefulWidget {
-  const CategorySheet({required this.category, required this.state, super.key});
+class _ContentTab {
+  const _ContentTab({
+    required this.id,
+    required this.label,
+    this.category,
+    this.sourceId,
+  });
+
+  final String id;
+  final String label;
+  final SourceCategory? category;
+  final String? sourceId;
+}
+
+class _CategoryTabContent extends StatelessWidget {
+  const _CategoryTabContent({
+    required this.category,
+    required this.future,
+    required this.state,
+  });
+
   final SourceCategory category;
+  final Future<SourceCategory> future;
   final AppState state;
 
   @override
-  State<CategorySheet> createState() => _CategorySheetState();
-}
-
-class _CategorySheetState extends State<CategorySheet> {
-  late final Future<SourceCategory> category = widget.category.apps.isNotEmpty
-      ? Future<SourceCategory>.value(widget.category)
-      : widget.state.category(widget.category);
-
-  @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: .78,
-      minChildSize: .45,
-      maxChildSize: .94,
-      builder: (_, controller) => FutureBuilder<SourceCategory>(
-        future: category,
-        builder: (context, snapshot) => ListView(
-          controller: controller,
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.category.name,
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                ),
-                IconButton(
-                  tooltip: '关闭',
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-            Text(widget.category.sourceName),
-            const SizedBox(height: 20),
-            if (snapshot.connectionState == ConnectionState.waiting)
-              const Center(child: CircularProgressIndicator())
-            else if (snapshot.hasError)
-              Text('分类加载失败：${snapshot.error}')
-            else if (snapshot.data!.apps.isEmpty)
-              const EmptyMessage(
-                icon: Icons.apps_outage_outlined,
-                title: '分类暂无应用',
-                detail: '该源没有返回可用应用。',
-              )
-            else
-              ...snapshot.data!.apps.asMap().entries.map(
+    return FutureBuilder<SourceCategory>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return Text('分类加载失败：${snapshot.error}');
+        }
+        final apps = snapshot.data?.apps ?? const <AppListing>[];
+        if (apps.isEmpty) {
+          return const EmptyMessage(
+            icon: Icons.apps_outage_outlined,
+            title: '分类暂无应用',
+            detail: '该源没有返回可用应用。',
+          );
+        }
+        return Column(
+          children: apps
+              .asMap()
+              .entries
+              .map(
                 (entry) => AppResultTile(
                   app: entry.value,
-                  state: widget.state,
-                  showDivider: entry.key < snapshot.data!.apps.length - 1,
+                  state: state,
+                  showDivider: entry.key < apps.length - 1,
                 ),
-              ),
-          ],
-        ),
-      ),
+              )
+              .toList(),
+        );
+      },
     );
   }
 }
@@ -935,9 +1007,19 @@ class SourcesPage extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         const Text('源脚本在隔离的 QuickJS 环境中运行，仅通过受控能力访问网络和文件。'),
+        const SizedBox(height: 4),
+        const Text('单选一个主页源，由它提供主页推荐应用和分类内容。'),
         const SizedBox(height: 20),
-        ...state.sources.map(
-          (source) => SourceTile(source: source, state: state),
+        RadioGroup<String>(
+          groupValue: state.homeSourceId,
+          onChanged: (value) {
+            if (value != null) state.setHomeSource(value);
+          },
+          child: Column(
+            children: state.sources
+                .map((source) => SourceTile(source: source, state: state))
+                .toList(),
+          ),
         ),
       ],
     );
@@ -1020,6 +1102,11 @@ class SourceTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (enabled)
+              Tooltip(
+                message: '设为主页与分类源',
+                child: Radio<String>(value: source.id, enabled: enabled),
+              ),
             Switch(
               value: enabled,
               onChanged: (value) => state.toggleSource(source.id, value),

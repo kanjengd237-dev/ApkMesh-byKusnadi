@@ -36,7 +36,7 @@ globalThis.source = {
 
 `search()` 返回应用摘要数组。每项包含 `id`、`name`、`packageName`、`version`、`size`、`updatedAt`、`category`、`iconUrl` 和 `summary`。
 
-`details()` 返回完整应用对象，并增加 `description`、`screenshots`、`comments` 和 `downloads`。`downloads` 每项包含 `label`、`url` 和 `size`。`screenshots` 是截图 URL 数组；源应在解析懒加载图片时同时检查 `src`、`data-src` 等属性。
+`details()` 返回完整应用对象，并增加 `description`、`screenshots`、`comments` 和 `downloads`。`downloads` 每项包含 `label`、`url` 和 `size`，可选 `headers` 用于需要 Referer 等请求头的下载。`screenshots` 是截图 URL 数组；源应在解析懒加载图片时同时检查 `src`、`data-src` 等属性。
 
 ## 可选主页与分类接口
 
@@ -59,7 +59,7 @@ async category(categoryId) {
 }
 ```
 
-`home()` 返回 `recommended` 推荐应用数组和 `categories` 分类数组。分类至少包含 `id`、`name`，可包含 `description`。用户点击分类时，宿主调用 `category(categoryId)`，返回包含 `id`、`name` 和 `apps` 应用数组的分类对象。`apps` 中的应用字段与 `search()` 返回值相同。
+`home()` 返回 `recommended` 推荐应用数组和 `categories` 分类数组。分类至少包含 `id`、`name`，可包含 `description`。用户点击分类时，宿主调用 `category(categoryId)`，返回包含 `id`、`name` 和 `apps` 应用数组的分类对象。`apps` 中的应用字段与 `search()` 返回值相同。搜索结果仍由所有启用源聚合；主页与分类由用户在源管理中选择的单个主页源提供，其他源不会参与 `home()`。
 
 `debugProjects` 是可选的调试项目声明。调试面板会按声明生成输入框和运行按钮，并调用 `debug(projectId, input)`。项目应返回 `{ title, summary, data }`，其中 `data` 会以结构化文本显示在运行结果下方。项目可以复用 `search()`、`details()` 或其他已声明的宿主能力；例如详情项目调用 `apkmesh.browser.open()` 时，面板会同步显示活动 WebView，点击标签即可打开可视化查看器。
 
@@ -81,7 +81,7 @@ async debug(projectId, input) {
 
 - `apkmesh.request(url, options)`：受域名白名单限制的 HTTP 请求。
 - `apkmesh.browser.open(url)`：打开隔离的隐藏 WebView 标签页，支持 `waitFor`、`query` 和 `queryAll`。
-- `apkmesh.download(url, options)`：创建受白名单约束的下载任务并返回本地文件路径。
+- `apkmesh.download(url, options)`：创建受白名单约束的下载任务并返回本地文件路径。`options` 可包含 `fileName` 和额外 HTTP `headers`。
 - `apkmesh.install(filePath)`：经用户确认后调用系统安装器；源不能静默安装。Android 会在需要时先打开未知来源安装权限页面。
 
 所有能力均按 manifest 权限授权。网络重定向的每一跳都要重新检查域名；脚本没有任意文件读写、系统命令、Cookie 导出或后台安装权限。生产构建不应内置任何第三方源。

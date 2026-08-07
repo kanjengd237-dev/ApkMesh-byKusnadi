@@ -9,6 +9,7 @@ class ApkSource {
     required this.description,
     required this.status,
     required this.builtIn,
+    this.homeSource = false,
     this.lastSync,
   });
 
@@ -19,9 +20,14 @@ class ApkSource {
   final String description;
   final SourceStatus status;
   final bool builtIn;
+  final bool homeSource;
   final DateTime? lastSync;
 
-  ApkSource copyWith({SourceStatus? status, DateTime? lastSync}) => ApkSource(
+  ApkSource copyWith({
+    SourceStatus? status,
+    bool? homeSource,
+    DateTime? lastSync,
+  }) => ApkSource(
     id: id,
     name: name,
     homepage: homepage,
@@ -29,6 +35,7 @@ class ApkSource {
     description: description,
     status: status ?? this.status,
     builtIn: builtIn,
+    homeSource: homeSource ?? this.homeSource,
     lastSync: lastSync ?? this.lastSync,
   );
 }
@@ -145,10 +152,12 @@ class SourceDownload {
     required this.label,
     required this.url,
     required this.size,
+    this.headers = const {},
   });
   final String label;
   final String url;
   final String size;
+  final Map<String, String> headers;
 }
 
 class DownloadCancelledException implements Exception {

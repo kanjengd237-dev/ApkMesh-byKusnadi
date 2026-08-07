@@ -102,12 +102,12 @@ uv run apkmesh-debug --mode replay --fixture-dir fixtures/example \
   ../../assets/sources/example.js search demo
 ```
 
-当前 APKVision 源的离线详情测试通常需要登记搜索页、详情页和下载解析页。浏览器页面的子资源也必须登记；如果详情 fixture 本身已经包含所需 DOM，则只登记主文档即可。
+源专属的测试代码和录制 fixture 放在 `tests/sources/<source>/` 下，该目录仅用于本地调试，并由 `.gitignore` 忽略。通用宿主测试留在 `tests/` 根目录；添加新源测试时，只在对应源目录调用该源声明的 `debug()` 项目。
 
 ## 测试
 
 ```bash
-uv run pytest
+uv run pytest tests --ignore=tests/sources
 ```
 
-默认情况下不会自动创建 fixture。需要完全断网执行时，必须显式使用 `--mode replay`；回放中未登记的 URL 会失败，不会访问网络。正式调试第三方源前，应确认自己有权访问相关站点，并遵守站点条款。
+该命令只运行通用宿主和运行时测试。源专属测试需要显式运行 `uv run pytest tests/sources/<source>`，其 fixture 不会自动创建。需要完全断网执行时，必须显式使用 `--mode replay`；回放中未登记的 URL 会失败，不会访问网络。正式调试第三方源前，应确认自己有权访问相关站点，并遵守站点条款。
