@@ -24,6 +24,8 @@ class NativeHostApi implements SourceHostApi {
   final DebugLogStore? _debug;
   final Map<String, HeadlessInAppWebView> _tabs = {};
   final Map<String, InAppWebViewController> _controllers = {};
+  final Map<String, InAppWebViewKeepAlive> _attachedTabs = {};
+  final Map<String, SourcePolicy> _tabPolicies = {};
   final Map<String, BrowserTabDebugInfo> _tabStates = {};
   final List<BrowserTabDebugInfo> _tabHistory = [];
   final Map<String, Map<String, String>> _browserCookies = {};
@@ -202,6 +204,7 @@ class NativeHostApi implements SourceHostApi {
       state: 'starting',
       startedAt: DateTime.now(),
     );
+    _tabPolicies[tabId] = policy;
     _log('WebView opening $tabId $url');
     final controllerReady = Completer<InAppWebViewController>();
     final pageLoaded = Completer<void>();
@@ -412,14 +415,41 @@ class NativeHostApi implements SourceHostApi {
   }
 
   @override
+  BrowserTabViewHandle? browserTabView(String tabId) {
+    final headless = _tabs[tabId];
+    var existingKeepAlive = _attachedTabs[tabId];
+    if (headless == null && existingKeepAlive == null) return null;
+    final keepAlive = existingKeepAlive ??= InAppWebViewKeepAlive();
+    _attachedTabs[tabId] = keepAlive;
+    return BrowserTabViewHandle(
+      headlessWebView: headless?.isRunning() == true ? headless : null,
+      keepAlive: keepAlive,
+      policy: _tabPolicies[tabId] ?? (throw StateError('浏览器标签页权限策略不存在')),
+    );
+  }
+
+  @override
+  void browserAdoptController(String tabId, InAppWebViewController controller) {
+    if (_tabs.containsKey(tabId) || _attachedTabs.containsKey(tabId)) {
+      _controllers[tabId] = controller;
+    }
+  }
+
+  @override
   Future<void> browserClose(String tabId) async {
     _log('WebView closing $tabId', category: 'WebView');
     final tab = _tabs.remove(tabId);
+    final keepAlive = _attachedTabs.remove(tabId);
     final state = _tabStates[tabId];
+    _tabPolicies.remove(tabId);
     _controllers.remove(tabId);
     final url = state == null ? null : Uri.tryParse(state.url);
     if (url != null) await _captureBrowserCookies(url);
-    await tab?.dispose();
+    if (keepAlive != null) {
+      await InAppWebViewController.disposeKeepAlive(keepAlive);
+    } else {
+      await tab?.dispose();
+    }
     _setTabState(tabId, state: 'closed', active: false);
   }
 
@@ -656,7 +686,8 @@ class NativeHostApi implements SourceHostApi {
 
   @override
   Future<void> dispose() async {
-    for (final id in _tabs.keys.toList()) {
+    final tabIds = {..._tabs.keys, ..._attachedTabs.keys};
+    for (final id in tabIds) {
       await browserClose(id);
     }
     for (final id in _downloadSessions.keys.toList()) {

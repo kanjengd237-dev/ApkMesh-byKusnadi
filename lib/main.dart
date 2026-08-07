@@ -2436,6 +2436,13 @@ class _DebugWebViewDialog extends StatefulWidget {
 
 class _DebugWebViewDialogState extends State<_DebugWebViewDialog> {
   String status = '正在加载';
+  BrowserTabViewHandle? _tabView;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabView = widget.state.host.browserTabView(widget.tab.id);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2444,6 +2451,7 @@ class _DebugWebViewDialogState extends State<_DebugWebViewDialog> {
         widget.state.host.supportsBrowser &&
         (widget.tab.url.startsWith('http://') ||
             widget.tab.url.startsWith('https://'));
+    final attachedTab = _tabView;
     return Dialog(
       child: SizedBox(
         width: size.width > 900 ? 840 : size.width * .94,
@@ -2490,18 +2498,60 @@ class _DebugWebViewDialogState extends State<_DebugWebViewDialog> {
             Expanded(
               child: canView
                   ? InAppWebView(
-                      initialUrlRequest: URLRequest(
-                        url: WebUri(widget.tab.url),
-                      ),
+                      headlessWebView: attachedTab?.headlessWebView,
+                      keepAlive: attachedTab?.keepAlive,
+                      initialUrlRequest: attachedTab == null
+                          ? URLRequest(url: WebUri(widget.tab.url))
+                          : null,
                       initialSettings: InAppWebViewSettings(
                         javaScriptEnabled: true,
                         domStorageEnabled: true,
                         incognito: true,
                       ),
-                      onLoadStart: (_, _) => setState(() => status = '加载中'),
-                      onLoadStop: (_, _) => setState(() => status = '已加载'),
-                      onReceivedError: (_, _, _) =>
-                          setState(() => status = '加载失败'),
+                      shouldOverrideUrlLoading: attachedTab == null
+                          ? null
+                          : (_, action) async {
+                              final next = action.request.url;
+                              if (next == null ||
+                                  !attachedTab.policy.permits(next)) {
+                                return NavigationActionPolicy.CANCEL;
+                              }
+                              return NavigationActionPolicy.ALLOW;
+                            },
+                      shouldInterceptRequest: attachedTab == null
+                          ? null
+                          : (_, request) async {
+                              final resource = request.url;
+                              if ((resource.scheme == 'http' ||
+                                      resource.scheme == 'https') &&
+                                  !attachedTab.policy.permits(resource)) {
+                                return WebResourceResponse(
+                                  statusCode: 403,
+                                  reasonPhrase: 'Source domain is not allowed',
+                                  contentType: 'text/plain',
+                                  data: Uint8List.fromList(
+                                    utf8.encode('blocked by source policy'),
+                                  ),
+                                );
+                              }
+                              return null;
+                            },
+                      onWebViewCreated: attachedTab == null
+                          ? null
+                          : (controller) =>
+                                widget.state.host.browserAdoptController(
+                                  widget.tab.id,
+                                  controller,
+                                ),
+                      onLoadStart: (_, _) {
+                        if (mounted) setState(() => status = '加载中');
+                      },
+                      onLoadStop: (_, _) {
+                        if (mounted) setState(() => status = '已加载');
+                      },
+                      onReceivedError: (_, _, _) {
+                        if (mounted) setState(() => status = '加载失败');
+                      },
                     )
                   : const Center(
                       child: Padding(

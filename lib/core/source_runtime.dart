@@ -1,5 +1,21 @@
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+
 import 'models.dart';
 import 'debug_log.dart';
+
+class BrowserTabViewHandle {
+  const BrowserTabViewHandle({
+    this.headlessWebView,
+    required this.keepAlive,
+    required this.policy,
+  });
+
+  final HeadlessInAppWebView? headlessWebView;
+  final InAppWebViewKeepAlive keepAlive;
+  final SourcePolicy policy;
+
+  bool get attachesHeadlessWebView => headlessWebView != null;
+}
 
 class SourcePolicy {
   const SourcePolicy({
@@ -59,6 +75,8 @@ abstract interface class SourceHostApi {
     Map<String, dynamic> selectors,
   );
   Future<void> browserClose(String tabId);
+  BrowserTabViewHandle? browserTabView(String tabId);
+  void browserAdoptController(String tabId, InAppWebViewController controller);
 
   Future<String> download(
     String url, {
@@ -363,6 +381,15 @@ class DemoHostApi implements SourceHostApi {
 
   @override
   Future<void> browserClose(String tabId) async {}
+
+  @override
+  BrowserTabViewHandle? browserTabView(String tabId) => null;
+
+  @override
+  void browserAdoptController(
+    String tabId,
+    InAppWebViewController controller,
+  ) {}
 
   @override
   Future<String> download(
