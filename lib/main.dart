@@ -115,6 +115,9 @@ class _ShellState extends State<Shell> {
         final wide = constraints.maxWidth >= 760;
         return Scaffold(
           appBar: AppBar(
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            scrolledUnderElevation: 0,
+            surfaceTintColor: Colors.transparent,
             title: searchOpen
                 ? SizedBox(
                     width: (constraints.maxWidth - 160).clamp(140.0, 520.0),
