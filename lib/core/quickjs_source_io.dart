@@ -142,7 +142,7 @@ class QuickJsApkSourceScript
             };
           },
         },
-        download: (url, options = {}) => sendMessage('apkmesh.download', JSON.stringify({url, fileName: options.fileName})),
+        download: (url, options = {}) => sendMessage('apkmesh.download', JSON.stringify({url, fileName: options.fileName, headers: options.headers || {}})),
         install: (filePath) => sendMessage('apkmesh.install', JSON.stringify({filePath})),
       };
     ''';
