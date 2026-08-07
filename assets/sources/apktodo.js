@@ -97,7 +97,6 @@ function parseSearchResults(html) {
       updatedAt: timeMatch ? attribute(timeMatch[0], 'datetime') : '',
       category: '',
       iconUrl: imageUrl(block),
-      summary: '来自 APKTodo 搜索结果',
     });
   }
   return entries;
@@ -127,7 +126,6 @@ function parseGridResults(html) {
       updatedAt: '',
       category: cleanText(categoryMatch ? categoryMatch[1] : ''),
       iconUrl: imageUrl(block),
-      summary: '来自 APKTodo 目录',
     });
   }
   return entries;
@@ -156,7 +154,6 @@ function parseIconResults(html) {
       updatedAt: '',
       category: cleanText(categoryMatch ? categoryMatch[1] : ''),
       iconUrl: imageUrl(block),
-      summary: '来自 APKTodo 分类目录',
     });
   }
   return entries;

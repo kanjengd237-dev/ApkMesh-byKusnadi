@@ -37,9 +37,9 @@ globalThis.source = {
 
 `manifest.description` 可选，用于在源管理页展示源说明。
 
-`search()` 返回应用摘要数组。每项包含 `id`、`name`、`packageName`、`version`、`size`、`updatedAt`、`category`、`iconUrl` 和 `summary`。
+`search()` 返回应用摘要数组。每项包含 `id`、`name`、`packageName`、`version`、`size`、`updatedAt`、`category` 和 `iconUrl`；可选提供 `description`、`rating`、`author` 等应用元数据。宿主也兼容将 `desc`/`info` 作为描述、将 `score` 作为评分、将 `developer` 作为作者。列表中的源名称由宿主根据脚本 manifest 自动附加，不需要源写入 `summary`。
 
-`details()` 返回完整应用对象，并增加 `description`、`screenshots`、`comments` 和 `downloads`。`downloads` 每项包含 `label`、`url` 和 `size`，可选 `headers` 用于需要 Referer 等请求头的下载。`screenshots` 是截图 URL 数组；源应在解析懒加载图片时同时检查 `src`、`data-src` 等属性。
+`details()` 返回完整应用对象，并增加 `description`、`screenshots`、`comments` 和 `downloads`。详情可用 `summary` 表示版本说明或简短信息；`downloads` 每项包含 `label`、`url` 和 `size`，可选 `headers` 用于需要 Referer 等请求头的下载。`screenshots` 是截图 URL 数组；源应在解析懒加载图片时同时检查 `src`、`data-src` 等属性。
 
 ## 可选主页与分类接口
 

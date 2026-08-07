@@ -131,7 +131,6 @@ function parseCardResults(html, anchorClass, titleClass, metadataClass) {
       updatedAt: '',
       category: categoryFromUrl(id),
       iconUrl: imageMatch ? imageUrl(imageMatch[0]) : '',
-      summary: '来自 APKVision 搜索接口',
     });
   }
   return entries;

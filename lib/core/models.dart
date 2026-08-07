@@ -98,7 +98,9 @@ class AppListing {
     required this.category,
     required this.sourceName,
     required this.iconUrl,
-    required this.summary,
+    this.description = '',
+    this.rating = '',
+    this.author = '',
   });
 
   final String id;
@@ -111,7 +113,9 @@ class AppListing {
   final String category;
   final String sourceName;
   final String iconUrl;
-  final String summary;
+  final String description;
+  final String rating;
+  final String author;
 }
 
 class SourceDebugProject {
@@ -244,14 +248,16 @@ class AppDetails extends AppListing {
     required super.category,
     required super.sourceName,
     required super.iconUrl,
-    required super.summary,
-    required this.description,
+    required this.summary,
+    super.description = '',
+    super.rating = '',
+    super.author = '',
     required this.screenshots,
     required this.comments,
     required this.downloads,
   });
 
-  final String description;
+  final String summary;
   final List<String> screenshots;
   final List<String> comments;
   final List<SourceDownload> downloads;

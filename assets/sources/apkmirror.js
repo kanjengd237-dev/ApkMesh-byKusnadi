@@ -154,7 +154,6 @@ function parseSearchResults(html) {
       updatedAt,
       category: categoryFromUrl(id),
       iconUrl: imageTag ? imageUrl(imageTag[0]) : '',
-      summary: 'APKMirror release',
     });
   }
   return results.filter((item, index, all) =>
@@ -176,7 +175,6 @@ function browserSearchResults(rows) {
       updatedAt: cleanText(item.updatedAt || ''),
       category: categoryFromUrl(id),
       iconUrl: absoluteUrl(item.iconUrl || ''),
-      summary: 'APKMirror release',
     };
   }).filter(Boolean);
 }

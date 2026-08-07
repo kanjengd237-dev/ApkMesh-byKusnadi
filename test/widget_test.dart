@@ -1,3 +1,5 @@
+import 'package:apk_mesh/core/app_state.dart';
+import 'package:apk_mesh/core/models.dart';
 import 'package:apk_mesh/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -50,6 +52,45 @@ void main() {
     expect(find.byTooltip('返回主页'), findsNothing);
     expect(find.text('未找到结果'), findsNothing);
   });
+  testWidgets('renders listing description and metadata chips', (tester) async {
+    final state = AppState();
+    const app = AppDetails(
+      id: 'https://example.test/apps/example',
+      sourceId: 'example-source',
+      name: 'Example App',
+      packageName: 'test.example.app',
+      version: '1.0.0',
+      size: '1 MB',
+      updatedAt: '2026-01-01',
+      category: 'Tools',
+      sourceName: 'Example source',
+      iconUrl: '',
+      summary: 'Legacy summary',
+      description: 'Example description',
+      rating: '4.8',
+      author: 'Example Team',
+      screenshots: [],
+      comments: [],
+      downloads: [],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppResultTile(app: app, state: state),
+        ),
+      ),
+    );
+
+    expect(find.text('Example description'), findsOneWidget);
+    expect(find.text('Legacy summary'), findsNothing);
+    expect(find.text('Example source'), findsOneWidget);
+    expect(find.text('4.8'), findsOneWidget);
+    expect(find.text('Example Team'), findsOneWidget);
+    expect(find.byType(Chip), findsNWidgets(8));
+    state.dispose();
+  });
+
   testWidgets('opens the source debug bottom sheet', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
     await tester.tap(find.byTooltip('调试'));

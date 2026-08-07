@@ -345,6 +345,14 @@ class QuickJsApkSourceScript
     return _details(_dynamicMap(value));
   }
 
+  String _firstText(Map<String, dynamic> item, List<String> keys) {
+    for (final key in keys) {
+      final value = item[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
   AppListing _listing(Map<String, dynamic> item) => AppListing(
     id: (item['id'] ?? item['url'] ?? '').toString(),
     sourceId: id,
@@ -356,7 +364,9 @@ class QuickJsApkSourceScript
     category: (item['category'] ?? '').toString(),
     sourceName: name,
     iconUrl: (item['iconUrl'] ?? '').toString(),
-    summary: (item['summary'] ?? '').toString(),
+    description: _firstText(item, ['description', 'desc', 'info']),
+    rating: _firstText(item, ['rating', 'score']),
+    author: _firstText(item, ['author', 'developer']),
   );
 
   SourceCategory _category(Map<String, dynamic> item) => SourceCategory(
@@ -380,7 +390,9 @@ class QuickJsApkSourceScript
     sourceName: name,
     iconUrl: (item['iconUrl'] ?? '').toString(),
     summary: (item['summary'] ?? '').toString(),
-    description: (item['description'] ?? '').toString(),
+    description: _firstText(item, ['description', 'desc', 'info']),
+    rating: _firstText(item, ['rating', 'score']),
+    author: _firstText(item, ['author', 'developer']),
     screenshots: _strings(item['screenshots']),
     comments: _strings(item['comments']),
     downloads: _dynamicList(item['downloads'])

@@ -750,9 +750,8 @@ class AppResultTile extends StatelessWidget {
     }
 
     final theme = Theme.of(context);
-    final summary = app.summary.trim();
-    final contextLine = _appContextLine(app, summary);
-    final badges = _appBadges(app);
+    final description = app.description.trim();
+    final chips = _appInfoChips(app);
 
     return Column(
       children: [
@@ -779,21 +778,10 @@ class AppResultTile extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        if (contextLine.isNotEmpty) ...[
+                        if (description.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
-                            contextLine,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                        if (summary.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            summary,
+                            description,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodyMedium?.copyWith(
@@ -801,9 +789,9 @@ class AppResultTile extends StatelessWidget {
                             ),
                           ),
                         ],
-                        if (badges.isNotEmpty) ...[
+                        if (chips.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          Wrap(spacing: 6, runSpacing: 6, children: badges),
+                          Wrap(spacing: 6, runSpacing: 2, children: chips),
                         ],
                       ],
                     ),
@@ -824,80 +812,55 @@ class AppResultTile extends StatelessWidget {
   }
 }
 
-String _appContextLine(AppListing app, String summary) {
-  final values = <String>[];
-  final summaryLower = summary.toLowerCase();
-  bool isInSummary(String value) {
-    final normalized = value.toLowerCase();
-    final sourceBase = normalized.split(RegExp(r'[（(]')).first.trim();
-    return summaryLower.contains(normalized) ||
-        (sourceBase.isNotEmpty && summaryLower.contains(sourceBase));
-  }
-
-  for (final value in [app.sourceName, app.category]) {
-    final trimmed = value.trim();
-    if (trimmed.isNotEmpty &&
-        !isInSummary(trimmed) &&
-        !values.contains(trimmed)) {
-      values.add(trimmed);
-    }
-  }
-  return values.join(' · ');
-}
-
-List<Widget> _appBadges(AppListing app) {
-  final badges = <Widget>[];
+List<Widget> _appInfoChips(AppListing app) {
+  final chips = <Widget>[];
   final values = <({IconData icon, String text})>[];
 
   void add(IconData icon, String value) {
     final trimmed = value.trim();
-    if (trimmed.isNotEmpty && !values.any((item) => item.text == trimmed)) {
+    if (trimmed.isNotEmpty &&
+        !values.any((item) => item.icon == icon && item.text == trimmed)) {
       values.add((icon: icon, text: trimmed));
     }
   }
 
+  add(
+    Icons.source_outlined,
+    app.sourceName.trim().isNotEmpty ? app.sourceName : app.sourceId,
+  );
+  add(Icons.category_outlined, app.category);
   add(Icons.new_releases_outlined, app.version);
   add(Icons.storage_outlined, app.size);
   add(Icons.update_outlined, app.updatedAt);
+  add(Icons.star_outline, app.rating);
+  add(Icons.person_outline, app.author);
   add(Icons.code_outlined, app.packageName);
 
   for (final value in values) {
-    badges.add(_AppInfoBadge(icon: value.icon, text: value.text));
+    chips.add(_AppInfoChip(icon: value.icon, text: value.text));
   }
-  return badges;
+  return chips;
 }
 
-class _AppInfoBadge extends StatelessWidget {
-  const _AppInfoBadge({required this.icon, required this.text});
+class _AppInfoChip extends StatelessWidget {
+  const _AppInfoChip({required this.icon, required this.text});
   final IconData icon;
   final String text;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
+    return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 240),
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: .72),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-          ),
-        ],
+      child: Chip(
+        avatar: Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+        label: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+        labelPadding: EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: .72),
+        side: BorderSide.none,
       ),
     );
   }
