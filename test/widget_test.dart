@@ -118,6 +118,15 @@ void main() {
     expect(find.text('4.8'), findsOneWidget);
     expect(find.text('Example Team'), findsOneWidget);
     expect(find.byType(Chip), findsNWidgets(8));
+    final chips = tester.widgetList<Chip>(find.byType(Chip)).toList();
+    expect(
+      chips.map((chip) => chip.backgroundColor).toSet(),
+      hasLength(chips.length),
+    );
+    expect(
+      chips.map((chip) => chip.labelStyle?.color).toSet(),
+      hasLength(chips.length),
+    );
     state.dispose();
   });
 

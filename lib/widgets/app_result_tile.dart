@@ -90,33 +90,35 @@ class AppResultTile extends StatelessWidget {
 
 List<Widget> buildAppInfoChips(AppListing app, {VoidCallback? onPackageTap}) {
   final chips = <Widget>[];
-  final values = <({IconData icon, String text})>[];
+  final values = <({IconData icon, String text, Color seedColor})>[];
 
-  void add(IconData icon, String value) {
+  void add(IconData icon, String value, Color seedColor) {
     final trimmed = value.trim();
     if (trimmed.isNotEmpty &&
         !values.any((item) => item.icon == icon && item.text == trimmed)) {
-      values.add((icon: icon, text: trimmed));
+      values.add((icon: icon, text: trimmed, seedColor: seedColor));
     }
   }
 
   add(
     Icons.source_outlined,
     app.sourceName.trim().isNotEmpty ? app.sourceName : app.sourceId,
+    Colors.blue,
   );
-  add(Icons.category_outlined, app.category);
-  add(Icons.new_releases_outlined, app.version);
-  add(Icons.storage_outlined, app.size);
-  add(Icons.update_outlined, app.updatedAt);
-  add(Icons.star_outline, app.rating);
-  add(Icons.person_outline, app.author);
-  add(Icons.code_outlined, app.packageName);
+  add(Icons.category_outlined, app.category, Colors.green);
+  add(Icons.new_releases_outlined, app.version, Colors.deepPurple);
+  add(Icons.storage_outlined, app.size, Colors.deepOrange);
+  add(Icons.update_outlined, app.updatedAt, Colors.teal);
+  add(Icons.star_outline, app.rating, Colors.amber);
+  add(Icons.person_outline, app.author, Colors.indigo);
+  add(Icons.code_outlined, app.packageName, Colors.cyan);
 
   for (final value in values) {
     chips.add(
       _AppInfoChip(
         icon: value.icon,
         text: value.text,
+        seedColor: value.seedColor,
         onPressed: value.icon == Icons.code_outlined ? onPackageTap : null,
       ),
     );
@@ -125,27 +127,40 @@ List<Widget> buildAppInfoChips(AppListing app, {VoidCallback? onPackageTap}) {
 }
 
 class _AppInfoChip extends StatelessWidget {
-  const _AppInfoChip({required this.icon, required this.text, this.onPressed});
+  const _AppInfoChip({
+    required this.icon,
+    required this.text,
+    required this.seedColor,
+    this.onPressed,
+  });
 
   final IconData icon;
   final String text;
+  final Color seedColor;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final label = Text(text, maxLines: 1, overflow: TextOverflow.ellipsis);
-    final avatar = Icon(icon, size: 16, color: scheme.onSurfaceVariant);
+    final theme = Theme.of(context);
+    final scheme = ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: theme.brightness,
+    );
+    final foregroundColor = scheme.onPrimaryContainer;
     final common = ChipTheme.of(context).copyWith(
       labelPadding: EdgeInsets.zero,
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      side: BorderSide.none,
-      backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: .72),
+      side: BorderSide(color: scheme.outlineVariant),
+      backgroundColor: scheme.primaryContainer,
     );
 
     final chip = Chip(
-      avatar: avatar,
-      label: label,
+      avatar: Icon(icon, size: 16, color: foregroundColor),
+      label: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+      labelStyle: theme.textTheme.labelMedium?.copyWith(
+        color: foregroundColor,
+        fontWeight: FontWeight.w600,
+      ),
       labelPadding: common.labelPadding,
       padding: common.padding,
       visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
