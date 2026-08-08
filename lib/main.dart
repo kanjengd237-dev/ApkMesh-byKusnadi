@@ -153,44 +153,69 @@ class _ShellState extends State<Shell> {
                     icon: const Icon(Icons.arrow_back),
                   )
                 : null,
-            title: searchOpen
-                ? SizedBox(
-                    width: (constraints.maxWidth - 160).clamp(140.0, 520.0),
-                    height: 46,
-                    child: TextField(
-                      controller: searchController,
-                      autofocus: true,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _submitSearch(),
-                      decoration: InputDecoration(
-                        hintText: '搜索应用名称或包名',
-                        prefixIcon: const Icon(Icons.search, size: 20),
-                        suffixIcon: IconButton(
-                          tooltip: '清空搜索',
-                          onPressed: searchController.clear,
-                          icon: const Icon(Icons.clear, size: 20),
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(context).colorScheme.surface,
-                        border: const OutlineInputBorder(),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  )
-                : const Text('APK Mesh'),
-            actions: [
-              if (!searchOpen)
-                IconButton(
-                  tooltip: '搜索',
-                  onPressed: _openSearch,
-                  icon: const Icon(Icons.search),
-                )
-              else
-                IconButton(
-                  tooltip: '关闭搜索',
-                  onPressed: () => setState(() => searchOpen = false),
-                  icon: const Icon(Icons.close),
+            title: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SizeTransition(
+                  sizeFactor: animation,
+                  axis: Axis.horizontal,
+                  alignment: Alignment.centerLeft,
+                  child: child,
                 ),
+              ),
+              child: searchOpen
+                  ? SizedBox(
+                      key: const ValueKey('search-field'),
+                      width: (constraints.maxWidth - 160).clamp(140.0, 520.0),
+                      height: 46,
+                      child: TextField(
+                        controller: searchController,
+                        autofocus: true,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) => _submitSearch(),
+                        decoration: InputDecoration(
+                          hintText: '搜索应用名称或包名',
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          suffixIcon: IconButton(
+                            tooltip: '清空搜索',
+                            onPressed: searchController.clear,
+                            icon: const Icon(Icons.clear, size: 20),
+                          ),
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          border: const OutlineInputBorder(),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    )
+                  : const Text('APK Mesh', key: ValueKey('app-title')),
+            ),
+            actions: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) => ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: searchOpen
+                    ? IconButton(
+                        key: const ValueKey('close-search'),
+                        tooltip: '关闭搜索',
+                        onPressed: () => setState(() => searchOpen = false),
+                        icon: const Icon(Icons.close),
+                      )
+                    : IconButton(
+                        key: const ValueKey('open-search'),
+                        tooltip: '搜索',
+                        onPressed: _openSearch,
+                        icon: const Icon(Icons.search),
+                      ),
+              ),
               IconButton(
                 tooltip: '调试',
                 onPressed: () => _showDebugSheet(context),
@@ -795,10 +820,7 @@ class _HomePageState extends State<HomePage> {
   List<Widget> _buildHomeContent(BuildContext context, _ContentTab activeTab) {
     if (homeLoading && !homeLoaded) {
       return const [
-        Padding(
-          padding: EdgeInsets.all(32),
-          child: Center(child: CircularProgressIndicator()),
-        ),
+        _SearchLoadingView(icon: Icons.home_outlined, label: '正在加载首页'),
       ];
     }
     if (homeError != null &&
@@ -854,19 +876,96 @@ class _HomePageState extends State<HomePage> {
       initialItemCount: _animatedResultCount,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemBuilder: (context, index, animation) => SizeTransition(
-        sizeFactor: animation,
-        alignment: Alignment.topCenter,
-        child: FadeTransition(
-          opacity: animation,
-          child: AppResultTile(
-            app: results[index],
-            state: widget.state,
-            onOpen: (app) => _showAppDetails(context, widget.state, app),
-            showDivider: index < results.length - 1,
+      itemBuilder: (context, index, animation) {
+        final easedAnimation = animation.drive(
+          CurveTween(curve: Curves.easeOutCubic),
+        );
+        final offsetAnimation = Tween<Offset>(
+          begin: const Offset(0, 0.035),
+          end: Offset.zero,
+        ).animate(easedAnimation);
+        return SizeTransition(
+          sizeFactor: easedAnimation,
+          alignment: Alignment.topCenter,
+          child: FadeTransition(
+            opacity: easedAnimation,
+            child: SlideTransition(
+              position: offsetAnimation,
+              child: AppResultTile(
+                app: results[index],
+                state: widget.state,
+                onOpen: (app) => _showAppDetails(context, widget.state, app),
+                showDivider: index < results.length - 1,
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSearchStage(
+    BuildContext context,
+    _ContentTab activeTab,
+    List<AppListing> visibleResults,
+  ) {
+    final Widget stage;
+    final Key stageKey;
+    if (visibleResults.isNotEmpty) {
+      final resultList = activeTab.sourceId == null
+          ? _buildAnimatedResults(context)
+          : Column(
+              children: visibleResults
+                  .asMap()
+                  .entries
+                  .map(
+                    (entry) => AppResultTile(
+                      app: entry.value,
+                      state: widget.state,
+                      onOpen: (app) =>
+                          _showAppDetails(context, widget.state, app),
+                      showDivider: entry.key < visibleResults.length - 1,
+                    ),
+                  )
+                  .toList(),
+            );
+      stage = resultList;
+      stageKey = ValueKey('results:${activeTab.id}');
+    } else if (loading) {
+      stage = const _SearchLoadingView();
+      stageKey = const ValueKey('search-loading');
+    } else {
+      stage = EmptyMessage(
+        icon: Icons.manage_search,
+        title: '未找到结果',
+        detail: error == null
+            ? activeTab.sourceId == null
+                  ? '已在所有启用的源中搜索“$submittedQuery”。'
+                  : '当前源没有返回“$submittedQuery”的结果。'
+            : '源请求未完成，请打开错误详情查看原因。',
+      );
+      stageKey = ValueKey('search-empty:${activeTab.id}:$submittedQuery');
+    }
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 360),
+      reverseDuration: const Duration(milliseconds: 240),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final easedAnimation = animation.drive(
+          CurveTween(curve: Curves.easeOutCubic),
+        );
+        final offsetAnimation = Tween<Offset>(
+          begin: const Offset(0, 0.025),
+          end: Offset.zero,
+        ).animate(easedAnimation);
+        return FadeTransition(
+          opacity: easedAnimation,
+          child: SlideTransition(position: offsetAnimation, child: child),
+        );
+      },
+      child: KeyedSubtree(key: stageKey, child: stage),
     );
   }
 
@@ -877,36 +976,8 @@ class _HomePageState extends State<HomePage> {
     final visibleResults = activeTab.sourceId == null
         ? results
         : results.where((app) => app.sourceId == activeTab.sourceId).toList();
-    final resultList = activeTab.sourceId == null
-        ? _buildAnimatedResults(context)
-        : Column(
-            children: visibleResults
-                .asMap()
-                .entries
-                .map(
-                  (entry) => AppResultTile(
-                    app: entry.value,
-                    state: widget.state,
-                    onOpen: (app) =>
-                        _showAppDetails(context, widget.state, app),
-                    showDivider: entry.key < visibleResults.length - 1,
-                  ),
-                )
-                .toList(),
-          );
     return [
-      if (loading && visibleResults.isEmpty) const _SearchLoadingView(),
-      if (!loading && visibleResults.isEmpty)
-        EmptyMessage(
-          icon: Icons.manage_search,
-          title: '未找到结果',
-          detail: error == null
-              ? activeTab.sourceId == null
-                    ? '已在所有启用的源中搜索“$submittedQuery”。'
-                    : '当前源没有返回“$submittedQuery”的结果。'
-              : '源请求未完成，请打开错误详情查看原因。',
-        ),
-      if (visibleResults.isNotEmpty) resultList,
+      _buildSearchStage(context, activeTab, visibleResults),
       if (loadingMore)
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 24),
@@ -995,17 +1066,22 @@ class _SearchLoadingViewState extends State<_SearchLoadingView>
           animation: _controller,
           builder: (context, child) {
             final sweep = -1.8 + (_controller.value * 3.6);
+            final highlight = Color.lerp(
+              scheme.primary,
+              scheme.onPrimary,
+              0.5,
+            )!;
             return ShaderMask(
               blendMode: BlendMode.srcIn,
               shaderCallback: (bounds) => LinearGradient(
                 begin: Alignment(sweep, 0),
-                end: Alignment(sweep + 0.9, 0),
+                end: Alignment(sweep + 1.5, 0),
                 colors: [
-                  scheme.primary.withValues(alpha: 0.45),
                   scheme.primary,
-                  scheme.onPrimary,
+                  Color.lerp(scheme.primary, highlight, 0.5)!,
+                  highlight,
+                  Color.lerp(scheme.primary, highlight, 0.5)!,
                   scheme.primary,
-                  scheme.primary.withValues(alpha: 0.45),
                 ],
                 stops: const [0, 0.3, 0.5, 0.7, 1],
               ).createShader(bounds),
