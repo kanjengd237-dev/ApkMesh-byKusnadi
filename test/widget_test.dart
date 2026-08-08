@@ -1,5 +1,6 @@
 import 'package:apk_mesh/core/app_state.dart';
 import 'package:apk_mesh/core/models.dart';
+import 'package:apk_mesh/core/source_runtime.dart';
 import 'package:apk_mesh/main.dart';
 import 'package:apk_mesh/widgets/app_result_tile.dart';
 import 'package:flutter/material.dart';
@@ -172,6 +173,62 @@ void main() {
     await tester.tap(find.text('test.example.app'));
     await tester.pumpAndSettle();
     expect(find.text('按包名查找'), findsOneWidget);
+    state.dispose();
+  });
+
+  testWidgets('opens the source batch test sheet', (tester) async {
+    final state = AppState(host: DemoHostApi());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: SourcesPage(state: state)),
+      ),
+    );
+
+    await tester.tap(find.text('批量测试'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('批量测试源'), findsOneWidget);
+    expect(find.text('搜索“hello” · 1 个源'), findsOneWidget);
+    await tester.tap(find.byTooltip('关闭').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    state.dispose();
+  });
+
+  testWidgets('supports source selection and source test chip', (tester) async {
+    final state = AppState(host: DemoHostApi());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: SourcesPage(state: state)),
+      ),
+    );
+
+    expect(find.byIcon(Icons.home_outlined), findsNothing);
+    expect(find.text('主页'), findsOneWidget);
+    await tester.longPress(find.text('APKVision'));
+    await tester.pump();
+    expect(find.byTooltip('退出多选'), findsOneWidget);
+
+    final overflow = find.byTooltip('批量管理');
+    if (overflow.evaluate().isNotEmpty) {
+      await tester.tap(overflow);
+      await tester.pumpAndSettle();
+      expect(find.text('全选'), findsOneWidget);
+      await tester.tap(find.text('全选'));
+      await tester.pump();
+    } else {
+      expect(find.byTooltip('全选'), findsOneWidget);
+    }
+    expect(find.text('已选择 1 个源'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('退出多选'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('查看测试项目'));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无可测试项目'), findsOneWidget);
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pump();
     state.dispose();
   });
 

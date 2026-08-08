@@ -656,6 +656,59 @@ class AppState extends ChangeNotifier {
     return importSourceBytes(Uint8List.fromList(bytes), fileName);
   }
 
+  Future<List<SourceTestResult>> testAllSources({
+    String query = 'hello',
+    Set<String>? sourceIds,
+  }) async {
+    await ready;
+    final normalized = query.trim();
+    if (normalized.isEmpty) return const [];
+
+    final sourceSnapshot = _sources
+        .where(
+          (source) =>
+              source.status == SourceStatus.enabled &&
+              (sourceIds == null || sourceIds.contains(source.id)),
+        )
+        .toList(growable: false);
+    final availableSourceIds = sourceSnapshot
+        .map((source) => source.id)
+        .toSet();
+    debug.add('开始批量测试源：搜索“$normalized”', category: 'Source');
+    final pages = await registry.searchPage(
+      normalized,
+      host,
+      enabledSourceIds: availableSourceIds,
+      clearErrors: true,
+    );
+    final pagesBySource = {for (final page in pages) page.sourceId: page};
+    final results = sourceSnapshot
+        .map((source) {
+          final page = pagesBySource[source.id];
+          if (page == null) {
+            return SourceTestResult(
+              sourceId: source.id,
+              sourceName: source.name,
+              resultCount: 0,
+              error: '源运行时未加载',
+            );
+          }
+          return SourceTestResult(
+            sourceId: source.id,
+            sourceName: source.name,
+            resultCount: page.results.length,
+            error: page.error,
+          );
+        })
+        .toList(growable: false);
+    final failed = results.where((result) => !result.succeeded).length;
+    debug.add(
+      '批量测试完成：可用 ${results.length - failed} 个，失败 $failed 个',
+      category: 'Source',
+    );
+    return results;
+  }
+
   Future<List<AppListing>> search(
     String query, {
     Set<String>? sourceIds,
@@ -1359,6 +1412,29 @@ class AppState extends ChangeNotifier {
         .toList();
     notifyListeners();
   }
+
+  void setSourcesEnabled(Iterable<String> ids, bool enabled) {
+    final sourceIds = ids.toSet();
+    if (sourceIds.isEmpty) return;
+    var changed = false;
+    _sources = _sources.map((source) {
+      if (!sourceIds.contains(source.id)) return source;
+      final nextStatus = enabled ? SourceStatus.enabled : SourceStatus.disabled;
+      if (source.status == nextStatus && (enabled || !source.homeSource)) {
+        return source;
+      }
+      changed = true;
+      return source.copyWith(
+        status: nextStatus,
+        homeSource: enabled ? source.homeSource : false,
+      );
+    }).toList();
+    if (changed) notifyListeners();
+  }
+
+  void enableSources(Iterable<String> ids) => setSourcesEnabled(ids, true);
+
+  void disableSources(Iterable<String> ids) => setSourcesEnabled(ids, false);
 
   void removeSource(String id) {
     final source = _sources.where((item) => item.id == id).firstOrNull;

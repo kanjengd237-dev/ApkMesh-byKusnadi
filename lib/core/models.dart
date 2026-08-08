@@ -134,6 +134,22 @@ class SourceHome {
   );
 }
 
+class SourceTestResult {
+  const SourceTestResult({
+    required this.sourceId,
+    required this.sourceName,
+    required this.resultCount,
+    this.error,
+  });
+
+  final String sourceId;
+  final String sourceName;
+  final int resultCount;
+  final String? error;
+
+  bool get succeeded => error == null;
+}
+
 class SourceSearchPage {
   const SourceSearchPage({
     required this.sourceId,
