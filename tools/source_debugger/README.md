@@ -7,7 +7,7 @@
 - QuickJS 执行源脚本；
 - `apkmesh.request()` 和手动白名单重定向；
 - Playwright 无头 Chromium 作为浏览器宿主；
-- `waitFor`、`query`、`queryAll` 的 CSS/属性查询契约；
+- `waitFor`、`waitForUrlChange`、`query`、`queryAll` 的 CSS/属性查询契约；
 - 独立目录保存下载文件；
 - `install()` 明确报告 Android 能力不可用；
 - live 请求、录制和完全离线的精确 URL fixture 回放；

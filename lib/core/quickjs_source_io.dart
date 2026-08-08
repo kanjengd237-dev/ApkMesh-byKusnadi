@@ -134,6 +134,13 @@ class QuickJsApkSourceScript
       );
       return true;
     });
+    _runtime.onMessage('apkmesh.browser.waitForUrlChange', (args) async {
+      final payload = _payload(args);
+      return _host!.browserWaitForUrlChange(
+        payload['tabId'] as String,
+        payload['previousUrl'] as String,
+      );
+    });
     _runtime.onMessage('apkmesh.browser.query', (args) async {
       final payload = _payload(args);
       return _host!.browserQuery(
@@ -200,6 +207,7 @@ class QuickJsApkSourceScript
             return {
               id: tabId,
               waitFor: (selector) => sendMessage('apkmesh.browser.waitFor', JSON.stringify({tabId, selector})),
+              waitForUrlChange: (previousUrl) => sendMessage('apkmesh.browser.waitForUrlChange', JSON.stringify({tabId, previousUrl})),
               query: (selectors) => sendMessage('apkmesh.browser.query', JSON.stringify({tabId, selectors})),
               queryAll: (rootSelector, selectors) => sendMessage('apkmesh.browser.queryAll', JSON.stringify({tabId, rootSelector, selectors})),
               close: () => sendMessage('apkmesh.browser.close', JSON.stringify({tabId})),

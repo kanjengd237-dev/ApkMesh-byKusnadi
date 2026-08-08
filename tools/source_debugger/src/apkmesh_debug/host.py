@@ -62,6 +62,11 @@ class SourceHost:
                 str(payload.get("selector", "")),
             )
             return True
+        if name == "apkmesh.browser.waitForUrlChange":
+            return self.browser.wait_for_url_change(
+                str(payload.get("tabId", "")),
+                str(payload.get("previousUrl", "")),
+            )
         if name == "apkmesh.browser.query":
             return self.browser.query(
                 str(payload.get("tabId", "")),

@@ -65,6 +65,7 @@ abstract interface class SourceHostApi {
 
   Future<String> browserOpen(String url, {required SourcePolicy policy});
   Future<void> browserWaitFor(String tabId, String selector);
+  Future<String> browserWaitForUrlChange(String tabId, String previousUrl);
   Future<Map<String, dynamic>> browserQuery(
     String tabId,
     Map<String, dynamic> selectors,
@@ -505,6 +506,10 @@ class DemoHostApi implements SourceHostApi {
 
   @override
   Future<void> browserWaitFor(String tabId, String selector) =>
+      throw UnsupportedError('当前平台不支持隐藏浏览器');
+
+  @override
+  Future<String> browserWaitForUrlChange(String tabId, String previousUrl) =>
       throw UnsupportedError('当前平台不支持隐藏浏览器');
 
   @override

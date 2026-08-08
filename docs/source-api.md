@@ -91,7 +91,7 @@ async debug(projectId, input) {
 ## 宿主能力
 
 - `apkmesh.request(url, options)`：受 manifest 网络权限限制的 HTTP 请求；`network: ['*']` 可显式允许任意 `http/https` 主机。
-- `apkmesh.browser.open(url)`：打开隔离的隐藏 WebView 标签页，支持 `waitFor`、`query` 和 `queryAll`。
+- `apkmesh.browser.open(url)`：打开隔离的隐藏 WebView 标签页，支持 `waitFor`、`waitForUrlChange`、`query` 和 `queryAll`。`waitForUrlChange` 会等待页面导航或 WebView 下载事件产生不同 URL，并返回该 URL，适用于由页面 JavaScript 生成下载地址的站点。
 - `apkmesh.download(url, options)`：创建受 manifest 网络权限和下载权限约束的下载任务并返回本地文件路径。`options` 可包含 `fileName` 和额外 HTTP `headers`。
 - `apkmesh.install(filePath)`：经用户确认后调用系统安装器；源不能静默安装。Android 会在需要时先打开未知来源安装权限页面。
 - `apkmesh.detailProgress(requestId, update)`：向宿主报告分阶段详情中的下载项解析结果；只能用于源声明的 `resolveDownloads()` 调用，不能替代权限检查。

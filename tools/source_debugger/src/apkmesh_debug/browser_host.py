@@ -110,6 +110,10 @@ class BrowserHost:
         context.route("**/*", self._handle_route)
         page = context.new_page()
         page.on(
+            "request",
+            lambda request: self._on_request(tab_id, request),
+        )
+        page.on(
             "response",
             lambda response: self._on_response(tab_id, response),
         )
@@ -149,6 +153,24 @@ class BrowserHost:
             self._set_state(tab_id, "wait-timeout", tab.page.url)
             raise TimeoutError(f"selector wait timed out: {selector}") from error
         self._set_state(tab_id, "ready", tab.page.url)
+
+    def wait_for_url_change(self, tab_id: str, previous_url: str) -> str:
+        tab = self._tab(tab_id)
+        self._set_state(tab_id, "waiting: URL change", tab.page.url)
+        self.trace.add(
+            "browser.wait_for_url_change",
+            tab_id=tab_id,
+            previous_url=previous_url,
+        )
+        deadline = time.monotonic() + self.timeout
+        while time.monotonic() < deadline:
+            current_url = tab.info.url
+            if current_url and current_url != previous_url:
+                self._set_state(tab_id, "ready", current_url)
+                return current_url
+            tab.page.wait_for_timeout(200)
+        self._set_state(tab_id, "wait-timeout", tab.info.url)
+        raise TimeoutError(f"URL change timed out: {previous_url}")
 
     def query(self, tab_id: str, selectors: dict[str, Any]) -> dict[str, Any]:
         tab = self._tab(tab_id)
@@ -201,7 +223,28 @@ class BrowserHost:
             self._playwright.stop()
             self._playwright = None
 
+    def _on_request(self, tab_id: str, request) -> None:
+        if request.is_navigation_request() and request.frame == request.frame.page.main_frame:
+            tab = self._tabs.get(tab_id)
+            if tab is not None and request.url != tab.info.url:
+                self._set_state(tab_id, "navigating", request.url)
+        self.trace.add(
+            "browser.request",
+            tab_id=tab_id,
+            url=request.url,
+            method=request.method,
+            resource_type=request.resource_type,
+        )
+
     def _on_response(self, tab_id: str, response) -> None:
+        tab = self._tabs.get(tab_id)
+        if (
+            tab is not None
+            and response.request.resource_type == "document"
+            and response.frame == response.frame.page.main_frame
+            and response.url != tab.info.url
+        ):
+            self._set_state(tab_id, "navigating", response.url)
         self.trace.add(
             "browser.response",
             tab_id=tab_id,

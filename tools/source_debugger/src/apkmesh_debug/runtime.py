@@ -30,6 +30,10 @@ globalThis.apkmesh = {
           'apkmesh.browser.waitFor',
           JSON.stringify({tabId, selector})
         ),
+        waitForUrlChange: (previousUrl) => sendMessage(
+          'apkmesh.browser.waitForUrlChange',
+          JSON.stringify({tabId, previousUrl})
+        ),
         query: (selectors) => sendMessage(
           'apkmesh.browser.query',
           JSON.stringify({tabId, selectors})

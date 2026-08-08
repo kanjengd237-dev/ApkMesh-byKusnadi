@@ -28,6 +28,7 @@ class NativeHostApi implements SourceHostApi {
   final Map<String, SourcePolicy> _tabPolicies = {};
   final Map<String, BrowserTabDebugInfo> _tabStates = {};
   final List<BrowserTabDebugInfo> _tabHistory = [];
+  final Map<String, String> _tabDownloadUrls = {};
   final Map<String, Map<String, String>> _browserCookies = {};
   final http.Client _client = http.Client();
   final Map<String, _NativeDownloadSession> _downloadSessions = {};
@@ -58,6 +59,17 @@ class NativeHostApi implements SourceHostApi {
   }) {
     debugPrint('[APK Mesh] $message');
     _debug?.add(message, level: level, category: category);
+  }
+
+  bool _looksLikeApkDownload(Uri url) =>
+      url.path.toLowerCase().endsWith('.apk');
+
+  void _recordWebViewDownload(String tabId, Uri url) {
+    final downloadUrl = url.toString();
+    if (_tabDownloadUrls[tabId] == downloadUrl) return;
+    _tabDownloadUrls[tabId] = downloadUrl;
+    _setTabState(tabId, url: downloadUrl, state: 'download-started');
+    _log('WebView download started $tabId $downloadUrl', category: 'WebView');
   }
 
   void _setTabState(
@@ -215,6 +227,7 @@ class NativeHostApi implements SourceHostApi {
         javaScriptEnabled: true,
         domStorageEnabled: true,
         incognito: true,
+        useOnDownloadStart: true,
         useShouldOverrideUrlLoading: true,
         useShouldInterceptRequest: true,
         userAgent:
@@ -231,15 +244,32 @@ class NativeHostApi implements SourceHostApi {
         _setTabState(tabId, url: url?.toString(), state: 'ready');
         if (!pageLoaded.isCompleted) pageLoaded.complete();
       },
+      onDownloadStarting: (controller, request) {
+        final downloadUrl = request.url.toString();
+        if (!policy.permits(request.url)) {
+          _log(
+            'WebView download blocked $tabId $downloadUrl',
+            level: DebugLogLevel.warning,
+            category: 'WebView',
+          );
+          return null;
+        }
+        _recordWebViewDownload(tabId, request.url);
+        return null;
+      },
       shouldOverrideUrlLoading: (_, action) async {
         final next = action.request.url;
         if (next == null || !policy.permits(next)) {
           return NavigationActionPolicy.CANCEL;
         }
+        _setTabState(tabId, url: next.toString(), state: 'navigating');
         return NavigationActionPolicy.ALLOW;
       },
       shouldInterceptRequest: (_, request) async {
         final resource = request.url;
+        if (policy.permits(resource) && _looksLikeApkDownload(resource)) {
+          _recordWebViewDownload(tabId, resource);
+        }
         if ((resource.scheme == 'http' || resource.scheme == 'https') &&
             !policy.permits(resource)) {
           return WebResourceResponse(
@@ -283,6 +313,25 @@ class NativeHostApi implements SourceHostApi {
     }
     _setTabState(tabId, state: 'wait-timeout');
     throw TimeoutException('等待选择器超时: $selector');
+  }
+
+  @override
+  Future<String> browserWaitForUrlChange(
+    String tabId,
+    String previousUrl,
+  ) async {
+    _setTabState(tabId, state: 'waiting: URL change');
+    for (var i = 0; i < 150; i++) {
+      final currentUrl =
+          _tabDownloadUrls[tabId] ?? _tabStates[tabId]?.url ?? '';
+      if (currentUrl.isNotEmpty && currentUrl != previousUrl) {
+        _setTabState(tabId, state: 'ready');
+        return currentUrl;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    _setTabState(tabId, state: 'wait-timeout');
+    throw TimeoutException('等待下载地址跳转超时: $previousUrl');
   }
 
   @override
@@ -443,6 +492,7 @@ class NativeHostApi implements SourceHostApi {
     final state = _tabStates[tabId];
     _tabPolicies.remove(tabId);
     _controllers.remove(tabId);
+    _tabDownloadUrls.remove(tabId);
     final url = state == null ? null : Uri.tryParse(state.url);
     if (url != null) await _captureBrowserCookies(url);
     if (keepAlive != null) {

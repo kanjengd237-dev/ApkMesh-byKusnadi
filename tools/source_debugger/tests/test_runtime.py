@@ -16,6 +16,8 @@ class FakeHost:
             return "tab-1"
         if name == "apkmesh.browser.waitFor":
             return True
+        if name == "apkmesh.browser.waitForUrlChange":
+            return "https://example.test/file.apk"
         if name == "apkmesh.browser.close":
             return True
         raise AssertionError(name)
@@ -37,8 +39,9 @@ def test_runtime_resolves_async_source_and_json_bridge(tmp_path: Path):
             await tab.waitFor('main');
             const app = await tab.query({title: 'h1@text', icon: 'img@src'});
             const values = await tab.queryAll('li', {value: '@text'});
+            const finalUrl = await tab.waitForUrlChange('https://example.test/page');
             await tab.close();
-            return {query, page, body, app, values};
+            return {query, page, body, app, values, finalUrl};
           }
         };
         """,
@@ -57,5 +60,6 @@ def test_runtime_resolves_async_source_and_json_bridge(tmp_path: Path):
         "body": "fixture body",
         "app": {"title": "Fixture", "icon": "icon.png"},
         "values": [{"value": "one"}, {"value": "two"}],
+        "finalUrl": "https://example.test/file.apk",
     }
     assert any(event["event"] == "source.completed" for event in trace.events)
