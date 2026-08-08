@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
@@ -56,6 +58,10 @@ class SettingsPage extends StatelessWidget {
               )
             : null,
       ),
+      if (state.host.supportsShizuku) ...[
+        const Divider(),
+        _ShizukuInstallationSettingsPanel(state: state),
+      ],
       const Divider(),
       const ListTile(
         leading: Icon(Icons.policy_outlined),
@@ -69,6 +75,73 @@ class SettingsPage extends StatelessWidget {
         subtitle: Text('开源源聚合客户端 · 0.1.0'),
       ),
     ],
+  );
+}
+
+String _shizukuStatusLabel(ShizukuStatus status, bool enabled) =>
+    switch (status) {
+      ShizukuStatus.authorized =>
+        enabled ? '已授权；点击安装后将通过 Shizuku 安装 APK' : '已授权，打开后通过 Shizuku 安装 APK',
+      ShizukuStatus.unavailable =>
+        enabled ? 'Shizuku 未运行，安装前请先启动服务' : '请先启动 Shizuku，再打开此选项',
+      ShizukuStatus.denied => 'Shizuku 未授予 APK Mesh 权限',
+      ShizukuStatus.unsupported => '当前平台不支持 Shizuku 安装',
+    };
+
+class _ShizukuInstallationSettingsPanel extends StatefulWidget {
+  const _ShizukuInstallationSettingsPanel({required this.state});
+
+  final AppState state;
+
+  @override
+  State<_ShizukuInstallationSettingsPanel> createState() =>
+      _ShizukuInstallationSettingsPanelState();
+}
+
+class _ShizukuInstallationSettingsPanelState
+    extends State<_ShizukuInstallationSettingsPanel> {
+  bool _changing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(widget.state.refreshShizukuStatus());
+  }
+
+  Future<void> _setEnabled(bool enabled) async {
+    setState(() => _changing = true);
+    try {
+      final changed = await widget.state.setUseShizukuInstaller(enabled);
+      if (!changed && mounted) {
+        final message = _shizukuStatusLabel(widget.state.shizukuStatus, false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Shizuku 授权失败：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _changing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SwitchListTile(
+    contentPadding: EdgeInsets.zero,
+    secondary: const Icon(Icons.admin_panel_settings_outlined),
+    title: const Text('使用 Shizuku 安装'),
+    subtitle: Text(
+      _shizukuStatusLabel(
+        widget.state.shizukuStatus,
+        widget.state.useShizukuInstaller,
+      ),
+    ),
+    value: widget.state.useShizukuInstaller,
+    onChanged: _changing ? null : _setEnabled,
   );
 }
 

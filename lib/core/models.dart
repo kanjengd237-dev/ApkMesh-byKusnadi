@@ -1,5 +1,47 @@
 enum AppThemeMode { system, light, dark }
 
+enum InstallMethod { system, shizuku }
+
+enum ShizukuStatus { unsupported, unavailable, denied, authorized }
+
+class ApkInstallInfo {
+  const ApkInstallInfo({
+    required this.supported,
+    required this.installed,
+    required this.versionMatches,
+    required this.canOpen,
+    this.packageName,
+    this.archiveVersionName,
+    this.archiveVersionCode,
+    this.installedVersionName,
+    this.installedVersionCode,
+    this.error,
+  });
+
+  const ApkInstallInfo.unsupported()
+    : supported = false,
+      installed = false,
+      versionMatches = false,
+      canOpen = false,
+      packageName = null,
+      archiveVersionName = null,
+      archiveVersionCode = null,
+      installedVersionName = null,
+      installedVersionCode = null,
+      error = null;
+
+  final bool supported;
+  final bool installed;
+  final bool versionMatches;
+  final bool canOpen;
+  final String? packageName;
+  final String? archiveVersionName;
+  final int? archiveVersionCode;
+  final String? installedVersionName;
+  final int? installedVersionCode;
+  final String? error;
+}
+
 enum SourceStatus { enabled, disabled, error }
 
 class ApkSource {

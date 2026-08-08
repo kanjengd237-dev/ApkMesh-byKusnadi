@@ -20,7 +20,7 @@ QuickJS 宿主桥接位于 `lib/core/source_runtime.dart`，Android 实现位于
 
 - `flutter_js` 在 Android 中运行 QuickJS，并通过异步消息注册 `apkmesh.request`、`apkmesh.browser`、`apkmesh.download` 和 `apkmesh.install`。
 - `flutter_inappwebview` 提供隔离的 Headless WebView，所有导航和网络资源按源 manifest 的域名白名单校验。
-- 下载使用流式 HTTP，限制重定向必须继续落在白名单内；安装前必须由用户确认，Android 11+ 会在设置页请求“允许安装未知应用”。
+- 下载使用流式 HTTP，限制重定向必须继续落在白名单内；安装必须由用户点击操作，Android 11+ 会在设置页请求“允许安装未知应用”。Android 上也可在设置中启用 Shizuku，点击安装后通过 Shizuku 执行，并在完成后核对本机安装版本。
 - APKVision 源通过站点搜索页获取结果，再用隐藏浏览器解析详情，并从下载页解析受信任的直链。站点改版或 Cloudflare 验证可能导致源暂时不可用。
 - Android 端会自动扫描 `assets/sources/` 下的 `.js` 文件，并从每个脚本的 manifest 注册内置源。源管理也支持从 HTTPS URL 或系统文件提供器导入源；ZIP 内的全部 `.js` 文件会逐个尝试导入。
 

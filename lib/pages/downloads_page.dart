@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
@@ -188,7 +190,7 @@ class DownloadTaskTile extends StatelessWidget {
   }
 }
 
-class DownloadTaskControls extends StatelessWidget {
+class DownloadTaskControls extends StatefulWidget {
   const DownloadTaskControls({
     required this.task,
     required this.state,
@@ -199,7 +201,46 @@ class DownloadTaskControls extends StatelessWidget {
   final AppState state;
 
   @override
+  State<DownloadTaskControls> createState() => _DownloadTaskControlsState();
+}
+
+class _DownloadTaskControlsState extends State<DownloadTaskControls> {
+  @override
+  void initState() {
+    super.initState();
+    _refreshInstallState();
+  }
+
+  @override
+  void didUpdateWidget(covariant DownloadTaskControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.task.status != widget.task.status ||
+        oldWidget.task.filePath != widget.task.filePath) {
+      _refreshInstallState();
+    }
+  }
+
+  void _refreshInstallState() {
+    final task = widget.task;
+    if (task.status == DownloadStatus.completed && task.filePath != null) {
+      unawaited(widget.state.refreshInstallState(task));
+    }
+  }
+
+  Future<void> _openInstalled() async {
+    try {
+      await widget.state.openInstalledTask(widget.task);
+    } catch (error) {
+      if (mounted) {
+        showActionErrorSnackBar(context, summary: '打开失败', error: error);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final task = widget.task;
+    final state = widget.state;
     switch (task.status) {
       case DownloadStatus.downloading:
       case DownloadStatus.paused:
@@ -231,6 +272,37 @@ class DownloadTaskControls extends StatelessWidget {
           ],
         );
       case DownloadStatus.completed:
+        final installInfo = state.installInfoFor(task.id);
+        if (state.isInstallingDownload(task.id)) {
+          return Align(
+            alignment: Alignment.centerRight,
+            child: SizedBox(
+              width: 88,
+              height: 40,
+              child: FilledButton(
+                onPressed: null,
+                child: const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          );
+        }
+        if (installInfo?.versionMatches == true) {
+          return Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('打开'),
+              onPressed: _openInstalled,
+            ),
+          );
+        }
         return Align(
           alignment: Alignment.centerRight,
           child: FilledButton.icon(
@@ -323,15 +395,56 @@ Future<void> installDownloadTask(
   DownloadTask task,
 ) async {
   try {
+    final useShizuku = state.useShizukuInstaller;
     final installed = await state.installTask(task);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(installed ? '已交给系统安装器' : '请完成系统安装权限设置后重试')),
+      SnackBar(
+        content: Text(
+          installed
+              ? useShizuku
+                    ? '已通过 Shizuku 安装'
+                    : '已交给系统安装器'
+              : '安装未完成，请检查安装权限后重试',
+        ),
+      ),
     );
   } catch (error) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('安装失败：$error')));
+    showActionErrorSnackBar(context, summary: '安装失败', error: error);
   }
+}
+
+void showActionErrorSnackBar(
+  BuildContext context, {
+  required String summary,
+  required Object error,
+}) {
+  final detail = error.toString();
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(summary),
+        action: SnackBarAction(
+          label: '详情',
+          onPressed: () {
+            if (!context.mounted) return;
+            showDialog<void>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: Text('$summary详情'),
+                content: SingleChildScrollView(child: SelectableText(detail)),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('关闭'),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
 }

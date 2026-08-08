@@ -18,7 +18,7 @@ String _newTranslationDeviceId() =>
     'apkmesh-${DateTime.now().microsecondsSinceEpoch}-${math.Random().nextInt(1 << 32)}';
 
 class AppState extends ChangeNotifier {
-  AppState() {
+  AppState({SourceHostApi? host}) : _hostOverride = host {
     _sources = [
       ApkSource(
         id: 'apkvision-demo',
@@ -35,29 +35,36 @@ class AppState extends ChangeNotifier {
     _downloadNotifications = DownloadNotifications(
       onAction: _handleDownloadNotificationAction,
     );
-    _translationSettingsReady = _restoreTranslationSettings();
+    _settingsReady = _restoreSettings();
   }
 
+  final SourceHostApi? _hostOverride;
   late List<ApkSource> _sources;
   final SourceRegistry registry = SourceRegistry(
     scripts: [ApkVisionDemoScript()],
   );
   final DebugLogStore debug = DebugLogStore();
-  late final SourceHostApi host = createPlatformHostApi(debug: debug);
+  late final SourceHostApi host =
+      _hostOverride ?? createPlatformHostApi(debug: debug);
   late final DownloadNotifications _downloadNotifications;
   final Completer<void> _ready = Completer<void>();
   final DownloadStore _downloadStore = createDownloadStore();
   final TranslationService translation = TranslationService();
   final List<DownloadTask> _downloads = [];
+  final Map<String, ApkInstallInfo> _installInfos = {};
+  final Set<String> _installStateChecks = {};
+  final Set<String> _installingDownloads = {};
   final Map<String, String> _translationCache = {};
   final Set<String> _translationPending = {};
   final Set<String> _translationQueue = {};
   Timer? _translationQueueTimer;
   TranslationSettings _translationSettings = const TranslationSettings();
   AppThemeMode _themeMode = AppThemeMode.system;
+  InstallMethod _installMethod = InstallMethod.system;
+  ShizukuStatus _shizukuStatus = ShizukuStatus.unsupported;
   String _translationDeviceId = _newTranslationDeviceId();
   SharedPreferences? _preferences;
-  late final Future<void> _translationSettingsReady;
+  late final Future<void> _settingsReady;
   final Set<String> _resumeAfterInitialize = {};
   final Map<String, int> _pendingDownloadBytes = {};
   final Map<String, int?> _pendingDownloadTotals = {};
@@ -90,6 +97,13 @@ class AppState extends ChangeNotifier {
   List<SourceDebugProject> get debugProjects => registry.debugProjects;
   TranslationSettings get translationSettings => _translationSettings;
   AppThemeMode get themeMode => _themeMode;
+  InstallMethod get installMethod => _installMethod;
+  bool get useShizukuInstaller => _installMethod == InstallMethod.shizuku;
+  ShizukuStatus get shizukuStatus => _shizukuStatus;
+  ApkInstallInfo? installInfoFor(String downloadId) =>
+      _installInfos[downloadId];
+  bool isInstallingDownload(String downloadId) =>
+      _installingDownloads.contains(downloadId);
 
   String? translatedText(String text) {
     final value = text.trim();
@@ -100,7 +114,7 @@ class AppState extends ChangeNotifier {
   Future<String> translateToEnglish(String text) async {
     final value = text.trim();
     if (value.isEmpty) return '';
-    await _translationSettingsReady;
+    await _settingsReady;
     if (_isDisposing) throw StateError('翻译服务已关闭');
     final settings = _translationSettings.copyWith(targetLanguage: 'en');
     final results = await translation.translate(
@@ -191,7 +205,7 @@ class AppState extends ChangeNotifier {
     if (_themeMode == mode) return;
     _themeMode = mode;
     notifyListeners();
-    unawaited(_persistTranslationSettings());
+    unawaited(_persistSettings());
   }
 
   void setTranslationProvider(TranslationProvider provider) {
@@ -199,7 +213,7 @@ class AppState extends ChangeNotifier {
     _translationSettings = _translationSettings.copyWith(provider: provider);
     _translationCache.clear();
     notifyListeners();
-    unawaited(_persistTranslationSettings());
+    unawaited(_persistSettings());
   }
 
   void setTranslationLanguage(String language) {
@@ -209,7 +223,7 @@ class AppState extends ChangeNotifier {
     );
     _translationCache.clear();
     notifyListeners();
-    unawaited(_persistTranslationSettings());
+    unawaited(_persistSettings());
   }
 
   void setAutoTranslate(bool enabled) {
@@ -218,7 +232,7 @@ class AppState extends ChangeNotifier {
       autoTranslate: enabled,
     );
     notifyListeners();
-    unawaited(_persistTranslationSettings());
+    unawaited(_persistSettings());
   }
 
   void setGooglePublicKey(String value) {
@@ -229,10 +243,103 @@ class AppState extends ChangeNotifier {
       (cacheKey, _) => cacheKey.startsWith('google|'),
     );
     notifyListeners();
-    unawaited(_persistTranslationSettings());
+    unawaited(_persistSettings());
   }
 
-  Future<void> _restoreTranslationSettings() async {
+  Future<void> refreshShizukuStatus() async {
+    try {
+      final status = await host.shizukuStatus();
+      if (_isDisposing || _shizukuStatus == status) return;
+      _shizukuStatus = status;
+      notifyListeners();
+    } catch (error) {
+      if (!_isDisposing) {
+        debug.add(
+          '读取 Shizuku 状态失败：$error',
+          level: DebugLogLevel.warning,
+          category: 'Install',
+        );
+      }
+    }
+  }
+
+  Future<void> refreshInstallState(DownloadTask task) async {
+    final path = task.filePath;
+    if (task.status != DownloadStatus.completed || path == null) return;
+    if (!_installStateChecks.add(task.id)) return;
+    try {
+      final info = await host.inspectInstall(path);
+      final current = _downloadById(task.id);
+      if (_isDisposing || current?.filePath != path) return;
+      _installInfos[task.id] = info;
+      notifyListeners();
+    } catch (error) {
+      if (!_isDisposing) {
+        debug.add(
+          '读取安装状态失败：${task.file.label} · $error',
+          level: DebugLogLevel.warning,
+          category: 'Install',
+        );
+      }
+    } finally {
+      _installStateChecks.remove(task.id);
+    }
+  }
+
+  Future<void> refreshInstallStates() async {
+    final completed = _downloads
+        .where(
+          (task) =>
+              task.status == DownloadStatus.completed && task.filePath != null,
+        )
+        .toList(growable: false);
+    for (final task in completed) {
+      await refreshInstallState(task);
+    }
+  }
+
+  Future<void> openInstalledTask(DownloadTask task) async {
+    var info = _installInfos[task.id];
+    if (info == null || !info.versionMatches) {
+      await refreshInstallState(task);
+      info = _installInfos[task.id];
+    }
+    final packageName = info?.packageName;
+    if (info == null || !info.versionMatches || packageName == null) {
+      throw StateError(info?.error ?? '当前 APK 版本尚未安装或无法打开');
+    }
+    if (!await host.openInstalled(packageName)) {
+      throw StateError('无法打开已安装的应用');
+    }
+  }
+
+  Future<bool> setUseShizukuInstaller(bool enabled) async {
+    await _settingsReady;
+    if (_isDisposing) return false;
+    if (!enabled) {
+      if (_installMethod == InstallMethod.system) return true;
+      _installMethod = InstallMethod.system;
+      host.setInstallMethod(_installMethod);
+      notifyListeners();
+      await _persistSettings();
+      return true;
+    }
+
+    final status = await host.requestShizukuPermission();
+    if (_isDisposing) return false;
+    _shizukuStatus = status;
+    if (status != ShizukuStatus.authorized) {
+      notifyListeners();
+      return false;
+    }
+    _installMethod = InstallMethod.shizuku;
+    host.setInstallMethod(_installMethod);
+    notifyListeners();
+    await _persistSettings();
+    return true;
+  }
+
+  Future<void> _restoreSettings() async {
     try {
       final preferences = await SharedPreferences.getInstance();
       if (_isDisposing) return;
@@ -249,6 +356,11 @@ class AppState extends ChangeNotifier {
           themeModeIndex >= 0 && themeModeIndex < AppThemeMode.values.length
           ? AppThemeMode.values[themeModeIndex]
           : AppThemeMode.system;
+      _installMethod = switch (preferences.getString('install.method')) {
+        'shizuku' => InstallMethod.shizuku,
+        _ => InstallMethod.system,
+      };
+      host.setInstallMethod(_installMethod);
       _translationSettings = TranslationSettings(
         provider: provider,
         targetLanguage:
@@ -260,6 +372,15 @@ class AppState extends ChangeNotifier {
           preferences.getString('translation.deviceId') ??
           _newTranslationDeviceId();
       await preferences.setString('translation.deviceId', _translationDeviceId);
+      try {
+        _shizukuStatus = await host.shizukuStatus();
+      } catch (error) {
+        debug.add(
+          '读取 Shizuku 状态失败：$error',
+          level: DebugLogLevel.warning,
+          category: 'Install',
+        );
+      }
       if (!_isDisposing) notifyListeners();
     } catch (error) {
       _translationDeviceId = _newTranslationDeviceId();
@@ -273,12 +394,12 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _persistTranslationSettings() async {
-    await _translationSettingsReady;
-    await _saveTranslationSettings();
+  Future<void> _persistSettings() async {
+    await _settingsReady;
+    await _saveSettings();
   }
 
-  Future<void> _saveTranslationSettings() async {
+  Future<void> _saveSettings() async {
     final preferences = _preferences;
     if (preferences == null) return;
     await preferences.setInt(
@@ -298,6 +419,7 @@ class AppState extends ChangeNotifier {
       _translationSettings.googlePublicKey,
     );
     await preferences.setInt('theme.mode', _themeMode.index);
+    await preferences.setString('install.method', _installMethod.name);
   }
 
   ApkSource _sourceForScript(ApkSourceScript script, {required bool builtIn}) {
@@ -423,8 +545,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
-    unawaited(_translationSettingsReady);
+    unawaited(_settingsReady);
     await _restoreDownloads();
+    unawaited(refreshInstallStates());
     debug.add('正在扫描内置 QuickJS 源', category: 'App');
     var loadedCount = 0;
     try {
@@ -792,6 +915,8 @@ class AppState extends ChangeNotifier {
     }
 
     _downloadProgressSamples.remove(task.id);
+    _installInfos.remove(task.id);
+    _installStateChecks.remove(task.id);
     _scheduleDownloadPersistence();
     debug.add('开始下载：${file.label}', category: 'Download');
     notifyListeners();
@@ -1138,20 +1263,41 @@ class AppState extends ChangeNotifier {
     _pendingDownloadBytes.remove(id);
     _pendingDownloadTotals.remove(id);
     _downloadProgressSamples.remove(id);
+    _installInfos.remove(id);
+    _installStateChecks.remove(id);
+    _installingDownloads.remove(id);
     _downloads.removeAt(index);
     _scheduleDownloadPersistence();
     if (notify) notifyListeners();
   }
 
-  Future<bool> installTask(DownloadTask task) {
-    final path = task.filePath;
+  Future<bool> installTask(DownloadTask task) async {
+    await _settingsReady;
+    final current = _downloadById(task.id) ?? task;
+    final path = current.filePath;
     if (path == null) throw StateError('下载文件尚未完成');
-    return host.install(path, policy: _policyForTask(task));
+    if (!_installingDownloads.add(current.id)) {
+      throw StateError('该安装任务正在进行');
+    }
+    notifyListeners();
+    try {
+      final installed = await host.install(
+        path,
+        policy: _policyForTask(current),
+        userInitiated: true,
+      );
+      if (installed) await refreshInstallState(current);
+      return installed;
+    } finally {
+      _installingDownloads.remove(current.id);
+      if (!_isDisposing) notifyListeners();
+    }
   }
 
-  Future<bool> install(String path, String sourceId) {
+  Future<bool> install(String path, String sourceId) async {
+    await _settingsReady;
     final script = registry.scriptFor(sourceId);
-    return host.install(path, policy: script.policy);
+    return host.install(path, policy: script.policy, userInitiated: true);
   }
 
   void setHomeSource(String id) {

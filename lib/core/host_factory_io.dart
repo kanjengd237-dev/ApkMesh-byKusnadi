@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'debug_log.dart';
+import 'download_path.dart';
 import 'models.dart';
 import 'source_runtime.dart';
 
@@ -21,6 +22,7 @@ class NativeHostApi implements SourceHostApi {
   NativeHostApi({this._debug});
 
   static const _installChannel = MethodChannel('com.apkmesh/install');
+  InstallMethod _installMethod = InstallMethod.system;
   final DebugLogStore? _debug;
   final Map<String, HeadlessInAppWebView> _tabs = {};
   final Map<String, InAppWebViewController> _controllers = {};
@@ -41,6 +43,9 @@ class NativeHostApi implements SourceHostApi {
 
   @override
   bool get supportsInstall => Platform.isAndroid;
+
+  @override
+  bool get supportsShizuku => Platform.isAndroid;
 
   @override
   bool hasDownloadSession(String downloadId) =>
@@ -558,15 +563,13 @@ class NativeHostApi implements SourceHostApi {
     final uri = Uri.parse(url);
     _check(uri, policy, capability: policy.allowDownload);
     final directory = await _downloadDirectory();
-    final requestedName = fileName ?? p.basename(uri.path).split('?').first;
-    final safeName = requestedName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     final sessionId =
         downloadId ?? 'host-${DateTime.now().microsecondsSinceEpoch}';
-    final baseName = safeName.isEmpty ? 'download.apk' : safeName;
-    final extension = p.extension(baseName);
-    final destinationName = extension.isEmpty
-        ? '$baseName.$sessionId'
-        : '${p.withoutExtension(baseName)}.$sessionId$extension';
+    final requestedName = fileName ?? p.basename(uri.path).split('?').first;
+    final destinationName = buildDownloadDestinationName(
+      requestedName: requestedName,
+      sessionId: sessionId,
+    );
     final destination = File(p.join(directory.path, destinationName));
     final partial = _partialFile(directory, sessionId);
     final session = _NativeDownloadSession(destination, partial);
@@ -634,6 +637,10 @@ class NativeHostApi implements SourceHostApi {
       await sink.close();
       if (total != null && received != total) {
         throw HttpException('下载内容不完整：$received/$total', uri: uri);
+      }
+      await directory.create(recursive: true);
+      if (!await partial.exists()) {
+        throw FileSystemException('下载临时文件不存在', partial.path);
       }
       if (await destination.exists()) await destination.delete();
       await partial.rename(destination.path);
@@ -707,12 +714,35 @@ class NativeHostApi implements SourceHostApi {
   }
 
   @override
-  Future<bool> install(String filePath, {required SourcePolicy policy}) async {
+  Future<bool> install(
+    String filePath, {
+    required SourcePolicy policy,
+    bool userInitiated = false,
+  }) async {
     if (!policy.allowInstall) throw StateError('源未声明安装权限');
     if (!supportsInstall) throw UnsupportedError('当前平台不支持 APK 安装');
+    if (_installMethod == InstallMethod.shizuku) {
+      if (!userInitiated) {
+        throw StateError('Shizuku 安装必须由用户点击安装按钮发起');
+      }
+      final status = await shizukuStatus();
+      if (status != ShizukuStatus.authorized) {
+        throw StateError(_shizukuStatusMessage(status));
+      }
+    }
     if (!await canInstallPackages()) {
       await requestInstallPermission();
       return false;
+    }
+    if (_installMethod == InstallMethod.shizuku) {
+      try {
+        return await _installChannel.invokeMethod<bool>('installWithShizuku', {
+              'filePath': filePath,
+            }) ??
+            false;
+      } on PlatformException catch (error) {
+        throw StateError(error.message ?? 'Shizuku 安装失败');
+      }
     }
     final result = await OpenFilex.open(
       filePath,
@@ -735,6 +765,57 @@ class NativeHostApi implements SourceHostApi {
   }
 
   @override
+  Future<ApkInstallInfo> inspectInstall(String filePath) async {
+    if (!Platform.isAndroid) return const ApkInstallInfo.unsupported();
+    final raw = await _installChannel.invokeMethod<dynamic>('inspectInstall', {
+      'filePath': filePath,
+    });
+    if (raw is! Map) return const ApkInstallInfo.unsupported();
+    return ApkInstallInfo(
+      supported: raw['supported'] == true,
+      installed: raw['installed'] == true,
+      versionMatches: raw['versionMatches'] == true,
+      canOpen: raw['canOpen'] == true,
+      packageName: _platformString(raw['packageName']),
+      archiveVersionName: _platformString(raw['archiveVersionName']),
+      archiveVersionCode: _platformInt(raw['archiveVersionCode']),
+      installedVersionName: _platformString(raw['installedVersionName']),
+      installedVersionCode: _platformInt(raw['installedVersionCode']),
+      error: _platformString(raw['error']),
+    );
+  }
+
+  @override
+  Future<bool> openInstalled(String packageName) async {
+    if (!Platform.isAndroid) return false;
+    return await _installChannel.invokeMethod<bool>('openInstalled', {
+          'packageName': packageName,
+        }) ??
+        false;
+  }
+
+  @override
+  void setInstallMethod(InstallMethod method) {
+    _installMethod = method;
+  }
+
+  @override
+  Future<ShizukuStatus> shizukuStatus() async {
+    if (!supportsShizuku) return ShizukuStatus.unsupported;
+    final value = await _installChannel.invokeMethod<String>('shizukuStatus');
+    return _parseShizukuStatus(value);
+  }
+
+  @override
+  Future<ShizukuStatus> requestShizukuPermission() async {
+    if (!supportsShizuku) return ShizukuStatus.unsupported;
+    final value = await _installChannel.invokeMethod<String>(
+      'requestShizukuPermission',
+    );
+    return _parseShizukuStatus(value);
+  }
+
+  @override
   Future<void> dispose() async {
     final tabIds = {..._tabs.keys, ..._attachedTabs.keys};
     for (final id in tabIds) {
@@ -753,6 +834,25 @@ class NativeHostApi implements SourceHostApi {
     _client.close();
   }
 }
+
+ShizukuStatus _parseShizukuStatus(String? value) => switch (value) {
+  'authorized' => ShizukuStatus.authorized,
+  'denied' => ShizukuStatus.denied,
+  'unavailable' => ShizukuStatus.unavailable,
+  _ => ShizukuStatus.unsupported,
+};
+
+String _shizukuStatusMessage(ShizukuStatus status) => switch (status) {
+  ShizukuStatus.authorized => '',
+  ShizukuStatus.denied => 'Shizuku 未授予 APK Mesh 权限，请在设置中重新授权',
+  ShizukuStatus.unavailable => '未检测到正在运行的 Shizuku，请先启动服务',
+  ShizukuStatus.unsupported => '当前平台不支持 Shizuku 安装',
+};
+
+String? _platformString(dynamic value) => value is String ? value : null;
+
+int? _platformInt(dynamic value) =>
+    value is int ? value : int.tryParse('$value');
 
 class _NativeDownloadSession {
   _NativeDownloadSession(this.destination, this.partial);

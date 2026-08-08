@@ -48,6 +48,7 @@ class SourcePolicy {
 abstract interface class SourceHostApi {
   bool get supportsBrowser;
   bool get supportsInstall;
+  bool get supportsShizuku;
   bool hasDownloadSession(String downloadId);
   List<BrowserTabDebugInfo> get browserTabs;
 
@@ -92,9 +93,18 @@ abstract interface class SourceHostApi {
   Future<void> cancelDownload(String downloadId);
   Future<void> removeDownloadFiles(String downloadId, {String? filePath});
 
-  Future<bool> install(String filePath, {required SourcePolicy policy});
+  Future<bool> install(
+    String filePath, {
+    required SourcePolicy policy,
+    bool userInitiated = false,
+  });
   Future<bool> canInstallPackages();
   Future<void> requestInstallPermission();
+  Future<ApkInstallInfo> inspectInstall(String filePath);
+  Future<bool> openInstalled(String packageName);
+  void setInstallMethod(InstallMethod method);
+  Future<ShizukuStatus> shizukuStatus();
+  Future<ShizukuStatus> requestShizukuPermission();
   Future<void> dispose();
 }
 
@@ -501,6 +511,9 @@ class DemoHostApi implements SourceHostApi {
   bool get supportsInstall => false;
 
   @override
+  bool get supportsShizuku => false;
+
+  @override
   Future<String> browserOpen(String url, {required SourcePolicy policy}) =>
       throw UnsupportedError('当前平台不支持隐藏浏览器');
 
@@ -566,14 +579,34 @@ class DemoHostApi implements SourceHostApi {
   }) async {}
 
   @override
-  Future<bool> install(String filePath, {required SourcePolicy policy}) async =>
-      false;
+  Future<bool> install(
+    String filePath, {
+    required SourcePolicy policy,
+    bool userInitiated = false,
+  }) async => false;
 
   @override
   Future<bool> canInstallPackages() async => false;
 
   @override
   Future<void> requestInstallPermission() async {}
+
+  @override
+  Future<ApkInstallInfo> inspectInstall(String filePath) async =>
+      const ApkInstallInfo.unsupported();
+
+  @override
+  Future<bool> openInstalled(String packageName) async => false;
+
+  @override
+  void setInstallMethod(InstallMethod method) {}
+
+  @override
+  Future<ShizukuStatus> shizukuStatus() async => ShizukuStatus.unsupported;
+
+  @override
+  Future<ShizukuStatus> requestShizukuPermission() async =>
+      ShizukuStatus.unsupported;
 
   @override
   Future<String> request(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'core/app_state.dart';
@@ -15,19 +17,28 @@ class ApkMeshApp extends StatefulWidget {
   State<ApkMeshApp> createState() => _ApkMeshAppState();
 }
 
-class _ApkMeshAppState extends State<ApkMeshApp> {
+class _ApkMeshAppState extends State<ApkMeshApp> with WidgetsBindingObserver {
   final state = AppState();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     state.initialize();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     state.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.resumed) {
+      unawaited(state.refreshInstallStates());
+    }
   }
 
   @override
