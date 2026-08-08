@@ -7,6 +7,7 @@ plugins {
 dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    compileOnly("dev.rikka.hidden:stub:4.4.0")
 }
 
 android {

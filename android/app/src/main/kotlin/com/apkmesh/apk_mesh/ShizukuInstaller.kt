@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -26,7 +27,7 @@ class ShizukuInstaller(context: Context) {
     ).daemon(false)
         .processNameSuffix("apkmesh_installer")
         .tag("apkmesh-shizuku-installer")
-        .version(1)
+        .version(2)
 
     private var activeRequest: InstallRequest? = null
     private var disposed = false
@@ -71,6 +72,13 @@ class ShizukuInstaller(context: Context) {
                     unbind(request)
                     return
                 }
+                Log.d(tag, "Shizuku installer service connected")
+                scheduleTimeout(
+                    request,
+                    installTimeoutMillis,
+                    "SHIZUKU_INSTALL_TIMEOUT",
+                    "Shizuku 安装超时",
+                )
                 val installer = IShizukuInstaller.Stub.asInterface(service)
                 try {
                     executor.execute { runInstall(request, installer) }
@@ -84,6 +92,11 @@ class ShizukuInstaller(context: Context) {
             }
 
             override fun onServiceDisconnected(name: ComponentName) {
+                if (request.completed.get()) {
+                    Log.d(tag, "Shizuku installer service released")
+                    return
+                }
+                Log.w(tag, "Shizuku installer service disconnected")
                 fail(
                     request,
                     "SHIZUKU_SERVICE_DISCONNECTED",
@@ -92,6 +105,13 @@ class ShizukuInstaller(context: Context) {
             }
         }
         try {
+            Log.d(tag, "Binding Shizuku installer service")
+            scheduleTimeout(
+                request,
+                bindingTimeoutMillis,
+                "SHIZUKU_SERVICE_TIMEOUT",
+                "连接 Shizuku 安装服务超时",
+            )
             Shizuku.bindUserService(userServiceArgs, request.connection!!)
         } catch (error: RuntimeException) {
             fail(
@@ -126,6 +146,7 @@ class ShizukuInstaller(context: Context) {
         }
 
         val outcome = try {
+            Log.d(tag, "Calling Shizuku installer for $size bytes")
             ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use {
                 installer.install(it, size)
             }
@@ -138,6 +159,7 @@ class ShizukuInstaller(context: Context) {
             return
         }
         if (outcome == success) {
+            Log.d(tag, "Shizuku installer completed successfully")
             succeed(request)
             return
         }
@@ -168,11 +190,33 @@ class ShizukuInstaller(context: Context) {
 
     private fun complete(request: InstallRequest): Boolean {
         if (!request.completed.compareAndSet(false, true)) return false
+        cancelTimeout(request)
         synchronized(lock) {
             if (activeRequest === request) activeRequest = null
         }
         unbind(request)
         return true
+    }
+
+    private fun scheduleTimeout(
+        request: InstallRequest,
+        delayMillis: Long,
+        code: String,
+        message: String,
+    ) {
+        cancelTimeout(request)
+        val action = Runnable {
+            Log.w(tag, "$message after ${delayMillis}ms")
+            fail(request, code, message)
+        }
+        request.timeoutAction = action
+        mainHandler.postDelayed(action, delayMillis)
+    }
+
+    private fun cancelTimeout(request: InstallRequest) {
+        val action = request.timeoutAction ?: return
+        request.timeoutAction = null
+        mainHandler.removeCallbacks(action)
     }
 
     private fun unbind(request: InstallRequest) {
@@ -195,10 +239,15 @@ class ShizukuInstaller(context: Context) {
     ) {
         val completed = AtomicBoolean(false)
         var connection: ServiceConnection? = null
+        @Volatile
+        var timeoutAction: Runnable? = null
     }
 
     private companion object {
+        const val tag = "ShizukuInstaller"
         const val success = "success"
         const val failurePrefix = "failure:"
+        const val bindingTimeoutMillis = 20_000L
+        const val installTimeoutMillis = 5 * 60_000L
     }
 }
