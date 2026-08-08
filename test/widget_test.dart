@@ -117,16 +117,9 @@ void main() {
     expect(find.text('Example source'), findsOneWidget);
     expect(find.text('4.8'), findsOneWidget);
     expect(find.text('Example Team'), findsOneWidget);
-    expect(find.byType(Chip), findsNWidgets(8));
-    final chips = tester.widgetList<Chip>(find.byType(Chip)).toList();
-    expect(
-      chips.map((chip) => chip.backgroundColor).toSet(),
-      hasLength(chips.length),
-    );
-    expect(
-      chips.map((chip) => chip.labelStyle?.color).toSet(),
-      hasLength(chips.length),
-    );
+    expect(find.byType(Chip), findsNothing);
+    expect(find.byIcon(Icons.source_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.code_outlined), findsOneWidget);
     state.dispose();
   });
 
@@ -166,6 +159,15 @@ void main() {
     expect(find.text('Example description'), findsOneWidget);
     expect(find.text('Example source'), findsOneWidget);
     expect(find.byType(Chip), findsNWidgets(8));
+    final chips = tester.widgetList<Chip>(find.byType(Chip)).toList();
+    expect(
+      chips.map((chip) => chip.backgroundColor).toSet(),
+      hasLength(chips.length),
+    );
+    expect(
+      chips.map((chip) => chip.labelStyle?.color).toSet(),
+      hasLength(chips.length),
+    );
     await tester.ensureVisible(find.text('test.example.app'));
     await tester.tap(find.text('test.example.app'));
     await tester.pumpAndSettle();

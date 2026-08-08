@@ -27,7 +27,7 @@ class AppResultTile extends StatelessWidget {
     final displayName = state.translatedText(app.name) ?? app.name;
     final description =
         state.translatedText(app.description) ?? app.description.trim();
-    final chips = buildAppInfoChips(app);
+    final chips = buildAppInfoChips(app, compact: true);
 
     return Column(
       children: [
@@ -67,7 +67,7 @@ class AppResultTile extends StatelessWidget {
                         ],
                         if (chips.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          Wrap(spacing: 6, runSpacing: 2, children: chips),
+                          _buildCompactInfoRows(chips),
                         ],
                       ],
                     ),
@@ -88,7 +88,27 @@ class AppResultTile extends StatelessWidget {
   }
 }
 
-List<Widget> buildAppInfoChips(AppListing app, {VoidCallback? onPackageTap}) {
+Widget _buildCompactInfoRows(List<Widget> items) {
+  final split = (items.length + 1) ~/ 2;
+  final firstRow = items.sublist(0, split);
+  final secondRow = items.sublist(split);
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Wrap(spacing: 12, runSpacing: 4, children: firstRow),
+      if (secondRow.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Wrap(spacing: 12, runSpacing: 4, children: secondRow),
+      ],
+    ],
+  );
+}
+
+List<Widget> buildAppInfoChips(
+  AppListing app, {
+  VoidCallback? onPackageTap,
+  bool compact = false,
+}) {
   final chips = <Widget>[];
   final values = <({IconData icon, String text, Color seedColor})>[];
 
@@ -114,16 +134,75 @@ List<Widget> buildAppInfoChips(AppListing app, {VoidCallback? onPackageTap}) {
   add(Icons.code_outlined, app.packageName, Colors.cyan);
 
   for (final value in values) {
-    chips.add(
-      _AppInfoChip(
-        icon: value.icon,
-        text: value.text,
-        seedColor: value.seedColor,
-        onPressed: value.icon == Icons.code_outlined ? onPackageTap : null,
-      ),
-    );
+    final onPressed = value.icon == Icons.code_outlined ? onPackageTap : null;
+    if (compact) {
+      chips.add(
+        _AppInfoLabel(icon: value.icon, text: value.text, onPressed: onPressed),
+      );
+    } else {
+      chips.add(
+        _AppInfoChip(
+          icon: value.icon,
+          text: value.text,
+          seedColor: value.seedColor,
+          onPressed: onPressed,
+        ),
+      );
+    }
   }
   return chips;
+}
+
+class _AppInfoLabel extends StatelessWidget {
+  const _AppInfoLabel({required this.icon, required this.text, this.onPressed});
+
+  final IconData icon;
+  final String text;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final foregroundColor = onPressed == null
+        ? theme.colorScheme.onSurfaceVariant
+        : theme.colorScheme.primary;
+    final label = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 180),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: foregroundColor),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: foregroundColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return onPressed == null
+        ? label
+        : Tooltip(
+            message: '按包名查找应用',
+            child: Semantics(
+              button: true,
+              onTap: onPressed,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onPressed,
+                child: label,
+              ),
+            ),
+          );
+  }
 }
 
 class _AppInfoChip extends StatelessWidget {
