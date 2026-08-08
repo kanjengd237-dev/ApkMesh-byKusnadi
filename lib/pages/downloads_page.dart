@@ -20,36 +20,39 @@ class DownloadsPage extends StatelessWidget {
         .where((task) => task.status == DownloadStatus.completed)
         .length;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+      padding: const EdgeInsets.only(top: 24, bottom: 40),
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Text(
-                '下载管理',
-                style: Theme.of(context).textTheme.headlineMedium,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  '下载管理',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
               ),
-            ),
-            PopupMenuButton<DownloadClearAction>(
-              enabled: tasks.isNotEmpty,
-              tooltip: '清理下载',
-              icon: const Icon(Icons.delete_sweep_outlined),
-              onSelected: (action) =>
-                  confirmClearDownloads(context, state, action),
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: DownloadClearAction.all,
-                  child: Text('清除全部'),
-                ),
-                PopupMenuItem(
-                  value: DownloadClearAction.completed,
-                  enabled: completedCount > 0,
-                  child: const Text('清除已下载'),
-                ),
-              ],
-            ),
-          ],
+              PopupMenuButton<DownloadClearAction>(
+                enabled: tasks.isNotEmpty,
+                tooltip: '清理下载',
+                icon: const Icon(Icons.delete_sweep_outlined),
+                onSelected: (action) =>
+                    confirmClearDownloads(context, state, action),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: DownloadClearAction.all,
+                    child: Text('清除全部'),
+                  ),
+                  PopupMenuItem(
+                    value: DownloadClearAction.completed,
+                    enabled: completedCount > 0,
+                    child: const Text('清除已下载'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 20),
         if (tasks.isEmpty)
@@ -192,7 +195,7 @@ class DownloadTaskTile extends StatelessWidget {
             key: ValueKey('download-task-tile-${task.id}'),
             onTap: openDetails,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -269,7 +272,6 @@ class DownloadTaskTile extends StatelessWidget {
         if (showDivider)
           Divider(
             height: 1,
-            indent: leadingWidth + leadingGap,
             color: scheme.outlineVariant.withValues(alpha: .65),
           ),
       ],
