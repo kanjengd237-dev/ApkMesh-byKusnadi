@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
+import '../core/models.dart';
 import '../core/translation_service.dart';
+
+String _themeModeLabel(AppThemeMode mode) => switch (mode) {
+  AppThemeMode.system => '跟随系统',
+  AppThemeMode.light => '浅色',
+  AppThemeMode.dark => '深色',
+};
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({required this.state, super.key});
@@ -13,6 +20,22 @@ class SettingsPage extends StatelessWidget {
     children: [
       Text('设置', style: Theme.of(context).textTheme.headlineMedium),
       const SizedBox(height: 20),
+      ListTile(
+        leading: const Icon(Icons.brightness_6_outlined),
+        title: const Text('主题'),
+        subtitle: Text(_themeModeLabel(state.themeMode)),
+        trailing: DropdownButton<AppThemeMode>(
+          value: state.themeMode,
+          onChanged: (value) {
+            if (value != null) state.setThemeMode(value);
+          },
+          items: [
+            for (final mode in AppThemeMode.values)
+              DropdownMenuItem(value: mode, child: Text(_themeModeLabel(mode))),
+          ],
+        ),
+      ),
+      const Divider(),
       const ListTile(
         leading: Icon(Icons.download_outlined),
         title: Text('下载目录'),

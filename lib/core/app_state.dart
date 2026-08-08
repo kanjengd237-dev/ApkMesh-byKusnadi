@@ -54,6 +54,7 @@ class AppState extends ChangeNotifier {
   final Set<String> _translationQueue = {};
   Timer? _translationQueueTimer;
   TranslationSettings _translationSettings = const TranslationSettings();
+  AppThemeMode _themeMode = AppThemeMode.system;
   String _translationDeviceId = _newTranslationDeviceId();
   SharedPreferences? _preferences;
   late final Future<void> _translationSettingsReady;
@@ -88,6 +89,7 @@ class AppState extends ChangeNotifier {
 
   List<SourceDebugProject> get debugProjects => registry.debugProjects;
   TranslationSettings get translationSettings => _translationSettings;
+  AppThemeMode get themeMode => _themeMode;
 
   String? translatedText(String text) {
     final value = text.trim();
@@ -185,6 +187,13 @@ class AppState extends ChangeNotifier {
   String _translationKey(String text, TranslationSettings settings) =>
       '${settings.provider.name}|${translationLanguageCode(settings.targetLanguage, settings.provider)}|$text';
 
+  void setThemeMode(AppThemeMode mode) {
+    if (_themeMode == mode) return;
+    _themeMode = mode;
+    notifyListeners();
+    unawaited(_persistTranslationSettings());
+  }
+
   void setTranslationProvider(TranslationProvider provider) {
     if (_translationSettings.provider == provider) return;
     _translationSettings = _translationSettings.copyWith(provider: provider);
@@ -234,6 +243,12 @@ class AppState extends ChangeNotifier {
               providerIndex < TranslationProvider.values.length
           ? TranslationProvider.values[providerIndex]
           : TranslationProvider.microsoft;
+      final themeModeIndex =
+          preferences.getInt('theme.mode') ?? AppThemeMode.system.index;
+      _themeMode =
+          themeModeIndex >= 0 && themeModeIndex < AppThemeMode.values.length
+          ? AppThemeMode.values[themeModeIndex]
+          : AppThemeMode.system;
       _translationSettings = TranslationSettings(
         provider: provider,
         targetLanguage:
@@ -282,6 +297,7 @@ class AppState extends ChangeNotifier {
       'translation.googleKey',
       _translationSettings.googlePublicKey,
     );
+    await preferences.setInt('theme.mode', _themeMode.index);
   }
 
   ApkSource _sourceForScript(ApkSourceScript script, {required bool builtIn}) {

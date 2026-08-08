@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/app_state.dart';
+import 'core/models.dart';
 import 'pages/debug_sheet.dart';
 import 'pages/downloads_page.dart';
 import 'pages/home_page.dart';
@@ -30,27 +31,43 @@ class _ApkMeshAppState extends State<ApkMeshApp> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xff315f8c),
-      brightness: Brightness.light,
-    );
-    return AnimatedBuilder(
-      animation: state,
-      builder: (context, _) => MaterialApp(
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: state,
+    builder: (context, _) {
+      final lightScheme = ColorScheme.fromSeed(
+        seedColor: const Color(0xff315f8c),
+        brightness: Brightness.light,
+      );
+      final darkScheme = ColorScheme.fromSeed(
+        seedColor: const Color(0xff315f8c),
+        brightness: Brightness.dark,
+      );
+      return MaterialApp(
         title: 'APK Mesh',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: scheme,
+          colorScheme: lightScheme,
           inputDecorationTheme: const InputDecorationTheme(
             border: OutlineInputBorder(),
           ),
         ),
+        darkTheme: ThemeData(
+          useMaterial3: true,
+          colorScheme: darkScheme,
+          inputDecorationTheme: const InputDecorationTheme(
+            border: OutlineInputBorder(),
+          ),
+        ),
+        themeMode: switch (state.themeMode) {
+          AppThemeMode.system => ThemeMode.system,
+          AppThemeMode.light => ThemeMode.light,
+          AppThemeMode.dark => ThemeMode.dark,
+        },
         home: Shell(state: state),
-      ),
-    );
-  }
+      );
+    },
+  );
 }
 
 class Shell extends StatefulWidget {

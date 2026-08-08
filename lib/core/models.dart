@@ -1,3 +1,5 @@
+enum AppThemeMode { system, light, dark }
+
 enum SourceStatus { enabled, disabled, error }
 
 class ApkSource {

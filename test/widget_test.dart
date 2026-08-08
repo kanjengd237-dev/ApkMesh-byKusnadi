@@ -16,6 +16,25 @@ void main() {
     expect(find.text('设置'), findsOneWidget);
   });
 
+  testWidgets('changes the app theme from settings', (tester) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byIcon(Icons.settings_outlined).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('主题'), findsOneWidget);
+    expect(find.text('跟随系统'), findsWidgets);
+
+    await tester.tap(find.byType(DropdownButton<AppThemeMode>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('深色').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      Theme.of(tester.element(find.text('主题'))).brightness,
+      Brightness.dark,
+    );
+  });
+
   testWidgets('opens the download manager', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
     await tester.tap(find.text('下载'));
