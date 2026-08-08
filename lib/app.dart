@@ -66,6 +66,7 @@ class _ShellState extends State<Shell> {
   bool searchOpen = false;
   bool searchResultsVisible = false;
   bool searchLoading = false;
+  bool searchTranslationLoading = false;
   final searchController = TextEditingController();
   final homeKey = GlobalKey<HomePageState>();
 
@@ -157,10 +158,31 @@ class _ShellState extends State<Shell> {
                         decoration: InputDecoration(
                           hintText: '搜索应用名称或包名',
                           prefixIcon: const Icon(Icons.search, size: 20),
-                          suffixIcon: IconButton(
-                            tooltip: '清空搜索',
-                            onPressed: searchController.clear,
-                            icon: const Icon(Icons.clear, size: 20),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              searchTranslationLoading
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : IconButton(
+                                      tooltip: '翻译为英文',
+                                      onPressed: _translateSearch,
+                                      icon: const Icon(
+                                        Icons.translate_outlined,
+                                        size: 20,
+                                      ),
+                                    ),
+                              IconButton(
+                                tooltip: '清空搜索',
+                                onPressed: searchController.clear,
+                                icon: const Icon(Icons.clear, size: 20),
+                              ),
+                            ],
                           ),
                           filled: true,
                           fillColor: Theme.of(context).colorScheme.surface,
@@ -260,6 +282,29 @@ class _ShellState extends State<Shell> {
   void _handleSearchLoadingChanged(bool loading) {
     if (!mounted || searchLoading == loading) return;
     setState(() => searchLoading = loading);
+  }
+
+  Future<void> _translateSearch() async {
+    final query = searchController.text.trim();
+    if (query.isEmpty || searchTranslationLoading) return;
+    setState(() => searchTranslationLoading = true);
+    try {
+      final translated = await widget.state.translateToEnglish(query);
+      if (mounted && searchController.text.trim() == query) {
+        searchController.value = TextEditingValue(
+          text: translated,
+          selection: TextSelection.collapsed(offset: translated.length),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('翻译失败：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => searchTranslationLoading = false);
+    }
   }
 
   Future<void> _submitSearch() async {

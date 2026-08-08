@@ -25,6 +25,16 @@ void main() {
     expect(find.text('暂无下载任务'), findsOneWidget);
   });
 
+  testWidgets('shows the English translation action when search opens', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('翻译为英文'), findsOneWidget);
+  });
+
   testWidgets('shows a completed empty search state', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
     await tester.tap(find.byTooltip('搜索'));

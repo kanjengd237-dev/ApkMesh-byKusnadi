@@ -95,6 +95,23 @@ class AppState extends ChangeNotifier {
     return _translationCache[_translationKey(value, _translationSettings)];
   }
 
+  Future<String> translateToEnglish(String text) async {
+    final value = text.trim();
+    if (value.isEmpty) return '';
+    await _translationSettingsReady;
+    if (_isDisposing) throw StateError('翻译服务已关闭');
+    final settings = _translationSettings.copyWith(targetLanguage: 'en');
+    final results = await translation.translate(
+      [value],
+      settings: settings,
+      deviceId: _translationDeviceId,
+    );
+    if (results.isEmpty || results.first.trim().isEmpty) {
+      throw const FormatException('翻译接口没有返回结果');
+    }
+    return results.first.trim();
+  }
+
   bool isTranslationLoading(String text) {
     final value = text.trim();
     return value.isNotEmpty &&
