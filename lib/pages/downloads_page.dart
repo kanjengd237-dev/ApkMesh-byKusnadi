@@ -179,84 +179,91 @@ class DownloadTaskTile extends StatelessWidget {
     final hasAppIcon = app?.iconUrl.trim().isNotEmpty ?? false;
     final leadingWidth = hasAppIcon ? 72.0 : 40.0;
     final leadingGap = hasAppIcon ? 16.0 : 12.0;
+    final openDetailsCallback = onOpenDetails;
+    final openDetails = app == null || openDetailsCallback == null
+        ? null
+        : () => openDetailsCallback(context, app);
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: leadingWidth,
-                child: hasAppIcon
-                    ? AppIcon(url: app!.iconUrl, size: 64, borderRadius: 14)
-                    : Align(
-                        alignment: Alignment.topLeft,
-                        child: Icon(icon, color: color),
-                      ),
-              ),
-              SizedBox(width: leadingGap),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      appName.isEmpty ? task.file.label : appName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: ValueKey('download-task-tile-${task.id}'),
+            onTap: openDetails,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: leadingWidth,
+                    child: hasAppIcon
+                        ? AppIcon(url: app!.iconUrl, size: 64, borderRadius: 14)
+                        : Align(
+                            alignment: Alignment.topLeft,
+                            child: Icon(icon, color: color),
+                          ),
+                  ),
+                  SizedBox(width: leadingGap),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          appName.isEmpty ? task.file.label : appName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        if (appDescription.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            appDescription,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                        ],
+                        if (appInfo.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Wrap(spacing: 12, runSpacing: 4, children: appInfo),
+                        ],
+                        if (appName.isNotEmpty &&
+                            task.file.label.trim() != appName) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            task.file.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                        ],
+                        if (detail != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            detail,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        DownloadTaskControls(
+                          task: task,
+                          state: state,
+                          onOpenDetails: onOpenDetails,
+                        ),
+                      ],
                     ),
-                    if (appDescription.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        appDescription,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    if (appInfo.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Wrap(spacing: 12, runSpacing: 4, children: appInfo),
-                    ],
-                    if (appName.isNotEmpty &&
-                        task.file.label.trim() != appName) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        task.file.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    if (detail != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        detail,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    DownloadTaskControls(
-                      task: task,
-                      state: state,
-                      onOpenDetails: onOpenDetails,
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
         if (showDivider)

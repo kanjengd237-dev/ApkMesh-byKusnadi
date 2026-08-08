@@ -96,6 +96,30 @@ void main() {
     state.dispose();
   });
 
+  testWidgets('opens details when tapping a download item', (tester) async {
+    final state = _ControlState();
+    var openedAppName = '';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DownloadTaskTile(
+            task: _completedTask,
+            state: state,
+            onOpenDetails: (_, app) => openedAppName = app.name,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('download-task-tile-download-1')),
+    );
+    await tester.pump();
+
+    expect(openedAppName, 'Example App');
+    state.dispose();
+  });
+
   testWidgets('offers full installation error details from the snackbar', (
     tester,
   ) async {
