@@ -1,0 +1,11 @@
+{
+    "configurations": [
+        
+        {
+            "name": "ApkMesh (Flutter)",
+            "program": "lib/main.dart",
+            "request": "launch",
+            "type": "dart"
+        }
+    ]
+}
