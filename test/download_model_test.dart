@@ -25,6 +25,21 @@ void main() {
       total: 1024,
       filePath: '/downloads/example.apk',
       completedAt: DateTime.utc(2026, 1, 1, 12, 1),
+      app: const AppListing(
+        id: 'https://example.test/apps/example',
+        sourceId: 'example-source',
+        name: 'Example App',
+        packageName: 'com.example.app',
+        version: '1.0.0',
+        size: '10 MB',
+        updatedAt: '2026-01-01',
+        category: 'Tools',
+        sourceName: 'Example source',
+        iconUrl: 'https://example.test/icon.png',
+        description: 'Example description',
+        rating: '4.8',
+        author: 'Example Team',
+      ),
     );
 
     final encoded = task.toJson();
@@ -37,7 +52,12 @@ void main() {
     expect(restored.policy?.allowInstall, isTrue);
     expect(restored.received, 1024);
     expect(restored.filePath, task.filePath);
+    expect(restored.app?.name, 'Example App');
+    expect(restored.app?.iconUrl, 'https://example.test/icon.png');
     expect(restored.file.headers, {'Referer': 'https://example.test/'});
     expect(encoded.toString(), isNot(contains('session=secret')));
+
+    final legacyEncoded = Map<String, dynamic>.from(encoded)..remove('app');
+    expect(DownloadTask.fromJson(legacyEncoded).app, isNull);
   });
 }

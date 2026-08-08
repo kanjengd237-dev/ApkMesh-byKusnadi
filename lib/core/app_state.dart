@@ -869,7 +869,11 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  DownloadTask startDownload(SourceDownload file, String sourceId) {
+  DownloadTask startDownload(
+    SourceDownload file,
+    String sourceId, {
+    AppListing? app,
+  }) {
     final existing = downloadFor(file.url);
     if (existing != null && existing.status == DownloadStatus.downloading) {
       return existing;
@@ -897,6 +901,7 @@ class AppState extends ChangeNotifier {
         status: DownloadStatus.downloading,
         startedAt: now,
         policy: policySnapshot,
+        app: app,
       );
       _downloads.insert(0, task);
     } else {
@@ -910,6 +915,7 @@ class AppState extends ChangeNotifier {
         filePath: null,
         error: null,
         completedAt: null,
+        app: app ?? existing.app,
       );
       _replaceDownload(task, notify: false);
     }
@@ -1048,6 +1054,29 @@ class AppState extends ChangeNotifier {
         category: 'Download',
       );
     }
+  }
+
+  Future<void> deleteDownload(DownloadTask task) async {
+    final current = _downloadById(task.id);
+    if (current == null ||
+        (current.status != DownloadStatus.completed &&
+            current.status != DownloadStatus.failed) ||
+        _installingDownloads.contains(current.id)) {
+      return;
+    }
+
+    await _downloadNotifications.cancel(current.id);
+    try {
+      await host.removeDownloadFiles(current.id, filePath: current.filePath);
+    } catch (error) {
+      debug.add(
+        '删除下载文件失败：${current.file.label} · $error',
+        level: DebugLogLevel.warning,
+        category: 'Download',
+      );
+    }
+    _removeDownload(current.id);
+    debug.add('删除下载：${current.file.label}', category: 'Download');
   }
 
   Future<void> clearDownloads({required bool completedOnly}) async {

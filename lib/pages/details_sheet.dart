@@ -335,6 +335,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
                   file: file,
                   sourceId: widget.app.sourceId,
                   state: widget.state,
+                  app: detail,
                   showDivider: true,
                 ),
               ),
@@ -350,6 +351,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
               file: tile.file,
               sourceId: tile.sourceId,
               state: tile.state,
+              app: tile.app,
               showDivider: index < rows.length - 1,
             );
           }
@@ -835,6 +837,7 @@ class SourceDownloadTile extends StatelessWidget {
     required this.file,
     required this.sourceId,
     required this.state,
+    this.app,
     this.showDivider = true,
     super.key,
   });
@@ -842,6 +845,7 @@ class SourceDownloadTile extends StatelessWidget {
   final SourceDownload file;
   final String sourceId;
   final AppState state;
+  final AppListing? app;
   final bool showDivider;
 
   @override
@@ -965,7 +969,7 @@ class SourceDownloadTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10),
         ),
         onPressed: () {
-          state.startDownload(file, sourceId);
+          state.startDownload(file, sourceId, app: app);
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('已开始下载，可在下载页查看进度')));

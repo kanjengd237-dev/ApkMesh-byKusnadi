@@ -182,6 +182,38 @@ class AppListing {
   final String description;
   final String rating;
   final String author;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'sourceId': sourceId,
+    'name': name,
+    'packageName': packageName,
+    'version': version,
+    'size': size,
+    'updatedAt': updatedAt,
+    'category': category,
+    'sourceName': sourceName,
+    'iconUrl': iconUrl,
+    'description': description,
+    'rating': rating,
+    'author': author,
+  };
+
+  factory AppListing.fromJson(Map<String, dynamic> json) => AppListing(
+    id: _requiredJsonString(json, 'id'),
+    sourceId: _requiredJsonString(json, 'sourceId'),
+    name: _requiredJsonString(json, 'name'),
+    packageName: (json['packageName'] ?? '').toString(),
+    version: (json['version'] ?? '').toString(),
+    size: (json['size'] ?? '').toString(),
+    updatedAt: (json['updatedAt'] ?? '').toString(),
+    category: (json['category'] ?? '').toString(),
+    sourceName: (json['sourceName'] ?? '').toString(),
+    iconUrl: (json['iconUrl'] ?? '').toString(),
+    description: (json['description'] ?? '').toString(),
+    rating: (json['rating'] ?? '').toString(),
+    author: (json['author'] ?? '').toString(),
+  );
 }
 
 class SourceDebugProject {
@@ -353,6 +385,15 @@ DateTime _requiredJsonDateTime(Map<String, dynamic> json, String key) {
   return value;
 }
 
+AppListing? _optionalAppListing(dynamic value) {
+  if (value is! Map) return null;
+  try {
+    return AppListing.fromJson(Map<String, dynamic>.from(value));
+  } on Object {
+    return null;
+  }
+}
+
 class DownloadPolicySnapshot {
   const DownloadPolicySnapshot({
     required this.allowedHosts,
@@ -404,6 +445,7 @@ class DownloadTask {
     this.filePath,
     this.error,
     this.completedAt,
+    this.app,
   });
 
   static const _notProvided = Object();
@@ -420,6 +462,7 @@ class DownloadTask {
   final String? filePath;
   final String? error;
   final DateTime? completedAt;
+  final AppListing? app;
 
   double? get progress =>
       total != null && total! > 0 ? (received / total!).clamp(0.0, 1.0) : null;
@@ -451,6 +494,7 @@ class DownloadTask {
     'filePath': filePath,
     'error': error,
     'completedAt': completedAt?.toIso8601String(),
+    'app': app?.toJson(),
   };
 
   factory DownloadTask.fromJson(Map<String, dynamic> json) {
@@ -481,6 +525,7 @@ class DownloadTask {
       completedAt: json['completedAt'] == null
           ? null
           : DateTime.tryParse(json['completedAt'].toString()),
+      app: _optionalAppListing(json['app']),
     );
   }
 
@@ -494,6 +539,7 @@ class DownloadTask {
     Object? filePath = _notProvided,
     Object? error = _notProvided,
     Object? completedAt = _notProvided,
+    Object? app = _notProvided,
   }) => DownloadTask(
     id: id,
     file: file,
@@ -515,6 +561,7 @@ class DownloadTask {
     completedAt: identical(completedAt, _notProvided)
         ? this.completedAt
         : completedAt as DateTime?,
+    app: identical(app, _notProvided) ? this.app : app as AppListing?,
   );
 }
 

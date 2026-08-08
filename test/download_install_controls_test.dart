@@ -50,6 +50,52 @@ void main() {
     state.dispose();
   });
 
+  testWidgets('offers deleting a completed download before installation', (
+    tester,
+  ) async {
+    final state = _ControlState();
+
+    await tester.pumpWidget(_controlsApp(state));
+
+    expect(find.byTooltip('删除下载'), findsOneWidget);
+    await tester.tap(find.byTooltip('删除下载'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('删除下载？'), findsOneWidget);
+    await tester.tap(find.text('删除'));
+    await tester.pump();
+
+    expect(state.deleted, isTrue);
+    state.dispose();
+  });
+
+  testWidgets('offers deleting a failed download', (tester) async {
+    final state = _ControlState();
+
+    await tester.pumpWidget(_controlsApp(state, task: _failedTask));
+    await tester.tap(find.byTooltip('删除下载'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pump();
+
+    expect(state.deleted, isTrue);
+    state.dispose();
+  });
+
+  testWidgets('opens details for a download with app metadata', (tester) async {
+    final state = _ControlState();
+    var openedAppName = '';
+
+    await tester.pumpWidget(
+      _controlsApp(state, onOpenDetails: (_, app) => openedAppName = app.name),
+    );
+    await tester.tap(find.byTooltip('打开详情'));
+    await tester.pump();
+
+    expect(openedAppName, 'Example App');
+    state.dispose();
+  });
+
   testWidgets('offers full installation error details from the snackbar', (
     tester,
   ) async {
@@ -70,11 +116,22 @@ void main() {
   });
 }
 
-Widget _controlsApp(_ControlState state) => MaterialApp(
-  home: Scaffold(
-    body: DownloadTaskControls(task: _completedTask, state: state),
-  ),
-);
+Widget _controlsApp(
+  _ControlState state, {
+  DownloadTask? task,
+  void Function(BuildContext context, AppListing app)? onOpenDetails,
+}) {
+  final selectedTask = task ?? _completedTask;
+  return MaterialApp(
+    home: Scaffold(
+      body: DownloadTaskControls(
+        task: selectedTask,
+        state: state,
+        onOpenDetails: onOpenDetails,
+      ),
+    ),
+  );
+}
 
 final _completedTask = DownloadTask(
   id: 'download-1',
@@ -91,6 +148,26 @@ final _completedTask = DownloadTask(
     allowInstall: true,
   ),
   filePath: '/tmp/example.apk',
+  app: const AppListing(
+    id: 'https://example.test/apps/example',
+    sourceId: 'missing-source',
+    name: 'Example App',
+    packageName: 'com.example.app',
+    version: '1.0.0',
+    size: '1 MB',
+    updatedAt: '2026-01-01',
+    category: 'Tools',
+    sourceName: 'Example source',
+    iconUrl: 'https://example.test/icon.png',
+    description: 'Example description',
+    rating: '4.8',
+    author: 'Example Team',
+  ),
+);
+
+final _failedTask = _completedTask.copyWith(
+  status: DownloadStatus.failed,
+  error: 'network error',
 );
 
 class _ControlState extends AppState {
@@ -101,6 +178,12 @@ class _ControlState extends AppState {
   final bool installing;
   final String? installError;
   bool opened = false;
+  bool deleted = false;
+
+  @override
+  Future<void> deleteDownload(DownloadTask task) async {
+    deleted = true;
+  }
 
   @override
   ApkInstallInfo? installInfoFor(String downloadId) => info;

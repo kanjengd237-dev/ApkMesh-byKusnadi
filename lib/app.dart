@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'core/app_state.dart';
 import 'core/models.dart';
 import 'pages/debug_sheet.dart';
+import 'pages/details_sheet.dart';
 import 'pages/downloads_page.dart';
 import 'pages/home_page.dart';
 import 'pages/settings_page.dart';
@@ -113,7 +114,11 @@ class _ShellState extends State<Shell> {
         controller: searchController,
         onSearchLoadingChanged: _handleSearchLoadingChanged,
       ),
-      DownloadsPage(state: widget.state),
+      DownloadsPage(
+        state: widget.state,
+        onOpenDetails: (context, app) =>
+            showAppDetails(context, widget.state, app),
+      ),
       SourcesPage(state: widget.state),
       SettingsPage(state: widget.state),
     ];

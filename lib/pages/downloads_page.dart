@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
 import '../core/models.dart';
+import '../widgets/app_icon.dart';
+import '../widgets/app_result_tile.dart';
 import '../widgets/empty_message.dart';
 
 class DownloadsPage extends StatelessWidget {
-  const DownloadsPage({required this.state, super.key});
+  const DownloadsPage({required this.state, this.onOpenDetails, super.key});
   final AppState state;
+  final void Function(BuildContext context, AppListing app)? onOpenDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +63,7 @@ class DownloadsPage extends StatelessWidget {
             (entry) => DownloadTaskTile(
               task: entry.value,
               state: state,
+              onOpenDetails: onOpenDetails,
               showDivider: entry.key < tasks.length - 1,
             ),
           ),
@@ -109,16 +113,50 @@ Future<void> confirmClearDownloads(
   }
 }
 
+Future<void> confirmDeleteDownload(
+  BuildContext context,
+  AppState state,
+  DownloadTask task,
+) async {
+  if (task.status != DownloadStatus.completed &&
+      task.status != DownloadStatus.failed) {
+    return;
+  }
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('删除下载？'),
+      content: Text('将删除“${task.file.label}”及其下载记录。'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('删除'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) {
+    await state.deleteDownload(task);
+  }
+}
+
 class DownloadTaskTile extends StatelessWidget {
   const DownloadTaskTile({
     required this.task,
     required this.state,
+    this.onOpenDetails,
     this.showDivider = true,
     super.key,
   });
 
   final DownloadTask task;
   final AppState state;
+  final void Function(BuildContext context, AppListing app)? onOpenDetails;
   final bool showDivider;
 
   @override
@@ -132,6 +170,15 @@ class DownloadTaskTile extends StatelessWidget {
       DownloadStatus.canceled => (Icons.cancel_outlined, scheme.outline),
     };
     final detail = downloadTaskDetail(task);
+    final app = task.app;
+    final appName = app?.name.trim() ?? '';
+    final appDescription = app?.description.trim() ?? '';
+    final appInfo = app == null
+        ? const <Widget>[]
+        : buildAppInfoChips(app, compact: true);
+    final hasAppIcon = app?.iconUrl.trim().isNotEmpty ?? false;
+    final leadingWidth = hasAppIcon ? 72.0 : 40.0;
+    final leadingGap = hasAppIcon ? 16.0 : 12.0;
 
     return Column(
       children: [
@@ -141,25 +188,54 @@ class DownloadTaskTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
-                width: 40,
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: Icon(icon, color: color),
-                ),
+                width: leadingWidth,
+                child: hasAppIcon
+                    ? AppIcon(url: app!.iconUrl, size: 64, borderRadius: 14)
+                    : Align(
+                        alignment: Alignment.topLeft,
+                        child: Icon(icon, color: color),
+                      ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: leadingGap),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      task.file.label,
+                      appName.isEmpty ? task.file.label : appName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    if (appDescription.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        appDescription,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (appInfo.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(spacing: 12, runSpacing: 4, children: appInfo),
+                    ],
+                    if (appName.isNotEmpty &&
+                        task.file.label.trim() != appName) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        task.file.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                     if (detail != null) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -172,7 +248,11 @@ class DownloadTaskTile extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 8),
-                    DownloadTaskControls(task: task, state: state),
+                    DownloadTaskControls(
+                      task: task,
+                      state: state,
+                      onOpenDetails: onOpenDetails,
+                    ),
                   ],
                 ),
               ),
@@ -182,7 +262,7 @@ class DownloadTaskTile extends StatelessWidget {
         if (showDivider)
           Divider(
             height: 1,
-            indent: 52,
+            indent: leadingWidth + leadingGap,
             color: scheme.outlineVariant.withValues(alpha: .65),
           ),
       ],
@@ -194,11 +274,13 @@ class DownloadTaskControls extends StatefulWidget {
   const DownloadTaskControls({
     required this.task,
     required this.state,
+    this.onOpenDetails,
     super.key,
   });
 
   final DownloadTask task;
   final AppState state;
+  final void Function(BuildContext context, AppListing app)? onOpenDetails;
 
   @override
   State<DownloadTaskControls> createState() => _DownloadTaskControlsState();
@@ -235,6 +317,42 @@ class _DownloadTaskControlsState extends State<DownloadTaskControls> {
         showActionErrorSnackBar(context, summary: '打开失败', error: error);
       }
     }
+  }
+
+  Widget _completedActionRow(
+    BuildContext context,
+    AppState state,
+    DownloadTask task,
+    Widget primaryAction,
+  ) {
+    final onOpenDetails = widget.onOpenDetails;
+    final app = task.app;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: '删除下载',
+            color: Theme.of(context).colorScheme.error,
+            visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+            onPressed: () => confirmDeleteDownload(context, state, task),
+            icon: const Icon(Icons.delete_outline),
+          ),
+          if (app != null && onOpenDetails != null) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: '打开详情',
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+              onPressed: () => onOpenDetails(context, app),
+              icon: const Icon(Icons.article_outlined),
+            ),
+          ],
+          const SizedBox(width: 4),
+          primaryAction,
+        ],
+      ),
+    );
   }
 
   @override
@@ -291,9 +409,11 @@ class _DownloadTaskControlsState extends State<DownloadTaskControls> {
           );
         }
         if (installInfo?.versionMatches == true) {
-          return Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.icon(
+          return _completedActionRow(
+            context,
+            state,
+            task,
+            FilledButton.icon(
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
               ),
@@ -303,9 +423,11 @@ class _DownloadTaskControlsState extends State<DownloadTaskControls> {
             ),
           );
         }
-        return Align(
-          alignment: Alignment.centerRight,
-          child: FilledButton.icon(
+        return _completedActionRow(
+          context,
+          state,
+          task,
+          FilledButton.icon(
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 10),
             ),
@@ -317,10 +439,21 @@ class _DownloadTaskControlsState extends State<DownloadTaskControls> {
       case DownloadStatus.failed:
         return Align(
           alignment: Alignment.centerRight,
-          child: IconButton(
-            tooltip: '重试下载',
-            onPressed: () => state.retryDownload(task),
-            icon: const Icon(Icons.refresh),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: '删除下载',
+                color: Theme.of(context).colorScheme.error,
+                onPressed: () => confirmDeleteDownload(context, state, task),
+                icon: const Icon(Icons.delete_outline),
+              ),
+              IconButton(
+                tooltip: '重试下载',
+                onPressed: () => state.retryDownload(task),
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
           ),
         );
       case DownloadStatus.canceled:
