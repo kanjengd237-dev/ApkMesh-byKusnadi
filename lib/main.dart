@@ -15,6 +15,7 @@ import 'core/app_state.dart';
 import 'core/debug_log.dart';
 import 'core/models.dart';
 import 'core/source_runtime.dart';
+import 'core/translation_service.dart';
 import 'widgets/app_icon.dart';
 import 'widgets/app_result_tile.dart';
 import 'widgets/package_lookup_sheet.dart';
@@ -1789,6 +1790,8 @@ class SettingsPage extends StatelessWidget {
         subtitle: Text('系统默认下载目录'),
       ),
       const Divider(),
+      TranslationSettingsPanel(state: state),
+      const Divider(),
       ListTile(
         leading: Icon(Icons.security_outlined),
         title: Text('安装权限'),
@@ -1815,6 +1818,129 @@ class SettingsPage extends StatelessWidget {
       ),
     ],
   );
+}
+
+class TranslationSettingsPanel extends StatefulWidget {
+  const TranslationSettingsPanel({required this.state, super.key});
+
+  final AppState state;
+
+  @override
+  State<TranslationSettingsPanel> createState() =>
+      _TranslationSettingsPanelState();
+}
+
+class _TranslationSettingsPanelState extends State<TranslationSettingsPanel> {
+  late final TextEditingController _googleKeyController;
+
+  @override
+  void initState() {
+    super.initState();
+    _googleKeyController = TextEditingController(
+      text: widget.state.translationSettings.googlePublicKey,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant TranslationSettingsPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final key = widget.state.translationSettings.googlePublicKey;
+    if (_googleKeyController.text != key) {
+      _googleKeyController.text = key;
+    }
+  }
+
+  @override
+  void dispose() {
+    _googleKeyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = widget.state.translationSettings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.translate_outlined),
+          title: const Text('翻译'),
+          subtitle: Text(
+            '${settings.provider.label} · ${translationLanguageLabel(settings.targetLanguage)}',
+          ),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('自动翻译应用名称和简介'),
+          subtitle: const Text('搜索结果和详情加载后自动请求翻译'),
+          value: settings.autoTranslate,
+          onChanged: widget.state.setAutoTranslate,
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('翻译服务'),
+          trailing: DropdownButton<TranslationProvider>(
+            value: settings.provider,
+            onChanged: (value) {
+              if (value != null) widget.state.setTranslationProvider(value);
+            },
+            items: [
+              for (final provider in TranslationProvider.values)
+                DropdownMenuItem(value: provider, child: Text(provider.label)),
+            ],
+          ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('目标语言'),
+          trailing: DropdownButton<String>(
+            value: settings.targetLanguage,
+            onChanged: (value) {
+              if (value != null) widget.state.setTranslationLanguage(value);
+            },
+            items: [
+              for (final language in const [
+                'system',
+                'zh-CN',
+                'zh-TW',
+                'en',
+                'ja',
+                'ko',
+                'es',
+                'fr',
+                'de',
+                'pt',
+              ])
+                DropdownMenuItem(
+                  value: language,
+                  child: Text(translationLanguageLabel(language)),
+                ),
+            ],
+          ),
+        ),
+        if (settings.provider == TranslationProvider.google)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: TextField(
+              controller: _googleKeyController,
+              obscureText: true,
+              onEditingComplete: () =>
+                  widget.state.setGooglePublicKey(_googleKeyController.text),
+              onSubmitted: widget.state.setGooglePublicKey,
+              decoration: const InputDecoration(
+                labelText: 'Google 公共 API Key（可选）',
+                helperText: '留空时使用 Google Translate 浏览器旧接口。',
+              ),
+            ),
+          ),
+        Text(
+          '翻译文本会发送到所选服务商或其网关。接口不稳定或请求失败时保留原文。',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
 }
 
 enum _DebugSection { overview, requests, webviews, projects, logs }
@@ -2625,6 +2751,10 @@ class _DetailsSheetState extends State<DetailsSheet> {
   DetailLoadPhase phase = DetailLoadPhase.loadingDetails;
   String? error;
   bool _openingBrowser = false;
+  bool? _translationOverride;
+
+  bool get _showTranslation =>
+      _translationOverride ?? widget.state.translationSettings.autoTranslate;
 
   @override
   void initState() {
@@ -2726,6 +2856,15 @@ class _DetailsSheetState extends State<DetailsSheet> {
     _showAppDetails(context, widget.state, selected);
   }
 
+  void _toggleTranslation() {
+    final next = !_showTranslation;
+    setState(() => _translationOverride = next);
+    if (next) {
+      final app = detail ?? widget.app;
+      widget.state.ensureTranslations([app.name, app.description]);
+    }
+  }
+
   void _showDetailsMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -2736,6 +2875,19 @@ class _DetailsSheetState extends State<DetailsSheet> {
   @override
   Widget build(BuildContext context) {
     final displayApp = detail ?? widget.app;
+    if (_showTranslation) {
+      widget.state.ensureTranslations([
+        displayApp.name,
+        displayApp.description,
+      ]);
+    }
+    final displayedName = _showTranslation
+        ? widget.state.translatedText(displayApp.name) ?? displayApp.name
+        : displayApp.name;
+    final displayedDescription = _showTranslation
+        ? widget.state.translatedText(displayApp.description) ??
+              displayApp.description
+        : displayApp.description;
     final metadataChips = buildAppInfoChips(
       displayApp,
       onPackageTap: displayApp.packageName.trim().isEmpty
@@ -2769,7 +2921,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        displayApp.name,
+                        displayedName,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       if (metadataChips.isNotEmpty) ...[
@@ -2789,7 +2941,12 @@ class _DetailsSheetState extends State<DetailsSheet> {
               ),
             if (error != null)
               Text(detail == null ? '源详情加载失败：$error' : '下载链接解析失败：$error'),
-            if (detail != null) ..._buildDetailContent(context, detail!),
+            if (detail != null)
+              ..._buildDetailContent(
+                context,
+                detail!,
+                description: displayedDescription,
+              ),
           ],
         ),
       ),
@@ -2818,6 +2975,18 @@ class _DetailsSheetState extends State<DetailsSheet> {
               : const Icon(Icons.open_in_browser_outlined),
         ),
         IconButton(
+          tooltip: _showTranslation ? '显示原文' : '翻译名称和简介',
+          onPressed: _toggleTranslation,
+          icon: widget.state.isTranslationLoading((detail ?? widget.app).name)
+              ? const SizedBox.square(
+                  dimension: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  _showTranslation ? Icons.translate : Icons.translate_outlined,
+                ),
+        ),
+        IconButton(
           tooltip: '切换源',
           onPressed: _switchSource,
           icon: const Icon(Icons.swap_horiz),
@@ -2826,11 +2995,15 @@ class _DetailsSheetState extends State<DetailsSheet> {
     );
   }
 
-  List<Widget> _buildDetailContent(BuildContext context, AppDetails detail) {
+  List<Widget> _buildDetailContent(
+    BuildContext context,
+    AppDetails detail, {
+    required String description,
+  }) {
     final content = <Widget>[_buildDetailActions(context)];
     content.add(const SizedBox(height: 8));
-    if (detail.description.trim().isNotEmpty) {
-      content.add(_ExpandableDescription(text: detail.description));
+    if (description.trim().isNotEmpty) {
+      content.add(_ExpandableDescription(text: description));
       content.add(const SizedBox(height: 20));
     }
     if (detail.screenshots.isNotEmpty) {

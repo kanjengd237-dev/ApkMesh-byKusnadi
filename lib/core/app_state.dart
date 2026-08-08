@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'debug_log.dart';
 import 'download_notifications.dart';
@@ -10,6 +12,10 @@ import 'models.dart';
 import 'quickjs_source.dart';
 import 'source_import.dart';
 import 'source_runtime.dart';
+import 'translation_service.dart';
+
+String _newTranslationDeviceId() =>
+    'apkmesh-${DateTime.now().microsecondsSinceEpoch}-${math.Random().nextInt(1 << 32)}';
 
 class AppState extends ChangeNotifier {
   AppState() {
@@ -29,6 +35,7 @@ class AppState extends ChangeNotifier {
     _downloadNotifications = DownloadNotifications(
       onAction: _handleDownloadNotificationAction,
     );
+    _translationSettingsReady = _restoreTranslationSettings();
   }
 
   late List<ApkSource> _sources;
@@ -40,7 +47,16 @@ class AppState extends ChangeNotifier {
   late final DownloadNotifications _downloadNotifications;
   final Completer<void> _ready = Completer<void>();
   final DownloadStore _downloadStore = createDownloadStore();
+  final TranslationService translation = TranslationService();
   final List<DownloadTask> _downloads = [];
+  final Map<String, String> _translationCache = {};
+  final Set<String> _translationPending = {};
+  final Set<String> _translationQueue = {};
+  Timer? _translationQueueTimer;
+  TranslationSettings _translationSettings = const TranslationSettings();
+  String _translationDeviceId = _newTranslationDeviceId();
+  SharedPreferences? _preferences;
+  late final Future<void> _translationSettingsReady;
   final Set<String> _resumeAfterInitialize = {};
   final Map<String, int> _pendingDownloadBytes = {};
   final Map<String, int?> _pendingDownloadTotals = {};
@@ -71,6 +87,185 @@ class AppState extends ChangeNotifier {
   }
 
   List<SourceDebugProject> get debugProjects => registry.debugProjects;
+  TranslationSettings get translationSettings => _translationSettings;
+
+  String? translatedText(String text) {
+    final value = text.trim();
+    if (value.isEmpty) return null;
+    return _translationCache[_translationKey(value, _translationSettings)];
+  }
+
+  bool isTranslationLoading(String text) {
+    final value = text.trim();
+    return value.isNotEmpty &&
+        _translationPending.contains(
+          _translationKey(value, _translationSettings),
+        );
+  }
+
+  void ensureTranslations(Iterable<String> texts) {
+    if (_isDisposing) return;
+    for (final rawText in texts) {
+      final text = rawText.trim();
+      if (text.isEmpty) continue;
+      final key = _translationKey(text, _translationSettings);
+      if (_translationCache.containsKey(key) ||
+          _translationPending.contains(key)) {
+        continue;
+      }
+      _translationQueue.add(text);
+    }
+    if (_translationQueue.isNotEmpty && _translationQueueTimer == null) {
+      _translationQueueTimer = Timer(
+        const Duration(milliseconds: 50),
+        _flushTranslationQueue,
+      );
+    }
+  }
+
+  void _flushTranslationQueue() {
+    _translationQueueTimer = null;
+    if (_translationQueue.isEmpty || _isDisposing) return;
+    final texts = _translationQueue.toList(growable: false);
+    _translationQueue.clear();
+    final settings = _translationSettings;
+    final keys = texts
+        .map((text) => _translationKey(text, settings))
+        .toList(growable: false);
+    _translationPending.addAll(keys);
+    unawaited(_runTranslations(texts, settings, keys));
+  }
+
+  Future<void> _runTranslations(
+    List<String> texts,
+    TranslationSettings settings,
+    List<String> keys,
+  ) async {
+    try {
+      final results = await translation.translate(
+        texts,
+        settings: settings,
+        deviceId: _translationDeviceId,
+      );
+      for (var index = 0; index < texts.length; index++) {
+        final result = results[index].trim();
+        if (result.isNotEmpty) _translationCache[keys[index]] = result;
+      }
+    } catch (error) {
+      if (!_isDisposing) {
+        debug.add(
+          '${settings.provider.label} 翻译失败：$error',
+          level: DebugLogLevel.warning,
+          category: 'Translation',
+        );
+      }
+    } finally {
+      _translationPending.removeAll(keys);
+      if (!_isDisposing) notifyListeners();
+    }
+  }
+
+  String _translationKey(String text, TranslationSettings settings) =>
+      '${settings.provider.name}|${translationLanguageCode(settings.targetLanguage, settings.provider)}|$text';
+
+  void setTranslationProvider(TranslationProvider provider) {
+    if (_translationSettings.provider == provider) return;
+    _translationSettings = _translationSettings.copyWith(provider: provider);
+    _translationCache.clear();
+    notifyListeners();
+    unawaited(_persistTranslationSettings());
+  }
+
+  void setTranslationLanguage(String language) {
+    if (_translationSettings.targetLanguage == language) return;
+    _translationSettings = _translationSettings.copyWith(
+      targetLanguage: language,
+    );
+    _translationCache.clear();
+    notifyListeners();
+    unawaited(_persistTranslationSettings());
+  }
+
+  void setAutoTranslate(bool enabled) {
+    if (_translationSettings.autoTranslate == enabled) return;
+    _translationSettings = _translationSettings.copyWith(
+      autoTranslate: enabled,
+    );
+    notifyListeners();
+    unawaited(_persistTranslationSettings());
+  }
+
+  void setGooglePublicKey(String value) {
+    final key = value.trim();
+    if (_translationSettings.googlePublicKey == key) return;
+    _translationSettings = _translationSettings.copyWith(googlePublicKey: key);
+    _translationCache.removeWhere(
+      (cacheKey, _) => cacheKey.startsWith('google|'),
+    );
+    notifyListeners();
+    unawaited(_persistTranslationSettings());
+  }
+
+  Future<void> _restoreTranslationSettings() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      if (_isDisposing) return;
+      _preferences = preferences;
+      final providerIndex = preferences.getInt('translation.provider') ?? 0;
+      final provider =
+          providerIndex >= 0 &&
+              providerIndex < TranslationProvider.values.length
+          ? TranslationProvider.values[providerIndex]
+          : TranslationProvider.microsoft;
+      _translationSettings = TranslationSettings(
+        provider: provider,
+        targetLanguage:
+            preferences.getString('translation.language') ?? 'system',
+        autoTranslate: preferences.getBool('translation.auto') ?? true,
+        googlePublicKey: preferences.getString('translation.googleKey') ?? '',
+      );
+      _translationDeviceId =
+          preferences.getString('translation.deviceId') ??
+          _newTranslationDeviceId();
+      await preferences.setString('translation.deviceId', _translationDeviceId);
+      if (!_isDisposing) notifyListeners();
+    } catch (error) {
+      _translationDeviceId = _newTranslationDeviceId();
+      if (!_isDisposing) {
+        debug.add(
+          '读取翻译设置失败：$error',
+          level: DebugLogLevel.warning,
+          category: 'Translation',
+        );
+      }
+    }
+  }
+
+  Future<void> _persistTranslationSettings() async {
+    await _translationSettingsReady;
+    await _saveTranslationSettings();
+  }
+
+  Future<void> _saveTranslationSettings() async {
+    final preferences = _preferences;
+    if (preferences == null) return;
+    await preferences.setInt(
+      'translation.provider',
+      _translationSettings.provider.index,
+    );
+    await preferences.setString(
+      'translation.language',
+      _translationSettings.targetLanguage,
+    );
+    await preferences.setBool(
+      'translation.auto',
+      _translationSettings.autoTranslate,
+    );
+    await preferences.setString(
+      'translation.googleKey',
+      _translationSettings.googlePublicKey,
+    );
+  }
 
   ApkSource _sourceForScript(ApkSourceScript script, {required bool builtIn}) {
     final SourceManifestProvider? manifest = script is SourceManifestProvider
@@ -195,6 +390,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
+    unawaited(_translationSettingsReady);
     await _restoreDownloads();
     debug.add('正在扫描内置 QuickJS 源', category: 'App');
     var loadedCount = 0;
@@ -986,6 +1182,9 @@ class AppState extends ChangeNotifier {
         unawaited(_downloadNotifications.cancel(task.id));
       }
     }
+    _translationQueueTimer?.cancel();
+    _translationQueueTimer = null;
+    translation.dispose();
     unawaited(host.dispose());
     registry.dispose();
     debug.dispose();

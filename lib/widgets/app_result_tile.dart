@@ -21,7 +21,12 @@ class AppResultTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final description = app.description.trim();
+    if (state.translationSettings.autoTranslate) {
+      state.ensureTranslations([app.name, app.description]);
+    }
+    final displayName = state.translatedText(app.name) ?? app.name;
+    final description =
+        state.translatedText(app.description) ?? app.description.trim();
     final chips = buildAppInfoChips(app);
 
     return Column(
@@ -42,7 +47,7 @@ class AppResultTile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          app.name,
+                          displayName,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleLarge?.copyWith(
