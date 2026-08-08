@@ -1,36 +1,50 @@
 package com.apkmesh.apk_mesh
 
-import android.content.ComponentName
+import android.annotation.SuppressLint
 import android.content.Context
-import android.content.ServiceConnection
+import android.content.IIntentReceiver
+import android.content.IIntentSender
+import android.content.Intent
+import android.content.IntentSender
+import android.content.pm.IPackageInstaller
+import android.content.pm.IPackageInstallerSession
+import android.content.pm.IPackageManager
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
+import android.os.IInterface
 import android.os.Looper
-import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.util.Log
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import org.lsposed.hiddenapibypass.HiddenApiBypass
 import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuBinderWrapper
+import rikka.shizuku.SystemServiceHelper
 
 class ShizukuInstaller(context: Context) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val executor = Executors.newSingleThreadExecutor()
     private val lock = Any()
-    private val userServiceArgs = Shizuku.UserServiceArgs(
-        ComponentName(
-            appContext.packageName,
-            ShizukuInstallerService::class.java.name,
-        ),
-    ).daemon(false)
-        .processNameSuffix("apkmesh_installer")
-        .tag("apkmesh-shizuku-installer")
-        .version(2)
 
     private var activeRequest: InstallRequest? = null
     private var disposed = false
+
+    init {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching { HiddenApiBypass.addHiddenApiExemptions("") }
+                .onFailure { Log.e(tag, "Unable to enable hidden PackageInstaller APIs", it) }
+        }
+    }
 
     fun install(
         filePath: String,
@@ -66,58 +80,20 @@ class ShizukuInstaller(context: Context) {
             return
         }
 
-        request.connection = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName, service: IBinder) {
-                if (request.completed.get()) {
-                    unbind(request)
-                    return
-                }
-                Log.d(tag, "Shizuku installer service connected")
-                scheduleTimeout(
-                    request,
-                    installTimeoutMillis,
-                    "SHIZUKU_INSTALL_TIMEOUT",
-                    "Shizuku 安装超时",
-                )
-                val installer = IShizukuInstaller.Stub.asInterface(service)
-                try {
-                    executor.execute { runInstall(request, installer) }
-                } catch (error: Exception) {
-                    fail(
-                        request,
-                        "SHIZUKU_INSTALL_UNAVAILABLE",
-                        error.message ?: "无法执行 Shizuku 安装",
-                    )
-                }
-            }
-
-            override fun onServiceDisconnected(name: ComponentName) {
-                if (request.completed.get()) {
-                    Log.d(tag, "Shizuku installer service released")
-                    return
-                }
-                Log.w(tag, "Shizuku installer service disconnected")
-                fail(
-                    request,
-                    "SHIZUKU_SERVICE_DISCONNECTED",
-                    "Shizuku 安装服务已断开",
-                )
-            }
-        }
+        Log.d(tag, "Starting Shizuku Binder installation")
+        scheduleTimeout(
+            request,
+            installTimeoutMillis,
+            "SHIZUKU_INSTALL_TIMEOUT",
+            "Shizuku 安装超时",
+        )
         try {
-            Log.d(tag, "Binding Shizuku installer service")
-            scheduleTimeout(
-                request,
-                bindingTimeoutMillis,
-                "SHIZUKU_SERVICE_TIMEOUT",
-                "连接 Shizuku 安装服务超时",
-            )
-            Shizuku.bindUserService(userServiceArgs, request.connection!!)
-        } catch (error: RuntimeException) {
+            executor.execute { runInstall(request) }
+        } catch (error: Exception) {
             fail(
                 request,
-                "SHIZUKU_SERVICE_UNAVAILABLE",
-                error.message ?: "无法连接 Shizuku 安装服务",
+                "SHIZUKU_INSTALL_UNAVAILABLE",
+                error.message ?: "无法执行 Shizuku 安装",
             )
         }
     }
@@ -133,7 +109,7 @@ class ShizukuInstaller(context: Context) {
         executor.shutdownNow()
     }
 
-    private fun runInstall(request: InstallRequest, installer: IShizukuInstaller) {
+    private fun runInstall(request: InstallRequest) {
         val file = File(request.filePath)
         if (!file.isFile) {
             fail(request, "APK_FILE_NOT_FOUND", "找不到要安装的 APK 文件")
@@ -144,30 +120,151 @@ class ShizukuInstaller(context: Context) {
             fail(request, "APK_FILE_INVALID", "APK 文件为空")
             return
         }
+        val packageName = appContext.packageManager
+            .getPackageArchiveInfo(file.path, 0)
+            ?.packageName
+        if (packageName.isNullOrBlank()) {
+            fail(request, "APK_FILE_INVALID", "无法读取 APK 包名")
+            return
+        }
 
-        val outcome = try {
-            Log.d(tag, "Calling Shizuku installer for $size bytes")
-            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use {
-                installer.install(it, size)
+        var packageInstaller: PackageInstaller? = null
+        var session: PackageInstaller.Session? = null
+        var sessionId = invalidSessionId
+        var abandonSession = false
+        try {
+            packageInstaller = createPackageInstaller()
+            val params = PackageInstaller.SessionParams(
+                PackageInstaller.SessionParams.MODE_FULL_INSTALL,
+            ).apply {
+                setAppPackageName(packageName)
+                setSize(size)
             }
-        } catch (error: Exception) {
+            addInstallFlag(params, installReplaceExisting)
+
+            sessionId = packageInstaller.createSession(params)
+            abandonSession = true
+            session = packageInstaller.openSession(sessionId)
+            wrapSessionBinder(session)
+            Log.d(tag, "Created wrapped PackageInstaller session $sessionId for $packageName")
+
+            file.inputStream().use { input ->
+                session.openWrite(baseApkName, 0, size).use { output ->
+                    input.copyTo(output)
+                    session.fsync(output)
+                }
+            }
+            Log.d(tag, "APK stream written to wrapped session $sessionId")
+
+            val receiver = LocalIntentReceiver()
+            session.commit(receiver.intentSender)
+            val result = receiver.awaitResult(resultTimeoutMillis)
+                ?: throw IllegalStateException("等待 PackageInstaller 结果超时")
+            val status = result.getIntExtra(
+                PackageInstaller.EXTRA_STATUS,
+                PackageInstaller.STATUS_FAILURE,
+            )
+            val message = result.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+            if (status != PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                abandonSession = false
+            }
+            Log.d(tag, "Wrapped PackageInstaller session $sessionId returned $status: $message")
+            when (status) {
+                PackageInstaller.STATUS_SUCCESS -> succeed(request)
+                PackageInstaller.STATUS_PENDING_USER_ACTION -> fail(
+                    request,
+                    "SHIZUKU_USER_ACTION_REQUIRED",
+                    "系统仍要求用户确认安装，当前设备不允许 Shizuku 静默安装",
+                )
+                else -> fail(
+                    request,
+                    "SHIZUKU_INSTALL_FAILED",
+                    message ?: "PackageInstaller 安装失败，状态码：$status",
+                )
+            }
+        } catch (error: Throwable) {
+            Log.e(tag, "Shizuku Binder installation failed", error)
             fail(
                 request,
                 "SHIZUKU_INSTALL_FAILED",
-                error.message ?: "Shizuku 安装调用失败",
+                error.message ?: "Shizuku PackageInstaller 安装失败",
             )
-            return
+        } finally {
+            runCatching { session?.close() }
+            if (abandonSession && sessionId != invalidSessionId) {
+                runCatching { packageInstaller?.abandonSession(sessionId) }
+            }
         }
-        if (outcome == success) {
-            Log.d(tag, "Shizuku installer completed successfully")
-            succeed(request)
-            return
+    }
+
+    private fun createPackageInstaller(): PackageInstaller {
+        val packageManagerBinder = SystemServiceHelper.getSystemService("package")
+            ?: throw IllegalStateException("无法连接系统 Package Manager")
+        val packageManager = IPackageManager.Stub.asInterface(
+            ShizukuBinderWrapper(packageManagerBinder),
+        )
+        val installer = IPackageInstaller.Stub.asInterface(
+            ShizukuBinderWrapper(packageManager.packageInstaller.asBinder()),
+        )
+        val userId = Process.myUid() / userIdRange
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                PackageInstaller::class.java.getDeclaredConstructor(
+                    IPackageInstaller::class.java,
+                    String::class.java,
+                    String::class.java,
+                    Int::class.javaPrimitiveType,
+                ).apply { isAccessible = true }
+                    .newInstance(installer, shellPackageName, null, userId)
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O -> {
+                PackageInstaller::class.java.getDeclaredConstructor(
+                    IPackageInstaller::class.java,
+                    String::class.java,
+                    Int::class.javaPrimitiveType,
+                ).apply { isAccessible = true }
+                    .newInstance(installer, shellPackageName, userId)
+            }
+            else -> {
+                PackageInstaller::class.java.getDeclaredConstructor(
+                    Context::class.java,
+                    PackageManager::class.java,
+                    IPackageInstaller::class.java,
+                    String::class.java,
+                    Int::class.javaPrimitiveType,
+                ).apply { isAccessible = true }
+                    .newInstance(
+                        appContext,
+                        appContext.packageManager,
+                        installer,
+                        shellPackageName,
+                        userId,
+                    )
+            }
         }
-        val message = outcome
-            .removePrefix(failurePrefix)
-            .trim()
-            .ifBlank { "Package Manager 未返回成功结果" }
-        fail(request, "SHIZUKU_INSTALL_FAILED", message)
+    }
+
+    @SuppressLint("DiscouragedPrivateApi", "SoonBlockedPrivateApi")
+    private fun wrapSessionBinder(session: PackageInstaller.Session) {
+        val field = PackageInstaller.Session::class.java
+            .getDeclaredField("mSession")
+            .apply { isAccessible = true }
+        val original = field.get(session) as IInterface
+        val wrapped = IPackageInstallerSession.Stub.asInterface(
+            ShizukuBinderWrapper(original.asBinder()),
+        )
+        field.set(session, wrapped)
+    }
+
+    @SuppressLint("DiscouragedPrivateApi")
+    private fun addInstallFlag(
+        params: PackageInstaller.SessionParams,
+        flag: Int,
+    ) {
+        val field = PackageInstaller.SessionParams::class.java
+            .getDeclaredField("installFlags")
+            .apply { isAccessible = true }
+        field.setInt(params, field.getInt(params) or flag)
     }
 
     private fun isAuthorized(): Boolean = try {
@@ -194,7 +291,6 @@ class ShizukuInstaller(context: Context) {
         synchronized(lock) {
             if (activeRequest === request) activeRequest = null
         }
-        unbind(request)
         return true
     }
 
@@ -219,15 +315,6 @@ class ShizukuInstaller(context: Context) {
         mainHandler.removeCallbacks(action)
     }
 
-    private fun unbind(request: InstallRequest) {
-        val connection = request.connection ?: return
-        runCatching {
-            if (Shizuku.pingBinder()) {
-                Shizuku.unbindUserService(userServiceArgs, connection, true)
-            }
-        }
-    }
-
     private fun dispatch(action: () -> Unit) {
         mainHandler.post(action)
     }
@@ -238,16 +325,63 @@ class ShizukuInstaller(context: Context) {
         val onError: (String, String) -> Unit,
     ) {
         val completed = AtomicBoolean(false)
-        var connection: ServiceConnection? = null
         @Volatile
         var timeoutAction: Runnable? = null
     }
 
+    private class LocalIntentReceiver {
+        private val result = AtomicReference<Intent?>()
+        private val latch = CountDownLatch(1)
+        private val localSender = object : IIntentSender.Stub() {
+            override fun send(
+                code: Int,
+                intent: Intent?,
+                resolvedType: String?,
+                finishedReceiver: IIntentReceiver?,
+                requiredPermission: String?,
+                options: Bundle?,
+            ): Int {
+                accept(intent)
+                return 0
+            }
+
+            override fun send(
+                code: Int,
+                intent: Intent?,
+                resolvedType: String?,
+                whitelistToken: IBinder?,
+                finishedReceiver: IIntentReceiver?,
+                requiredPermission: String?,
+                options: Bundle?,
+            ) {
+                accept(intent)
+            }
+        }
+
+        val intentSender: IntentSender = IntentSender::class.java
+            .getDeclaredConstructor(IIntentSender::class.java)
+            .apply { isAccessible = true }
+            .newInstance(localSender)
+
+        fun awaitResult(timeoutMillis: Long): Intent? {
+            if (!latch.await(timeoutMillis, TimeUnit.MILLISECONDS)) return null
+            return result.get()
+        }
+
+        private fun accept(intent: Intent?) {
+            if (intent == null || !result.compareAndSet(null, intent)) return
+            latch.countDown()
+        }
+    }
+
     private companion object {
         const val tag = "ShizukuInstaller"
-        const val success = "success"
-        const val failurePrefix = "failure:"
-        const val bindingTimeoutMillis = 20_000L
+        const val shellPackageName = "com.android.shell"
+        const val baseApkName = "base.apk"
+        const val invalidSessionId = -1
+        const val userIdRange = 100_000
+        const val installReplaceExisting = 0x00000002
+        const val resultTimeoutMillis = 4 * 60_000L
         const val installTimeoutMillis = 5 * 60_000L
     }
 }

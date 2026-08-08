@@ -48,17 +48,6 @@ class ShizukuInstallerService : IShizukuInstaller.Stub {
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL,
             ).apply {
                 setSize(size)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    setInstallReason(PackageManager.INSTALL_REASON_USER)
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    setRequireUserAction(
-                        PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED,
-                    )
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    setPackageSource(PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE)
-                }
             }
             addInstallFlag(params, installReplaceExisting)
 
