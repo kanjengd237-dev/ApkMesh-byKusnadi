@@ -9,6 +9,7 @@ import 'package:gal/gal.dart';
 import 'package:http/http.dart' as http;
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'core/app_state.dart';
 import 'core/debug_log.dart';
@@ -953,7 +954,13 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _SearchLoadingView extends StatefulWidget {
-  const _SearchLoadingView();
+  const _SearchLoadingView({
+    this.icon = Icons.manage_search,
+    this.label = '正在搜索',
+  });
+
+  final IconData icon;
+  final String label;
 
   @override
   State<_SearchLoadingView> createState() => _SearchLoadingViewState();
@@ -1008,10 +1015,10 @@ class _SearchLoadingViewState extends State<_SearchLoadingView>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.manage_search, size: 88, color: scheme.primary),
+              Icon(widget.icon, size: 88, color: scheme.primary),
               const SizedBox(height: 16),
               Text(
-                '正在搜索',
+                widget.label,
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
@@ -2541,6 +2548,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
   List<SourceDownloadProgress> downloads = const [];
   DetailLoadPhase phase = DetailLoadPhase.loadingDetails;
   String? error;
+  bool _openingBrowser = false;
 
   @override
   void initState() {
@@ -2587,6 +2595,68 @@ class _DetailsSheetState extends State<DetailsSheet> {
     }
   }
 
+  Future<void> _openInBrowser() async {
+    if (_openingBrowser) return;
+    final url = (detail?.id ?? widget.app.id).trim();
+    final uri = Uri.tryParse(url);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      _showDetailsMessage('当前应用没有可打开的网页地址');
+      return;
+    }
+
+    late final SourcePolicy policy;
+    try {
+      policy = widget.state.registry.scriptFor(widget.app.sourceId).policy;
+    } catch (value) {
+      _showDetailsMessage('无法读取源权限：$value');
+      return;
+    }
+    if (!policy.allowBrowser || !policy.permits(uri)) {
+      _showDetailsMessage('该源不允许打开此网页');
+      return;
+    }
+
+    setState(() => _openingBrowser = true);
+    try {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) throw StateError('系统没有可用的浏览器');
+    } catch (value) {
+      if (mounted) _showDetailsMessage('浏览器打开失败：$value');
+    } finally {
+      if (mounted) setState(() => _openingBrowser = false);
+    }
+  }
+
+  Future<void> _switchSource() async {
+    final query = (detail?.name ?? widget.app.name).trim();
+    if (query.isEmpty) {
+      _showDetailsMessage('当前应用没有可用于搜索的名称');
+      return;
+    }
+
+    final selected = await showModalBottomSheet<AppListing>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _SourceMatchSheet(
+        query: query,
+        current: widget.app,
+        state: widget.state,
+      ),
+    );
+    if (!mounted || selected == null) return;
+    _showAppDetails(context, widget.state, selected);
+  }
+
+  void _showDetailsMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final displayApp = detail ?? widget.app;
@@ -2628,11 +2698,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
                       ),
                       if (metadataChips.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 2,
-                          children: metadataChips,
-                        ),
+                        _FadingHorizontalChips(children: metadataChips),
                       ],
                     ],
                   ),
@@ -2641,9 +2707,9 @@ class _DetailsSheetState extends State<DetailsSheet> {
             ),
             const SizedBox(height: 24),
             if (detail == null && error == null)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: CircularProgressIndicator()),
+              const _SearchLoadingView(
+                icon: Icons.article_outlined,
+                label: '正在加载详情',
               ),
             if (error != null)
               Text(detail == null ? '源详情加载失败：$error' : '下载链接解析失败：$error'),
@@ -2654,8 +2720,39 @@ class _DetailsSheetState extends State<DetailsSheet> {
     );
   }
 
+  Widget _buildDetailActions(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Divider(
+            height: 1,
+            thickness: 1,
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          tooltip: '浏览器打开',
+          onPressed: _openingBrowser ? null : _openInBrowser,
+          icon: _openingBrowser
+              ? const SizedBox.square(
+                  dimension: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.open_in_browser_outlined),
+        ),
+        IconButton(
+          tooltip: '切换源',
+          onPressed: _switchSource,
+          icon: const Icon(Icons.swap_horiz),
+        ),
+      ],
+    );
+  }
+
   List<Widget> _buildDetailContent(BuildContext context, AppDetails detail) {
-    final content = <Widget>[];
+    final content = <Widget>[_buildDetailActions(context)];
+    content.add(const SizedBox(height: 8));
     if (detail.description.trim().isNotEmpty) {
       content.add(_ExpandableDescription(text: detail.description));
       content.add(const SizedBox(height: 20));
@@ -2740,6 +2837,284 @@ class _DetailsSheetState extends State<DetailsSheet> {
       );
     }
     return content;
+  }
+}
+
+class _FadingHorizontalChips extends StatefulWidget {
+  const _FadingHorizontalChips({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  State<_FadingHorizontalChips> createState() => _FadingHorizontalChipsState();
+}
+
+class _FadingHorizontalChipsState extends State<_FadingHorizontalChips> {
+  late final ScrollController _controller;
+  bool _fadeLeft = false;
+  bool _fadeRight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ScrollController()..addListener(_updateFadeEdges);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFadeEdges());
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_updateFadeEdges)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _updateFadeEdges() {
+    if (!_controller.hasClients) return;
+    final position = _controller.position;
+    final fadeLeft = position.pixels > 0.5;
+    final fadeRight = position.pixels < position.maxScrollExtent - 0.5;
+    if (!mounted || (fadeLeft == _fadeLeft && fadeRight == _fadeRight)) {
+      return;
+    }
+    setState(() {
+      _fadeLeft = fadeLeft;
+      _fadeRight = fadeRight;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = SingleChildScrollView(
+      controller: _controller,
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          for (var index = 0; index < widget.children.length; index++) ...[
+            if (index > 0) const SizedBox(width: 6),
+            widget.children[index],
+          ],
+        ],
+      ),
+    );
+    if (!_fadeLeft && !_fadeRight) {
+      return SizedBox(height: 40, child: chips);
+    }
+
+    final colors = _fadeLeft && _fadeRight
+        ? <Color>[
+            Colors.transparent,
+            Colors.black,
+            Colors.black,
+            Colors.transparent,
+          ]
+        : _fadeLeft
+        ? <Color>[Colors.transparent, Colors.black, Colors.black]
+        : <Color>[Colors.black, Colors.black, Colors.transparent];
+    final stops = _fadeLeft && _fadeRight
+        ? const [0.0, 0.08, 0.92, 1.0]
+        : _fadeLeft
+        ? const [0.0, 0.08, 1.0]
+        : const [0.0, 0.92, 1.0];
+    return SizedBox(
+      height: 40,
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) =>
+            LinearGradient(colors: colors, stops: stops).createShader(bounds),
+        child: chips,
+      ),
+    );
+  }
+}
+
+class _SourceMatchSheet extends StatefulWidget {
+  const _SourceMatchSheet({
+    required this.query,
+    required this.current,
+    required this.state,
+  });
+
+  final String query;
+  final AppListing current;
+  final AppState state;
+
+  @override
+  State<_SourceMatchSheet> createState() => _SourceMatchSheetState();
+}
+
+class _SourceMatchSheetState extends State<_SourceMatchSheet> {
+  final _listKey = GlobalKey<AnimatedListState>();
+  final _seen = <String>{};
+  final _sourceErrors = <String, String>{};
+  final _matches = <AppListing>[];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_search());
+  }
+
+  Future<void> _search() async {
+    try {
+      await widget.state.searchPage(
+        widget.query,
+        page: 1,
+        onSourcePage: _handleSourcePage,
+      );
+      if (!mounted) return;
+      setState(() => _loading = false);
+    } catch (value) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _sourceErrors['search'] = value.toString();
+    }
+  }
+
+  void _handleSourcePage(SourceSearchPage page) {
+    if (!page.succeeded) {
+      _sourceErrors[page.sourceName] = page.error ?? '源搜索失败';
+      return;
+    }
+    for (final app in page.results) {
+      final key = '${app.sourceId}:${app.id}';
+      final isCurrent =
+          app.sourceId == widget.current.sourceId &&
+          app.id == widget.current.id;
+      if (isCurrent ||
+          app.name.trim() != widget.query ||
+          !_seen.add(key) ||
+          !mounted) {
+        continue;
+      }
+      final index = _matches.length;
+      setState(() => _matches.add(app));
+      _listKey.currentState?.insertItem(
+        index,
+        duration: const Duration(milliseconds: 260),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .68,
+        minChildSize: .38,
+        maxChildSize: .94,
+        builder: (context, controller) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 16, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '切换源',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SelectableText(
+                  widget.query,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            SizedBox(
+              height: 3,
+              child: _loading
+                  ? const LinearProgressIndicator(minHeight: 3)
+                  : const SizedBox.shrink(),
+            ),
+            Expanded(child: _buildResults(controller)),
+            if (!_loading && _sourceErrors.isNotEmpty && _matches.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+                child: Text(
+                  '部分源搜索失败：${_sourceErrors.keys.join('、')}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResults(ScrollController controller) {
+    if (_matches.isEmpty) {
+      if (_loading) {
+        return const _SearchLoadingView(
+          icon: Icons.manage_search,
+          label: '正在搜索',
+        );
+      }
+      final failed = _sourceErrors.isNotEmpty;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(failed ? Icons.error_outline : Icons.search_off, size: 48),
+              const SizedBox(height: 12),
+              Text(
+                failed ? '同名应用搜索失败' : '没有找到完全同名的应用',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                failed ? _sourceErrors.values.join('\n') : '仅展示所有启用源的第一页结果。',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return AnimatedList(
+      key: _listKey,
+      controller: controller,
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+      initialItemCount: _matches.length,
+      itemBuilder: (context, index, animation) {
+        final app = _matches[index];
+        return SizeTransition(
+          sizeFactor: animation,
+          child: AppResultTile(
+            app: app,
+            state: widget.state,
+            onOpen: (selected) => Navigator.of(context).pop(selected),
+            showDivider: index < _matches.length - 1,
+          ),
+        );
+      },
+    );
   }
 }
 

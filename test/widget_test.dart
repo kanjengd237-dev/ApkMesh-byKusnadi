@@ -128,6 +128,7 @@ void main() {
     expect(find.text('Example description'), findsOneWidget);
     expect(find.text('Example source'), findsOneWidget);
     expect(find.byType(Chip), findsNWidgets(8));
+    await tester.ensureVisible(find.text('test.example.app'));
     await tester.tap(find.text('test.example.app'));
     await tester.pumpAndSettle();
     expect(find.text('按包名查找'), findsOneWidget);
