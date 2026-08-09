@@ -119,6 +119,33 @@ void main() {
     expect(restored.searchTabSourceIds, ['source-b', 'source-a']);
     restored.dispose();
   });
+
+  test(
+    'manual installation does not require source install capability',
+    () async {
+      final host = _InstallHost(ShizukuStatus.unsupported);
+      final state = AppState(host: host);
+      final task = DownloadTask(
+        id: 'manual-install',
+        file: const SourceDownload(
+          label: 'example.apk',
+          url: 'https://example.test/example.apk',
+          size: '1 MB',
+        ),
+        sourceId: 'unavailable-source',
+        status: DownloadStatus.completed,
+        startedAt: DateTime(2026, 1, 1),
+        policy: const DownloadPolicySnapshot(allowedHosts: ['example.test']),
+        filePath: '/downloads/example.apk',
+      );
+
+      expect(await state.installTask(task), isTrue);
+      expect(host.installs, hasLength(1));
+      expect(host.installs.single.policy.allowInstall, isFalse);
+      expect(host.installs.single.userInitiated, isTrue);
+      state.dispose();
+    },
+  );
 }
 
 class _InstallHost extends DemoHostApi implements SourceHostConcurrencyApi {
@@ -127,6 +154,7 @@ class _InstallHost extends DemoHostApi implements SourceHostConcurrencyApi {
   final ShizukuStatus status;
   final methods = <InstallMethod>[];
   final concurrency = <SourceConcurrencySettings>[];
+  final installs = <({SourcePolicy policy, bool userInitiated})>[];
 
   @override
   void setSourceConcurrency(SourceConcurrencySettings settings) {
@@ -144,6 +172,19 @@ class _InstallHost extends DemoHostApi implements SourceHostConcurrencyApi {
 
   @override
   Future<ShizukuStatus> requestShizukuPermission() async => status;
+
+  @override
+  Future<bool> install(
+    String filePath, {
+    required SourcePolicy policy,
+    bool userInitiated = false,
+  }) async {
+    if (!policy.permitsInstall(userInitiated: userInitiated)) {
+      throw StateError('源未声明安装权限');
+    }
+    installs.add((policy: policy, userInitiated: userInitiated));
+    return true;
+  }
 
   @override
   void setInstallMethod(InstallMethod method) {

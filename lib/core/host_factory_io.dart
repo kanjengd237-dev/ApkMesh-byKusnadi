@@ -754,7 +754,9 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
     required SourcePolicy policy,
     bool userInitiated = false,
   }) async {
-    if (!policy.allowInstall) throw StateError('源未声明安装权限');
+    if (!policy.permitsInstall(userInitiated: userInitiated)) {
+      throw StateError('源未声明安装权限');
+    }
     if (!supportsInstall) throw UnsupportedError('当前平台不支持 APK 安装');
     if (_installMethod == InstallMethod.shizuku) {
       if (!userInitiated) {

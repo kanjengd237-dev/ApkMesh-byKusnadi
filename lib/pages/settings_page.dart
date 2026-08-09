@@ -104,7 +104,7 @@ class SettingsPage extends StatelessWidget {
                           icon: Icons.security_outlined,
                           title: '安装权限',
                           paragraphs: const [
-                            'APK 安装仅在 Android 平台可用。安装操作必须由用户主动确认，并受源权限策略约束。',
+                            'APK 安装仅在 Android 平台可用。用户点击安装不受源的安装权限声明限制；源脚本主动调用安装时仍需声明对应权限。',
                           ],
                         ),
                 ),
@@ -120,7 +120,7 @@ class SettingsPage extends StatelessWidget {
                   paragraphs: [
                     '请只导入你有权访问和使用的站点源，并遵守对应站点的服务条款与当地法律。',
                     'APK Mesh 不验证第三方下载内容。安装前请核验应用来源、包名、版本和签名，并使用可信的安全工具检查文件。',
-                    '源声明的网络、浏览器、下载和安装权限会限制其宿主能力，但不能替代对第三方内容的人工判断。',
+                    '源声明的网络、浏览器、下载和安装权限会限制脚本可调用的宿主能力，但不会阻止用户手动安装已下载的 APK。',
                   ],
                 ),
                 const Divider(),

@@ -37,6 +37,15 @@ void main() {
     expect(policy.permits(Uri.parse('file:///tmp/app.apk')), isFalse);
   });
 
+  test('source policy only requires install capability for script calls', () {
+    const undeclared = SourcePolicy(allowedHosts: {});
+    const declared = SourcePolicy(allowedHosts: {}, allowInstall: true);
+
+    expect(undeclared.permitsInstall(userInitiated: true), isTrue);
+    expect(undeclared.permitsInstall(userInitiated: false), isFalse);
+    expect(declared.permitsInstall(userInitiated: false), isTrue);
+  });
+
   test('download task estimates remaining time from transfer speed', () {
     final task = DownloadTask(
       id: 'download-1',

@@ -31,6 +31,9 @@ class SourcePolicy {
   final bool allowDownload;
   final bool allowInstall;
 
+  bool permitsInstall({required bool userInitiated}) =>
+      userInitiated || allowInstall;
+
   bool permits(Uri uri) {
     if (uri.scheme != 'https' && uri.scheme != 'http') return false;
     final host = uri.host.toLowerCase();

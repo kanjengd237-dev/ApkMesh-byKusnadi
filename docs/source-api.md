@@ -119,7 +119,7 @@ async debug(projectId, input) {
 - `apkmesh.request(url, options)`：受 manifest 网络权限限制的 HTTP 请求；`network: ['*']` 可显式允许任意 `http/https` 主机。
 - `apkmesh.browser.open(url)`：打开隔离的隐藏 WebView 标签页，支持 `waitFor`、`waitForUrlChange`、`query` 和 `queryAll`。`waitForUrlChange` 会等待页面导航或 WebView 下载事件产生不同 URL，并返回该 URL，适用于由页面 JavaScript 生成下载地址的站点。
 - `apkmesh.download(url, options)`：创建受 manifest 网络权限和下载权限约束的下载任务并返回本地文件路径。`options` 可包含 `fileName` 和额外 HTTP `headers`。
-- `apkmesh.install(filePath)`：经用户确认后调用系统安装器；源不能静默安装。Shizuku 安装只能由应用界面的“安装”按钮发起，源直接调用时不会获得 Shizuku 特权。Android 会在需要时先打开未知来源安装权限页面。
+- `apkmesh.install(filePath)`：源声明 `permissions.install: true` 后，可经用户确认调用系统安装器；源不能静默安装。Shizuku 安装只能由应用界面的“安装”按钮发起，源直接调用时不会获得 Shizuku 特权。Android 会在需要时先打开未知来源安装权限页面。
 - `apkmesh.detailProgress(requestId, update)`：向宿主报告分阶段详情中的下载项解析结果；只能用于源声明的 `resolveDownloads()` 调用，不能替代权限检查。
 
-所有能力均按 manifest 权限授权。网络重定向的每一跳都会重新检查协议和 manifest 网络权限；`network: ['*']` 是源对临时下载主机的显式信任声明，下载内容和第三方源的安全性仍由使用者自行确认。脚本没有任意文件读写、系统命令、Cookie 导出或后台安装权限。生产构建中是否内置第三方源，应根据站点授权、条款和安全审阅结果明确决定。
+源脚本调用的能力均按 manifest 权限授权；安装权限仅约束脚本调用 `apkmesh.install()`，不限制用户在应用界面点击“安装”处理已下载的 APK。网络重定向的每一跳都会重新检查协议和 manifest 网络权限；`network: ['*']` 是源对临时下载主机的显式信任声明，下载内容和第三方源的安全性仍由使用者自行确认。脚本没有任意文件读写、系统命令、Cookie 导出或后台安装权限。生产构建中是否内置第三方源，应根据站点授权、条款和安全审阅结果明确决定。
