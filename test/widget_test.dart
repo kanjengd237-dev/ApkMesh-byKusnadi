@@ -1,6 +1,7 @@
 import 'package:apk_mesh/core/app_state.dart';
 import 'package:apk_mesh/core/models.dart';
 import 'package:apk_mesh/core/source_runtime.dart';
+import 'package:apk_mesh/core/translation_service.dart';
 import 'package:apk_mesh/main.dart';
 import 'package:apk_mesh/widgets/app_result_tile.dart';
 import 'package:flutter/material.dart';
@@ -113,6 +114,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.byType(RadioListTile<DownloadMethod>), findsNWidgets(3));
+  });
+
+  testWidgets('opens translation configuration in a bottom sheet', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byIcon(Icons.settings_outlined).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('自动翻译应用名称和简介'), findsNothing);
+    expect(find.byType(DropdownButton<TranslationProvider>), findsNothing);
+
+    await tester.tap(find.text('翻译'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('翻译设置'), findsOneWidget);
+    expect(find.text('自动翻译应用名称和简介'), findsOneWidget);
+    expect(find.byType(DropdownButton<TranslationProvider>), findsOneWidget);
+    expect(find.byType(DropdownButton<String>), findsOneWidget);
+
+    await tester.tap(find.byType(DropdownButton<TranslationProvider>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Google Translate').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Google 公共 API Key（可选）'), findsOneWidget);
+
+    await tester.tap(find.byType(DropdownButton<TranslationProvider>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('微软 Edge/Bing').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Google 公共 API Key（可选）'), findsNothing);
   });
 
   testWidgets('configures unbounded source concurrency in a bottom sheet', (

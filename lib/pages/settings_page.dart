@@ -671,17 +671,44 @@ class _ShizukuInstallationSettingsPanelState
   );
 }
 
-class TranslationSettingsPanel extends StatefulWidget {
+class TranslationSettingsPanel extends StatelessWidget {
   const TranslationSettingsPanel({required this.state, super.key});
 
   final AppState state;
 
   @override
-  State<TranslationSettingsPanel> createState() =>
-      _TranslationSettingsPanelState();
+  Widget build(BuildContext context) {
+    final settings = state.translationSettings;
+    return ListTile(
+      contentPadding: _settingsTilePadding,
+      leading: const Icon(Icons.translate_outlined),
+      title: const Text('翻译'),
+      subtitle: Text(
+        '${settings.provider.label} · ${translationLanguageLabel(settings.targetLanguage)}',
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        builder: (_) => _TranslationSettingsSheet(state: state),
+      ),
+    );
+  }
 }
 
-class _TranslationSettingsPanelState extends State<TranslationSettingsPanel> {
+class _TranslationSettingsSheet extends StatefulWidget {
+  const _TranslationSettingsSheet({required this.state});
+
+  final AppState state;
+
+  @override
+  State<_TranslationSettingsSheet> createState() =>
+      _TranslationSettingsSheetState();
+}
+
+class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
   late final TextEditingController _googleKeyController;
 
   @override
@@ -693,7 +720,7 @@ class _TranslationSettingsPanelState extends State<TranslationSettingsPanel> {
   }
 
   @override
-  void didUpdateWidget(covariant TranslationSettingsPanel oldWidget) {
+  void didUpdateWidget(covariant _TranslationSettingsSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
     final key = widget.state.translationSettings.googlePublicKey;
     if (_googleKeyController.text != key) {
@@ -709,111 +736,132 @@ class _TranslationSettingsPanelState extends State<TranslationSettingsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = widget.state.translationSettings;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ListTile(
-          contentPadding: _settingsTilePadding,
-          leading: const Icon(Icons.translate_outlined),
-          title: const Text('翻译'),
-          subtitle: Text(
-            '${settings.provider.label} · ${translationLanguageLabel(settings.targetLanguage)}',
-          ),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showInformationSheet(
-            context,
-            icon: Icons.translate_outlined,
-            title: '翻译',
-            paragraphs: const [
-              '启用自动翻译后，应用名称和简介会发送到所选翻译服务。翻译失败时界面保留原文。',
-              'Google 公共 API Key 仅保存在本机设置中；留空时使用兼容的浏览器接口。',
-            ],
-          ),
-        ),
-        SwitchListTile(
-          contentPadding: _settingsTilePadding,
-          title: const Text('自动翻译应用名称和简介'),
-          subtitle: const Text('搜索结果和详情加载后自动请求翻译'),
-          value: settings.autoTranslate,
-          onChanged: widget.state.setAutoTranslate,
-        ),
-        ListTile(
-          contentPadding: _settingsTilePadding,
-          title: const Text('翻译服务'),
-          trailing: SizedBox(
-            width: _settingsControlWidth,
-            child: DropdownButton<TranslationProvider>(
-              isExpanded: true,
-              value: settings.provider,
-              onChanged: (value) {
-                if (value != null) widget.state.setTranslationProvider(value);
-              },
-              items: [
-                for (final provider in TranslationProvider.values)
-                  DropdownMenuItem(
-                    value: provider,
-                    child: Text(provider.label),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        ListTile(
-          contentPadding: _settingsTilePadding,
-          title: const Text('目标语言'),
-          trailing: SizedBox(
-            width: _settingsControlWidth,
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: settings.targetLanguage,
-              onChanged: (value) {
-                if (value != null) widget.state.setTranslationLanguage(value);
-              },
-              items: [
-                for (final language in const [
-                  'system',
-                  'zh-CN',
-                  'zh-TW',
-                  'en',
-                  'ja',
-                  'ko',
-                  'es',
-                  'fr',
-                  'de',
-                  'pt',
-                ])
-                  DropdownMenuItem(
-                    value: language,
-                    child: Text(translationLanguageLabel(language)),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        if (settings.provider == TranslationProvider.google)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: TextField(
-              controller: _googleKeyController,
-              obscureText: true,
-              onEditingComplete: () =>
-                  widget.state.setGooglePublicKey(_googleKeyController.text),
-              onSubmitted: widget.state.setGooglePublicKey,
-              decoration: const InputDecoration(
-                labelText: 'Google 公共 API Key（可选）',
-                helperText: '留空时使用 Google Translate 浏览器旧接口。',
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: AnimatedBuilder(
+        animation: widget.state,
+        builder: (context, _) {
+          final settings = widget.state.translationSettings;
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.translate_outlined),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            '翻译设置',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '关闭',
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('自动翻译应用名称和简介'),
+                      subtitle: const Text('搜索结果和详情加载后自动请求翻译'),
+                      value: settings.autoTranslate,
+                      onChanged: widget.state.setAutoTranslate,
+                    ),
+                    const Divider(),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('翻译服务'),
+                      trailing: SizedBox(
+                        width: _settingsControlWidth,
+                        child: DropdownButton<TranslationProvider>(
+                          isExpanded: true,
+                          value: settings.provider,
+                          onChanged: (value) {
+                            if (value != null) {
+                              widget.state.setTranslationProvider(value);
+                            }
+                          },
+                          items: [
+                            for (final provider in TranslationProvider.values)
+                              DropdownMenuItem(
+                                value: provider,
+                                child: Text(provider.label),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('目标语言'),
+                      trailing: SizedBox(
+                        width: _settingsControlWidth,
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: settings.targetLanguage,
+                          onChanged: (value) {
+                            if (value != null) {
+                              widget.state.setTranslationLanguage(value);
+                            }
+                          },
+                          items: [
+                            for (final language in const [
+                              'system',
+                              'zh-CN',
+                              'zh-TW',
+                              'en',
+                              'ja',
+                              'ko',
+                              'es',
+                              'fr',
+                              'de',
+                              'pt',
+                            ])
+                              DropdownMenuItem(
+                                value: language,
+                                child: Text(translationLanguageLabel(language)),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (settings.provider == TranslationProvider.google) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _googleKeyController,
+                        obscureText: true,
+                        onEditingComplete: () => widget.state
+                            .setGooglePublicKey(_googleKeyController.text),
+                        onSubmitted: widget.state.setGooglePublicKey,
+                        decoration: const InputDecoration(
+                          labelText: 'Google 公共 API Key（可选）',
+                          helperText: '留空时使用 Google Translate 浏览器旧接口。',
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    Text(
+                      '翻译文本会发送到所选服务商或其网关。接口不稳定或请求失败时保留原文。',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        Padding(
-          padding: _settingsTilePadding,
-          child: Text(
-            '翻译文本会发送到所选服务商或其网关。接口不稳定或请求失败时保留原文。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-      ],
+          );
+        },
+      ),
     );
   }
 }
