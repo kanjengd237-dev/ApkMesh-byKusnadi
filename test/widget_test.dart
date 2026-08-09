@@ -232,6 +232,52 @@ void main() {
     state.dispose();
   });
 
+  testWidgets('opens the selected source test sheet and updates its status', (
+    tester,
+  ) async {
+    final state = AppState(host: DemoHostApi());
+    state.registry.replace(_TestDebugSource());
+    state.addSource(
+      const ApkSource(
+        id: _TestDebugSource.sourceId,
+        name: '测试源',
+        homepage: 'example.test',
+        version: '1.0.0',
+        description: '用于测试源调试项目。',
+        status: SourceStatus.enabled,
+        builtIn: false,
+      ),
+    );
+    await state.initialize();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: SourcesPage(state: state)),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('查看测试项目').last);
+    await tester.pumpAndSettle();
+    expect(find.text('执行搜索'), findsOneWidget);
+
+    await tester.tap(find.text('执行搜索'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(find.text('正在测试'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(find.text('测试成功'), findsOneWidget);
+    await tester.drag(find.byType(ListView).last, const Offset(0, -400));
+    await tester.pump();
+    expect(find.text('测试结果'), findsOneWidget);
+    expect(find.text('返回 1 条结果'), findsNWidgets(2));
+    await tester.tap(find.byTooltip('关闭').last);
+    await tester.pumpAndSettle();
+
+    state.dispose();
+  });
+
   testWidgets('opens the source debug bottom sheet', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
     await tester.tap(find.byTooltip('调试'));
@@ -241,4 +287,61 @@ void main() {
     expect(find.text('WebView 状态'), findsOneWidget);
     expect(find.text('运行日志'), findsOneWidget);
   });
+}
+
+class _TestDebugSource implements ApkSourceScript, DebugProjectSource {
+  static const sourceId = 'test-debug-source';
+  static const project = SourceDebugProject(
+    sourceId: sourceId,
+    sourceName: '测试源',
+    id: 'search',
+    name: '执行搜索',
+    description: '执行一个可控的异步测试。',
+    inputLabel: '关键词',
+    placeholder: '输入关键词',
+    defaultInput: 'hello',
+  );
+
+  @override
+  List<SourceDebugProject> get debugProjects => const [project];
+
+  @override
+  String get id => sourceId;
+
+  @override
+  String get name => '测试源';
+
+  @override
+  SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  Future<AppDetails> details(String appId, SourceHostApi host) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<DebugProjectResult> runDebugProject(
+    SourceDebugProject project,
+    String input,
+    SourceHostApi host,
+  ) async {
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    return DebugProjectResult(
+      projectId: project.id,
+      sourceId: sourceId,
+      title: '搜索完成',
+      summary: '返回 1 条结果',
+      data: {'input': input},
+    );
+  }
+
+  @override
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async => const [];
 }

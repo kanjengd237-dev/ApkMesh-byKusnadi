@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
 import '../core/models.dart';
+import 'source_debug_test_sheet.dart';
 import 'source_test_sheet.dart';
 
 enum _SourceBulkAction { selectAll, invert, range, enable, disable }
@@ -533,6 +534,8 @@ class SourceTile extends StatelessWidget {
                 children: [
                   PopupMenuButton<SourceDebugProject>(
                     tooltip: '查看测试项目',
+                    onSelected: (project) =>
+                        showSourceDebugTestSheet(context, state, project),
                     itemBuilder: (context) => projects.isEmpty
                         ? const [
                             PopupMenuItem<SourceDebugProject>(
