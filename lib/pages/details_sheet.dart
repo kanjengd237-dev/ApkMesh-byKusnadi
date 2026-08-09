@@ -36,6 +36,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
   DetailLoadPhase phase = DetailLoadPhase.loadingDetails;
   String? error;
   bool _openingBrowser = false;
+  bool _loadingDetails = false;
   bool? _translationOverride;
 
   bool get _showTranslation =>
@@ -61,15 +62,31 @@ class _DetailsSheetState extends State<DetailsSheet> {
           )
           .toList(growable: false);
       phase = DetailLoadPhase.complete;
+      widget.state.cacheDetails(widget.app, app);
+    } else if (widget.state.cachedDetailsFor(app) case final cached?) {
+      detail = cached.details;
+      downloads = cached.downloads;
+      phase = cached.phase;
+      error = cached.error;
     } else {
       unawaited(_loadDetails());
     }
   }
 
-  Future<void> _loadDetails() async {
+  Future<void> _loadDetails({bool forceRefresh = false}) async {
+    if (mounted) {
+      setState(() {
+        _loadingDetails = true;
+        if (forceRefresh) {
+          error = null;
+          phase = DetailLoadPhase.loadingDetails;
+        }
+      });
+    }
     try {
       await widget.state.loadDetails(
         widget.app,
+        forceRefresh: forceRefresh,
         onProgress: (progress) {
           if (!mounted) return;
           setState(() {
@@ -83,8 +100,12 @@ class _DetailsSheetState extends State<DetailsSheet> {
     } catch (value) {
       if (!mounted) return;
       setState(() => error = value.toString());
+    } finally {
+      if (mounted) setState(() => _loadingDetails = false);
     }
   }
+
+  Future<void> _refreshDetails() => _loadDetails(forceRefresh: true);
 
   Future<void> _openInBrowser() async {
     if (_openingBrowser) return;
@@ -249,6 +270,16 @@ class _DetailsSheetState extends State<DetailsSheet> {
           ),
         ),
         const SizedBox(width: 8),
+        IconButton(
+          tooltip: '刷新详情',
+          onPressed: _loadingDetails ? null : _refreshDetails,
+          icon: _loadingDetails
+              ? const SizedBox.square(
+                  dimension: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh),
+        ),
         IconButton(
           tooltip: '浏览器打开',
           onPressed: _openingBrowser ? null : _openInBrowser,

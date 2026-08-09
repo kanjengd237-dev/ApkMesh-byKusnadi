@@ -45,6 +45,17 @@ void main() {
     expect(find.text('暂无下载任务'), findsOneWidget);
   });
 
+  testWidgets('only shows the search action on the home page', (tester) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.text('下载'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('搜索'), findsNothing);
+
+    await tester.tap(find.text('主页').last);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('搜索'), findsOneWidget);
+  });
   testWidgets('shows the English translation action when search opens', (
     tester,
   ) async {
@@ -159,6 +170,9 @@ void main() {
     expect(find.text('Legacy summary'), findsNothing);
     expect(find.text('Example description'), findsOneWidget);
     expect(find.text('Example source'), findsOneWidget);
+    expect(find.byTooltip('刷新详情'), findsOneWidget);
+    expect(find.byTooltip('浏览器打开'), findsOneWidget);
+
     expect(find.byType(Chip), findsNWidgets(8));
     final chips = tester.widgetList<Chip>(find.byType(Chip)).toList();
     expect(

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'core/app_state.dart';
@@ -227,33 +228,35 @@ class _ShellState extends State<Shell> {
                   : const Text('APK Mesh', key: ValueKey('app-title')),
             ),
             actions: [
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) => ScaleTransition(
-                  scale: animation,
-                  child: FadeTransition(opacity: animation, child: child),
+              if (index == 0)
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => ScaleTransition(
+                    scale: animation,
+                    child: FadeTransition(opacity: animation, child: child),
+                  ),
+                  child: searchOpen
+                      ? IconButton(
+                          key: const ValueKey('close-search'),
+                          tooltip: '关闭搜索',
+                          onPressed: () => setState(() => searchOpen = false),
+                          icon: const Icon(Icons.close),
+                        )
+                      : IconButton(
+                          key: const ValueKey('open-search'),
+                          tooltip: '搜索',
+                          onPressed: _openSearch,
+                          icon: const Icon(Icons.search),
+                        ),
                 ),
-                child: searchOpen
-                    ? IconButton(
-                        key: const ValueKey('close-search'),
-                        tooltip: '关闭搜索',
-                        onPressed: () => setState(() => searchOpen = false),
-                        icon: const Icon(Icons.close),
-                      )
-                    : IconButton(
-                        key: const ValueKey('open-search'),
-                        tooltip: '搜索',
-                        onPressed: _openSearch,
-                        icon: const Icon(Icons.search),
-                      ),
-              ),
-              IconButton(
-                tooltip: '调试',
-                onPressed: () => _showDebugSheet(context),
-                icon: const Icon(Icons.bug_report_outlined),
-              ),
+              if (kDebugMode)
+                IconButton(
+                  tooltip: '调试',
+                  onPressed: () => _showDebugSheet(context),
+                  icon: const Icon(Icons.bug_report_outlined),
+                ),
             ],
           ),
           body: Row(
@@ -261,8 +264,7 @@ class _ShellState extends State<Shell> {
               if (wide)
                 NavigationRail(
                   selectedIndex: index,
-                  onDestinationSelected: (value) =>
-                      setState(() => index = value),
+                  onDestinationSelected: _selectPage,
                   labelType: NavigationRailLabelType.all,
                   destinations: const [
                     NavigationRailDestination(
@@ -296,13 +298,19 @@ class _ShellState extends State<Shell> {
               ? null
               : NavigationBar(
                   selectedIndex: index,
-                  onDestinationSelected: (value) =>
-                      setState(() => index = value),
+                  onDestinationSelected: _selectPage,
                   destinations: destinations,
                 ),
         );
       },
     );
+  }
+
+  void _selectPage(int value) {
+    setState(() {
+      index = value;
+      if (value != 0) searchOpen = false;
+    });
   }
 
   void _openSearch() {

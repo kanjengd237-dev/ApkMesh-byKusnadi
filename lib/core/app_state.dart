@@ -57,6 +57,7 @@ class AppState extends ChangeNotifier {
   final Map<String, String> _translationCache = {};
   final Set<String> _translationPending = {};
   final Set<String> _translationQueue = {};
+  final Map<String, Map<String, AppDetailsProgress>> _detailsCache = {};
   Timer? _translationQueueTimer;
   TranslationSettings _translationSettings = const TranslationSettings();
   AppThemeMode _themeMode = AppThemeMode.system;
@@ -812,9 +813,54 @@ class AppState extends ChangeNotifier {
   Future<void> loadDetails(
     AppListing app, {
     required void Function(AppDetailsProgress progress) onProgress,
+    bool forceRefresh = false,
   }) async {
     await ready;
-    return registry.loadDetails(app, host, onProgress: onProgress);
+    if (!forceRefresh) {
+      final cached = cachedDetailsFor(app);
+      if (cached != null) {
+        onProgress(cached);
+        return;
+      }
+    }
+
+    await registry.loadDetails(
+      app,
+      host,
+      onProgress: (progress) {
+        if (progress.phase == DetailLoadPhase.complete && !_isDisposing) {
+          _detailsCache.putIfAbsent(app.sourceId, () => {})[app.id] = progress;
+        }
+        onProgress(progress);
+      },
+    );
+  }
+
+  AppDetailsProgress? cachedDetailsFor(AppListing app) =>
+      _detailsCache[app.sourceId]?[app.id];
+
+  void cacheDetails(AppListing app, AppDetails details) {
+    final downloads = details.downloads
+        .map(
+          (file) => SourceDownloadProgress(
+            candidate: SourceDownloadCandidate(
+              label: file.label,
+              url: file.url,
+              size: file.size,
+              headers: file.headers,
+            ),
+            files: [file],
+          ),
+        )
+        .toList(growable: false);
+    _detailsCache.putIfAbsent(
+      app.sourceId,
+      () => {},
+    )[app.id] = AppDetailsProgress(
+      details: details,
+      downloads: List.unmodifiable(downloads),
+      phase: DetailLoadPhase.complete,
+    );
   }
 
   Future<AppDetails> details(AppListing app) async {
@@ -1468,6 +1514,7 @@ class AppState extends ChangeNotifier {
     }
     _translationQueueTimer?.cancel();
     _translationQueueTimer = null;
+    _detailsCache.clear();
     translation.dispose();
     unawaited(host.dispose());
     registry.dispose();

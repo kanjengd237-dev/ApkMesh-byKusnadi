@@ -1,10 +1,13 @@
 import 'dart:async';
 
+import 'package:apk_mesh/core/app_state.dart';
 import 'package:apk_mesh/core/models.dart';
 import 'package:apk_mesh/core/source_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('source policy only permits declared hosts', () {
     const policy = SourcePolicy(
       allowedHosts: {'example.com', '*.cdn.example.com'},
@@ -72,6 +75,30 @@ void main() {
     expect(updates[2].downloads.last.error, 'not found');
     expect(updates.last.phase, DetailLoadPhase.complete);
     expect(updates.last.details.downloads.single.label, 'app.apk');
+  });
+
+  test('app state caches details until a forced refresh', () async {
+    final source = _StagedDetailsSource();
+    final state = AppState(host: DemoHostApi());
+    state.registry.replace(source);
+    await state.initialize();
+    final app = _listing('staged', 'Staged App');
+
+    try {
+      await state.loadDetails(app, onProgress: (_) {});
+      final cachedUpdates = <AppDetailsProgress>[];
+      await state.loadDetails(app, onProgress: cachedUpdates.add);
+
+      expect(source.detailMetadataCalls, 1);
+      expect(cachedUpdates, hasLength(1));
+      expect(cachedUpdates.single.phase, DetailLoadPhase.complete);
+      expect(cachedUpdates.single.details.downloads.single.label, 'app.apk');
+
+      await state.loadDetails(app, forceRefresh: true, onProgress: (_) {});
+      expect(source.detailMetadataCalls, 2);
+    } finally {
+      state.dispose();
+    }
   });
 
   test('registry skips disabled source ids', () async {
@@ -503,25 +530,30 @@ class _StagedDetailsSource
   @override
   Future<AppDetails> details(String appId, SourceHostApi host) async => _detail;
 
+  int detailMetadataCalls = 0;
+
   @override
   Future<SourceDetailsMetadata> detailsMetadata(
     String appId,
     SourceHostApi host,
-  ) async => SourceDetailsMetadata(
-    details: _detail,
-    downloads: const [
-      SourceDownloadCandidate(
-        label: 'Primary',
-        url: 'https://example.test/primary',
-        size: '1 MB',
-      ),
-      SourceDownloadCandidate(
-        label: 'Missing',
-        url: 'https://example.test/missing',
-        size: '1 MB',
-      ),
-    ],
-  );
+  ) async {
+    detailMetadataCalls += 1;
+    return SourceDetailsMetadata(
+      details: _detail,
+      downloads: const [
+        SourceDownloadCandidate(
+          label: 'Primary',
+          url: 'https://example.test/primary',
+          size: '1 MB',
+        ),
+        SourceDownloadCandidate(
+          label: 'Missing',
+          url: 'https://example.test/missing',
+          size: '1 MB',
+        ),
+      ],
+    );
+  }
 
   @override
   Future<List<SourceDownload>> resolveDownloads(
