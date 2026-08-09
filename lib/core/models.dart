@@ -1,5 +1,7 @@
 enum AppThemeMode { system, light, dark }
 
+enum DownloadMethod { internal, browser, externalDownloader }
+
 enum InstallMethod { system, shizuku }
 
 enum ShizukuStatus { unsupported, unavailable, denied, authorized }

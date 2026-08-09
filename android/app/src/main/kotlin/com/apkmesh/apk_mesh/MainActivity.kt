@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Browser
 import android.provider.Settings
 import java.io.File
 import java.util.Locale
@@ -97,6 +98,16 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.apkmesh/external_download",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "launch" -> launchExternalDownloader(call, result)
+                else -> result.notImplemented()
+            }
+        }
+
         val downloadChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.apkmesh/download_notifications",
@@ -134,6 +145,38 @@ class MainActivity : FlutterActivity() {
             }
         }
         handleNotificationAction(intent)
+    }
+
+    private fun launchExternalDownloader(call: MethodCall, result: MethodChannel.Result) {
+        val rawUrl = call.argument<String>("url")
+        val uri = rawUrl?.let(Uri::parse)
+        if (uri == null || (uri.scheme != "http" && uri.scheme != "https")) {
+            result.error("DOWNLOAD_URL_INVALID", "外部下载地址无效", null)
+            return
+        }
+
+        val fileName = call.argument<String>("fileName")?.trim().orEmpty()
+        val rawHeaders = call.argument<Map<*, *>>("headers").orEmpty()
+        val headers = Bundle().apply {
+            rawHeaders.forEach { (key, value) ->
+                if (key is String && value is String) putString(key, value)
+            }
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/octet-stream")
+            if (!headers.isEmpty) putExtra(Browser.EXTRA_HEADERS, headers)
+            if (fileName.isNotEmpty()) {
+                putExtra("title", fileName)
+                putExtra("filename", fileName)
+                putExtra("com.android.extra.filename", fileName)
+            }
+        }
+        try {
+            startActivity(Intent.createChooser(intent, "选择下载器"))
+            result.success(true)
+        } catch (_: Exception) {
+            result.success(false)
+        }
     }
 
     override fun onDestroy() {

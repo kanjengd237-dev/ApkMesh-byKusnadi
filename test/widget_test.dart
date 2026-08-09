@@ -36,6 +36,85 @@ void main() {
     );
   });
 
+  testWidgets('uses consistent setting widths and opens information sheets', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byIcon(Icons.settings_outlined).last);
+    await tester.pumpAndSettle();
+
+    final themeTile = find.ancestor(
+      of: find.text('主题'),
+      matching: find.byType(ListTile),
+    );
+    final downloadMethodTile = find.ancestor(
+      of: find.text('下载方式'),
+      matching: find.byType(ListTile),
+    );
+    final downloadDirectoryTile = find.ancestor(
+      of: find.text('下载目录'),
+      matching: find.byType(ListTile),
+    );
+    expect(
+      tester.getSize(themeTile).width,
+      tester.getSize(downloadMethodTile).width,
+    );
+    expect(
+      tester.getSize(themeTile).width,
+      tester.getSize(downloadDirectoryTile).width,
+    );
+
+    await tester.tap(find.text('下载目录'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('文件会保存到当前平台提供的下载目录'), findsOneWidget);
+    await tester.tap(find.byTooltip('关闭').last);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('selects the browser download method', (tester) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byIcon(Icons.settings_outlined).last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('下载方式'));
+    await tester.pumpAndSettle();
+    expect(find.byType(RadioListTile<DownloadMethod>), findsNWidgets(3));
+    expect(
+      find.descendant(
+        of: find.byType(RadioListTile<DownloadMethod>),
+        matching: find.text('外部下载器'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(RadioListTile<DownloadMethod>),
+        matching: find.text('浏览器'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('浏览器'), findsOneWidget);
+  });
+
+  testWidgets('settings remain usable at compact mobile width', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byIcon(Icons.settings_outlined).last);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('下载方式'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(RadioListTile<DownloadMethod>), findsNWidgets(3));
+  });
+
   testWidgets('configures unbounded source concurrency in a bottom sheet', (
     tester,
   ) async {

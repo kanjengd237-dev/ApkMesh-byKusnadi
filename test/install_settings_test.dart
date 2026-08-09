@@ -66,6 +66,24 @@ void main() {
     restored.dispose();
   });
 
+  test('persists and restores the selected download method', () async {
+    final state = AppState(host: DemoHostApi());
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    state.setDownloadMethod(DownloadMethod.browser);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('download.method'), 'browser');
+    state.dispose();
+
+    final restored = AppState(host: DemoHostApi());
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(restored.downloadMethod, DownloadMethod.browser);
+    restored.dispose();
+  });
+
   test('persists disabled and home source preferences', () async {
     final state = AppState(host: DemoHostApi());
     await Future<void>.delayed(const Duration(milliseconds: 10));

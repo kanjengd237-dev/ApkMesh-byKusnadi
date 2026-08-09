@@ -3,10 +3,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'debug_log.dart';
 import 'download_notifications.dart';
 import 'download_store.dart';
+import 'external_download_launcher.dart' as external_download;
 import 'host_factory.dart';
 import 'models.dart';
 import 'quickjs_source.dart';
@@ -64,6 +66,7 @@ class AppState extends ChangeNotifier {
   TranslationSettings _translationSettings = const TranslationSettings();
   SourceConcurrencySettings _sourceConcurrency =
       const SourceConcurrencySettings();
+  DownloadMethod _downloadMethod = DownloadMethod.internal;
   Set<String> _disabledSourceIds = {};
   String? _preferredHomeSourceId;
   AppThemeMode _themeMode = AppThemeMode.system;
@@ -104,6 +107,9 @@ class AppState extends ChangeNotifier {
   List<SourceDebugProject> get debugProjects => registry.debugProjects;
   TranslationSettings get translationSettings => _translationSettings;
   SourceConcurrencySettings get sourceConcurrency => _sourceConcurrency;
+  DownloadMethod get downloadMethod => _downloadMethod;
+  bool get supportsExternalDownloader =>
+      external_download.supportsExternalDownloader;
   AppThemeMode get themeMode => _themeMode;
   InstallMethod get installMethod => _installMethod;
   bool get useShizukuInstaller => _installMethod == InstallMethod.shizuku;
@@ -212,6 +218,13 @@ class AppState extends ChangeNotifier {
   void setThemeMode(AppThemeMode mode) {
     if (_themeMode == mode) return;
     _themeMode = mode;
+    notifyListeners();
+    unawaited(_persistSettings());
+  }
+
+  void setDownloadMethod(DownloadMethod method) {
+    if (_downloadMethod == method) return;
+    _downloadMethod = method;
     notifyListeners();
     unawaited(_persistSettings());
   }
@@ -368,6 +381,11 @@ class AppState extends ChangeNotifier {
           themeModeIndex >= 0 && themeModeIndex < AppThemeMode.values.length
           ? AppThemeMode.values[themeModeIndex]
           : AppThemeMode.system;
+      _downloadMethod = switch (preferences.getString('download.method')) {
+        'browser' => DownloadMethod.browser,
+        'externalDownloader' => DownloadMethod.externalDownloader,
+        _ => DownloadMethod.internal,
+      };
       _installMethod = switch (preferences.getString('install.method')) {
         'shizuku' => InstallMethod.shizuku,
         _ => InstallMethod.system,
@@ -436,6 +454,7 @@ class AppState extends ChangeNotifier {
       _translationSettings.googlePublicKey,
     );
     await preferences.setInt('theme.mode', _themeMode.index);
+    await preferences.setString('download.method', _downloadMethod.name);
     await preferences.setString('install.method', _installMethod.name);
     await preferences.setInt(
       'source.httpConcurrency',
@@ -1080,6 +1099,51 @@ class AppState extends ChangeNotifier {
         allowInstall: snapshot.allowInstall,
       );
     }
+  }
+
+  Future<DownloadMethod> download(
+    SourceDownload file,
+    String sourceId, {
+    AppListing? app,
+  }) async {
+    await _settingsReady;
+    if (_isDisposing) throw StateError('应用状态已关闭');
+    final method = _downloadMethod;
+    if (method == DownloadMethod.internal) {
+      startDownload(file, sourceId, app: app);
+      return method;
+    }
+
+    final policy = registry.scriptFor(sourceId).policy;
+    final uri = Uri.tryParse(file.url);
+    if (!policy.allowDownload) throw StateError('该源没有声明下载权限');
+    if (uri == null || !policy.permits(uri)) {
+      throw StateError('源权限拒绝访问下载地址');
+    }
+
+    final launched = switch (method) {
+      DownloadMethod.browser => await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      ),
+      DownloadMethod.externalDownloader =>
+        await external_download.launchExternalDownloader(
+          uri,
+          fileName: file.label,
+          headers: file.headers,
+        ),
+      DownloadMethod.internal => true,
+    };
+    if (!launched) {
+      throw StateError(
+        method == DownloadMethod.browser ? '系统没有可用的浏览器' : '没有可用的外部下载器',
+      );
+    }
+    debug.add(
+      '${method == DownloadMethod.browser ? '浏览器' : '外部下载器'}已接收：${file.label}',
+      category: 'Download',
+    );
+    return method;
   }
 
   DownloadTask startDownload(

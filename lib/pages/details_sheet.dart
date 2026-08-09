@@ -999,15 +999,27 @@ class SourceDownloadTile extends StatelessWidget {
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 10),
         ),
-        onPressed: () {
-          state.startDownload(file, sourceId, app: app);
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('已开始下载，可在下载页查看进度')));
-        },
+        onPressed: () => _startDownload(context),
         icon: const Icon(Icons.download),
         label: const Text('下载'),
       ),
     );
+  }
+
+  Future<void> _startDownload(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    try {
+      final method = await state.download(file, sourceId, app: app);
+      if (!context.mounted) return;
+      final message = switch (method) {
+        DownloadMethod.internal => '已开始下载，可在下载页查看进度',
+        DownloadMethod.browser => '已交给浏览器处理',
+        DownloadMethod.externalDownloader => '已交给外部下载器处理',
+      };
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      if (!context.mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('无法开始下载：$error')));
+    }
   }
 }
