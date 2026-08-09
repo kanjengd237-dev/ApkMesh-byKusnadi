@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/app_state.dart';
 import '../core/models.dart';
@@ -44,7 +46,7 @@ class SettingsPage extends StatelessWidget {
         subtitle: Text('系统默认下载目录'),
       ),
       const Divider(),
-      _SourceConcurrencySettingsPanel(state: state),
+      _SourceConcurrencySettingsTile(state: state),
       const Divider(),
       TranslationSettingsPanel(state: state),
       const Divider(),
@@ -80,94 +82,289 @@ class SettingsPage extends StatelessWidget {
   );
 }
 
-class _SourceConcurrencySettingsPanel extends StatefulWidget {
-  const _SourceConcurrencySettingsPanel({required this.state});
+class _SourceConcurrencySettingsTile extends StatelessWidget {
+  const _SourceConcurrencySettingsTile({required this.state});
 
   final AppState state;
 
   @override
-  State<_SourceConcurrencySettingsPanel> createState() =>
-      _SourceConcurrencySettingsPanelState();
+  Widget build(BuildContext context) {
+    final settings = state.sourceConcurrency;
+    return ListTile(
+      leading: const Icon(Icons.speed_outlined),
+      title: const Text('源并发设置'),
+      subtitle: Text(
+        'HTTP ${settings.httpRequests} · WebView ${settings.webViews}',
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        builder: (_) => _SourceConcurrencySheet(state: state),
+      ),
+    );
+  }
 }
 
-class _SourceConcurrencySettingsPanelState
-    extends State<_SourceConcurrencySettingsPanel> {
+class _SourceConcurrencySheet extends StatefulWidget {
+  const _SourceConcurrencySheet({required this.state});
+
+  final AppState state;
+
+  @override
+  State<_SourceConcurrencySheet> createState() =>
+      _SourceConcurrencySheetState();
+}
+
+class _SourceConcurrencySheetState extends State<_SourceConcurrencySheet> {
   late int _httpRequests;
   late int _webViews;
+  late final TextEditingController _httpController;
+  late final TextEditingController _webViewController;
 
   @override
   void initState() {
     super.initState();
-    _syncSettings();
-  }
-
-  @override
-  void didUpdateWidget(covariant _SourceConcurrencySettingsPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final settings = widget.state.sourceConcurrency;
-    if (settings.httpRequests != _httpRequests ||
-        settings.webViews != _webViews) {
-      _syncSettings();
-    }
-  }
-
-  void _syncSettings() {
     final settings = widget.state.sourceConcurrency;
     _httpRequests = settings.httpRequests;
     _webViews = settings.webViews;
+    _httpController = TextEditingController(text: '$_httpRequests');
+    _webViewController = TextEditingController(text: '$_webViews');
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(Icons.speed_outlined),
-        title: Text('源并发'),
+  void dispose() {
+    _httpController.dispose();
+    _webViewController.dispose();
+    super.dispose();
+  }
+
+  int? _positiveValue(TextEditingController controller) {
+    final value = int.tryParse(controller.text);
+    return value == null || value < 1 ? null : value;
+  }
+
+  bool get _valid =>
+      _positiveValue(_httpController) != null &&
+      _positiveValue(_webViewController) != null;
+
+  void _setHttpRequests(int value) {
+    setState(() {
+      _httpRequests = math.max(1, value);
+      _httpController.text = '$_httpRequests';
+    });
+  }
+
+  void _setWebViews(int value) {
+    setState(() {
+      _webViews = math.max(1, value);
+      _webViewController.text = '$_webViews';
+    });
+  }
+
+  void _readHttpRequests(String _) {
+    final value = _positiveValue(_httpController);
+    setState(() {
+      if (value != null) _httpRequests = value;
+    });
+  }
+
+  void _readWebViews(String _) {
+    final value = _positiveValue(_webViewController);
+    setState(() {
+      if (value != null) _webViews = value;
+    });
+  }
+
+  void _restoreDefaults() {
+    _setHttpRequests(SourceConcurrencySettings.defaultHttpRequests);
+    _setWebViews(SourceConcurrencySettings.defaultWebViews);
+  }
+
+  void _apply() {
+    final httpRequests = _positiveValue(_httpController);
+    final webViews = _positiveValue(_webViewController);
+    if (httpRequests == null || webViews == null) return;
+    widget.state.setSourceConcurrency(
+      httpRequests: httpRequests,
+      webViews: webViews,
+    );
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '源并发设置',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _ConcurrencyControl(
+                  icon: Icons.language_outlined,
+                  title: 'HTTP 请求',
+                  subtitle: '同时执行的源网络请求数',
+                  value: _httpRequests,
+                  baselineMax: 100,
+                  controller: _httpController,
+                  onSliderChanged: (value) => _setHttpRequests(value.round()),
+                  onTextChanged: _readHttpRequests,
+                ),
+                const Divider(height: 40),
+                _ConcurrencyControl(
+                  icon: Icons.web_asset_outlined,
+                  title: '隐藏 WebView',
+                  subtitle: '同时保持活动的浏览器标签页数',
+                  value: _webViews,
+                  baselineMax: 10,
+                  controller: _webViewController,
+                  onSliderChanged: (value) => _setWebViews(value.round()),
+                  onTextChanged: _readWebViews,
+                ),
+                const SizedBox(height: 28),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      onPressed: _restoreDefaults,
+                      icon: const Icon(Icons.restart_alt),
+                      label: const Text('恢复默认值'),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton.icon(
+                      onPressed: _valid ? _apply : null,
+                      icon: const Icon(Icons.check),
+                      label: const Text('应用'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('HTTP 请求'),
-        subtitle: Slider(
-          value: _httpRequests.toDouble(),
-          min: SourceConcurrencySettings.minHttpRequests.toDouble(),
-          max: SourceConcurrencySettings.maxHttpRequests.toDouble(),
-          divisions:
-              SourceConcurrencySettings.maxHttpRequests -
-              SourceConcurrencySettings.minHttpRequests,
-          label: '$_httpRequests',
-          onChanged: (value) => setState(() => _httpRequests = value.round()),
-          onChangeEnd: (value) =>
-              widget.state.setSourceConcurrency(httpRequests: value.round()),
+    );
+  }
+}
+
+class _ConcurrencyControl extends StatelessWidget {
+  const _ConcurrencyControl({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.baselineMax,
+    required this.controller,
+    required this.onSliderChanged,
+    required this.onTextChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final int value;
+  final double baselineMax;
+  final TextEditingController controller;
+  final ValueChanged<double> onSliderChanged;
+  final ValueChanged<String> onTextChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final valid = (int.tryParse(controller.text) ?? 0) >= 1;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Icon(icon, color: scheme.primary),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            SizedBox(
+              width: 112,
+              child: TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                textAlign: TextAlign.end,
+                onChanged: onTextChanged,
+                decoration: InputDecoration(
+                  labelText: '并发数',
+                  errorText: valid ? null : '至少为 1',
+                ),
+              ),
+            ),
+          ],
         ),
-        trailing: SizedBox(
-          width: 40,
-          child: Text('$_httpRequests', textAlign: TextAlign.end),
+        const SizedBox(height: 18),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            year2023: false,
+            trackHeight: 24,
+            trackGap: 8,
+            activeTrackColor: scheme.primary,
+            inactiveTrackColor: scheme.primaryContainer,
+            thumbColor: scheme.primary,
+            overlayColor: scheme.primary.withValues(alpha: .12),
+          ),
+          child: Slider(
+            value: math.min(value.toDouble(), baselineMax),
+            min: 1,
+            max: baselineMax,
+            label: '$value',
+            onChanged: onSliderChanged,
+          ),
         ),
-      ),
-      ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('隐藏 WebView'),
-        subtitle: Slider(
-          value: _webViews.toDouble(),
-          min: SourceConcurrencySettings.minWebViews.toDouble(),
-          max: SourceConcurrencySettings.maxWebViews.toDouble(),
-          divisions:
-              SourceConcurrencySettings.maxWebViews -
-              SourceConcurrencySettings.minWebViews,
-          label: '$_webViews',
-          onChanged: (value) => setState(() => _webViews = value.round()),
-          onChangeEnd: (value) =>
-              widget.state.setSourceConcurrency(webViews: value.round()),
-        ),
-        trailing: SizedBox(
-          width: 40,
-          child: Text('$_webViews', textAlign: TextAlign.end),
-        ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 }
 
 String _shizukuStatusLabel(ShizukuStatus status, bool enabled) =>

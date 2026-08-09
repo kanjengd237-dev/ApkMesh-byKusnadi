@@ -47,22 +47,22 @@ void main() {
     final state = AppState(host: host);
     await Future<void>.delayed(const Duration(milliseconds: 10));
 
-    state.setSourceConcurrency(httpRequests: 72, webViews: 7);
+    state.setSourceConcurrency(httpRequests: 500, webViews: 25);
     await Future<void>.delayed(const Duration(milliseconds: 10));
 
     final preferences = await SharedPreferences.getInstance();
-    expect(preferences.getInt('source.httpConcurrency'), 72);
-    expect(preferences.getInt('source.webViewConcurrency'), 7);
+    expect(preferences.getInt('source.httpConcurrency'), 500);
+    expect(preferences.getInt('source.webViewConcurrency'), 25);
     state.dispose();
 
     final restoredHost = _InstallHost(ShizukuStatus.unsupported);
     final restored = AppState(host: restoredHost);
     await Future<void>.delayed(const Duration(milliseconds: 10));
 
-    expect(restored.sourceConcurrency.httpRequests, 72);
-    expect(restored.sourceConcurrency.webViews, 7);
-    expect(restoredHost.concurrency.last.httpRequests, 72);
-    expect(restoredHost.concurrency.last.webViews, 7);
+    expect(restored.sourceConcurrency.httpRequests, 500);
+    expect(restored.sourceConcurrency.webViews, 25);
+    expect(restoredHost.concurrency.last.httpRequests, 500);
+    expect(restoredHost.concurrency.last.webViews, 25);
     restored.dispose();
   });
 

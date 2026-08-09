@@ -36,12 +36,19 @@ void main() {
     );
   });
 
-  testWidgets('shows configurable source concurrency defaults', (tester) async {
+  testWidgets('configures unbounded source concurrency in a bottom sheet', (
+    tester,
+  ) async {
     await tester.pumpWidget(const ApkMeshApp());
     await tester.tap(find.byIcon(Icons.settings_outlined).last);
     await tester.pumpAndSettle();
 
-    expect(find.text('源并发'), findsOneWidget);
+    expect(find.text('源并发设置'), findsOneWidget);
+    expect(find.text('HTTP 50 · WebView 5'), findsOneWidget);
+    expect(find.byType(Slider), findsNothing);
+
+    await tester.tap(find.text('源并发设置'));
+    await tester.pumpAndSettle();
     expect(find.text('HTTP 请求'), findsOneWidget);
     expect(find.text('隐藏 WebView'), findsOneWidget);
     final values = tester
@@ -49,6 +56,19 @@ void main() {
         .map((slider) => slider.value)
         .toList();
     expect(values, containsAll(<double>[50, 5]));
+    final maximums = tester
+        .widgetList<Slider>(find.byType(Slider))
+        .map((slider) => slider.max)
+        .toList();
+    expect(maximums, containsAll(<double>[100, 10]));
+
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), '500');
+    await tester.enterText(fields.at(1), '25');
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('HTTP 500 · WebView 25'), findsOneWidget);
   });
 
   testWidgets('opens the download manager', (tester) async {
