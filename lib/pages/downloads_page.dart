@@ -8,10 +8,53 @@ import '../widgets/app_icon.dart';
 import '../widgets/app_result_tile.dart';
 import '../widgets/empty_message.dart';
 
-class DownloadsPage extends StatelessWidget {
+enum _DownloadBulkAction {
+  selectAll,
+  invert,
+  range,
+  pause,
+  resume,
+  cancel,
+  retry,
+  delete,
+}
+
+class DownloadsPage extends StatefulWidget {
   const DownloadsPage({required this.state, this.onOpenDetails, super.key});
   final AppState state;
   final void Function(BuildContext context, AppListing app)? onOpenDetails;
+
+  @override
+  State<DownloadsPage> createState() => _DownloadsPageState();
+}
+
+class _DownloadsPageState extends State<DownloadsPage> {
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = {};
+  int? _selectionAnchor;
+  int? _rangeEnd;
+
+  AppState get state => widget.state;
+
+  Set<String> get _selectedDownloadIds {
+    final downloadIds = state.downloads.map((task) => task.id).toSet();
+    return _selectedIds.intersection(downloadIds);
+  }
+
+  List<DownloadTask> get _selectedTasks => state.downloads
+      .where((task) => _selectedDownloadIds.contains(task.id))
+      .toList(growable: false);
+
+  List<DownloadTask> _selectedTasksWithStatus(
+    Set<DownloadStatus> statuses, {
+    bool excludeInstalling = false,
+  }) => _selectedTasks
+      .where(
+        (task) =>
+            statuses.contains(task.status) &&
+            (!excludeInstalling || !state.isInstallingDownload(task.id)),
+      )
+      .toList(growable: false);
 
   @override
   Widget build(BuildContext context) {
@@ -19,40 +62,13 @@ class DownloadsPage extends StatelessWidget {
     final completedCount = tasks
         .where((task) => task.status == DownloadStatus.completed)
         .length;
+    final selectedIds = _selectedDownloadIds;
     return ListView(
       padding: const EdgeInsets.only(top: 24, bottom: 40),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Text(
-                  '下载管理',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-              ),
-              PopupMenuButton<DownloadClearAction>(
-                enabled: tasks.isNotEmpty,
-                tooltip: '清理下载',
-                icon: const Icon(Icons.delete_sweep_outlined),
-                onSelected: (action) =>
-                    confirmClearDownloads(context, state, action),
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: DownloadClearAction.all,
-                    child: Text('清除全部'),
-                  ),
-                  PopupMenuItem(
-                    value: DownloadClearAction.completed,
-                    enabled: completedCount > 0,
-                    child: const Text('清除已下载'),
-                  ),
-                ],
-              ),
-            ],
-          ),
+          child: _buildHeader(context, tasks, completedCount),
         ),
         const SizedBox(height: 20),
         if (tasks.isEmpty)
@@ -64,15 +80,439 @@ class DownloadsPage extends StatelessWidget {
         else
           ...tasks.asMap().entries.map(
             (entry) => DownloadTaskTile(
+              key: ValueKey(entry.value.id),
               task: entry.value,
               state: state,
-              onOpenDetails: onOpenDetails,
+              onOpenDetails: widget.onOpenDetails,
+              selectionMode: _selectionMode,
+              selected: selectedIds.contains(entry.value.id),
+              onLongPress: () => _enterSelection(entry.key),
+              onSelectionToggle: () => _toggleSelection(entry.key),
               showDivider: entry.key < tasks.length - 1,
             ),
           ),
       ],
     );
   }
+
+  Widget _buildHeader(
+    BuildContext context,
+    List<DownloadTask> tasks,
+    int completedCount,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 520;
+        final showAllSelectionActions = constraints.maxWidth >= 760;
+        final title = Text(
+          _selectionMode ? '已选择 ${_selectedDownloadIds.length} 个下载' : '下载管理',
+          style: Theme.of(context).textTheme.headlineMedium,
+        );
+
+        if (!_selectionMode) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: title),
+              _buildClearMenu(context, tasks, completedCount),
+            ],
+          );
+        }
+
+        final selectionActions = _buildSelectionActions();
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: '退出多选',
+                    onPressed: _exitSelection,
+                    icon: const Icon(Icons.close),
+                  ),
+                  Expanded(child: title),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: _buildOverflowMenu(),
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            IconButton(
+              tooltip: '退出多选',
+              onPressed: _exitSelection,
+              icon: const Icon(Icons.close),
+            ),
+            Expanded(child: title),
+            if (showAllSelectionActions)
+              ...selectionActions
+            else
+              _buildOverflowMenu(),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildClearMenu(
+    BuildContext context,
+    List<DownloadTask> tasks,
+    int completedCount,
+  ) => PopupMenuButton<DownloadClearAction>(
+    enabled: tasks.isNotEmpty,
+    tooltip: '清理下载',
+    icon: const Icon(Icons.delete_sweep_outlined),
+    onSelected: (action) => confirmClearDownloads(context, state, action),
+    itemBuilder: (context) => [
+      const PopupMenuItem(value: DownloadClearAction.all, child: Text('清除全部')),
+      PopupMenuItem(
+        value: DownloadClearAction.completed,
+        enabled: completedCount > 0,
+        child: const Text('清除已下载'),
+      ),
+    ],
+  );
+
+  List<Widget> _buildSelectionActions() => [
+    IconButton(
+      tooltip: '全选',
+      onPressed: _selectAll,
+      icon: const Icon(Icons.select_all),
+    ),
+    IconButton(
+      tooltip: '反选',
+      onPressed: _invertSelection,
+      icon: const Icon(Icons.swap_vert),
+    ),
+    IconButton(
+      tooltip: '区间选择',
+      onPressed: _selectRange,
+      icon: const Icon(Icons.unfold_more),
+    ),
+    IconButton(
+      tooltip: '暂停选中下载',
+      onPressed: _selectedTasksWithStatus({DownloadStatus.downloading}).isEmpty
+          ? null
+          : () => unawaited(_pauseSelected()),
+      icon: const Icon(Icons.pause_circle_outline),
+    ),
+    IconButton(
+      tooltip: '继续选中下载',
+      onPressed: _selectedTasksWithStatus({DownloadStatus.paused}).isEmpty
+          ? null
+          : () => unawaited(_resumeSelected()),
+      icon: const Icon(Icons.play_circle_outline),
+    ),
+    IconButton(
+      tooltip: '取消选中下载',
+      onPressed:
+          _selectedTasksWithStatus({
+            DownloadStatus.downloading,
+            DownloadStatus.paused,
+          }).isEmpty
+          ? null
+          : () => unawaited(_cancelSelected()),
+      icon: const Icon(Icons.cancel_outlined),
+    ),
+    IconButton(
+      tooltip: '重试选中下载',
+      onPressed: _selectedTasksWithStatus({DownloadStatus.failed}).isEmpty
+          ? null
+          : _retrySelected,
+      icon: const Icon(Icons.refresh),
+    ),
+    IconButton(
+      tooltip: '删除选中下载',
+      onPressed:
+          _selectedTasksWithStatus({
+            DownloadStatus.completed,
+            DownloadStatus.failed,
+          }, excludeInstalling: true).isEmpty
+          ? null
+          : () => unawaited(_deleteSelected()),
+      icon: const Icon(Icons.delete_outline),
+    ),
+  ];
+
+  Widget _buildOverflowMenu() => PopupMenuButton<_DownloadBulkAction>(
+    tooltip: '批量管理',
+    icon: const Icon(Icons.more_vert),
+    onSelected: _handleBulkAction,
+    itemBuilder: (context) => [
+      const PopupMenuItem(
+        value: _DownloadBulkAction.selectAll,
+        child: _DownloadBulkActionMenuLabel(
+          icon: Icons.select_all,
+          label: '全选',
+        ),
+      ),
+      const PopupMenuItem(
+        value: _DownloadBulkAction.invert,
+        child: _DownloadBulkActionMenuLabel(icon: Icons.swap_vert, label: '反选'),
+      ),
+      const PopupMenuItem(
+        value: _DownloadBulkAction.range,
+        child: _DownloadBulkActionMenuLabel(
+          icon: Icons.unfold_more,
+          label: '区间选择',
+        ),
+      ),
+      PopupMenuItem(
+        value: _DownloadBulkAction.pause,
+        enabled: _selectedTasksWithStatus({
+          DownloadStatus.downloading,
+        }).isNotEmpty,
+        child: const _DownloadBulkActionMenuLabel(
+          icon: Icons.pause_circle_outline,
+          label: '暂停选中下载',
+        ),
+      ),
+      PopupMenuItem(
+        value: _DownloadBulkAction.resume,
+        enabled: _selectedTasksWithStatus({DownloadStatus.paused}).isNotEmpty,
+        child: const _DownloadBulkActionMenuLabel(
+          icon: Icons.play_circle_outline,
+          label: '继续选中下载',
+        ),
+      ),
+      PopupMenuItem(
+        value: _DownloadBulkAction.cancel,
+        enabled: _selectedTasksWithStatus({
+          DownloadStatus.downloading,
+          DownloadStatus.paused,
+        }).isNotEmpty,
+        child: const _DownloadBulkActionMenuLabel(
+          icon: Icons.cancel_outlined,
+          label: '取消选中下载',
+        ),
+      ),
+      PopupMenuItem(
+        value: _DownloadBulkAction.retry,
+        enabled: _selectedTasksWithStatus({DownloadStatus.failed}).isNotEmpty,
+        child: const _DownloadBulkActionMenuLabel(
+          icon: Icons.refresh,
+          label: '重试选中下载',
+        ),
+      ),
+      PopupMenuItem(
+        value: _DownloadBulkAction.delete,
+        enabled: _selectedTasksWithStatus({
+          DownloadStatus.completed,
+          DownloadStatus.failed,
+        }, excludeInstalling: true).isNotEmpty,
+        child: const _DownloadBulkActionMenuLabel(
+          icon: Icons.delete_outline,
+          label: '删除选中下载',
+        ),
+      ),
+    ],
+  );
+
+  void _handleBulkAction(_DownloadBulkAction action) {
+    switch (action) {
+      case _DownloadBulkAction.selectAll:
+        _selectAll();
+      case _DownloadBulkAction.invert:
+        _invertSelection();
+      case _DownloadBulkAction.range:
+        _selectRange();
+      case _DownloadBulkAction.pause:
+        unawaited(_pauseSelected());
+      case _DownloadBulkAction.resume:
+        unawaited(_resumeSelected());
+      case _DownloadBulkAction.cancel:
+        unawaited(_cancelSelected());
+      case _DownloadBulkAction.retry:
+        _retrySelected();
+      case _DownloadBulkAction.delete:
+        unawaited(_deleteSelected());
+    }
+  }
+
+  void _enterSelection(int index) {
+    if (index < 0 || index >= state.downloads.length) return;
+    setState(() {
+      _selectionMode = true;
+      _selectedIds.add(state.downloads[index].id);
+      _selectionAnchor = index;
+      _rangeEnd = index;
+    });
+  }
+
+  void _toggleSelection(int index) {
+    if (index < 0 || index >= state.downloads.length) return;
+    if (!_selectionMode) {
+      _enterSelection(index);
+      return;
+    }
+    final id = state.downloads[index].id;
+    setState(() {
+      if (!_selectedIds.add(id)) _selectedIds.remove(id);
+      _rangeEnd = index;
+    });
+  }
+
+  void _exitSelection() {
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+      _selectionAnchor = null;
+      _rangeEnd = null;
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(state.downloads.map((task) => task.id));
+      _selectionMode = true;
+    });
+  }
+
+  void _invertSelection() {
+    final allIds = state.downloads.map((task) => task.id).toSet();
+    final inverted = allIds.difference(_selectedDownloadIds);
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(inverted);
+      _selectionMode = true;
+    });
+  }
+
+  void _selectRange() {
+    if (state.downloads.isEmpty) return;
+    final anchor =
+        _selectionAnchor ??
+        state.downloads.indexWhere(
+          (task) => _selectedDownloadIds.contains(task.id),
+        );
+    final end = _rangeEnd ?? anchor;
+    if (anchor < 0 || end < 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先选择区间起点和终点')));
+      return;
+    }
+    final start = anchor < end ? anchor : end;
+    final finish = anchor < end ? end : anchor;
+    setState(() {
+      _selectedIds.addAll(
+        state.downloads.sublist(start, finish + 1).map((task) => task.id),
+      );
+      _selectionMode = true;
+    });
+  }
+
+  Future<void> _pauseSelected() async {
+    final tasks = _selectedTasksWithStatus({DownloadStatus.downloading});
+    await _applyToTasks(tasks, state.pauseDownload);
+  }
+
+  Future<void> _resumeSelected() async {
+    final tasks = _selectedTasksWithStatus({DownloadStatus.paused});
+    await _applyToTasks(tasks, state.resumeDownload);
+  }
+
+  Future<void> _cancelSelected() async {
+    final tasks = _selectedTasksWithStatus({
+      DownloadStatus.downloading,
+      DownloadStatus.paused,
+    });
+    if (tasks.isEmpty) return;
+    final confirmed = await _confirmBulkAction(
+      title: '取消选中的下载？',
+      content: '将取消并移除 ${tasks.length} 个进行中的下载任务。',
+      confirmLabel: '取消下载',
+    );
+    if (confirmed != true || !mounted) return;
+    await _applyToTasks(tasks, state.cancelDownload);
+  }
+
+  void _retrySelected() {
+    final tasks = _selectedTasksWithStatus({DownloadStatus.failed});
+    for (final task in tasks) {
+      state.retryDownload(task);
+    }
+  }
+
+  Future<void> _deleteSelected() async {
+    final tasks = _selectedTasksWithStatus({
+      DownloadStatus.completed,
+      DownloadStatus.failed,
+    }, excludeInstalling: true);
+    if (tasks.isEmpty) return;
+    final confirmed = await _confirmBulkAction(
+      title: '删除选中的下载？',
+      content: '将删除 ${tasks.length} 个下载文件及其记录。',
+      confirmLabel: '删除',
+    );
+    if (confirmed != true || !mounted) return;
+    await _applyToTasks(tasks, state.deleteDownload);
+  }
+
+  Future<void> _applyToTasks(
+    List<DownloadTask> tasks,
+    Future<void> Function(DownloadTask task) action,
+  ) async {
+    if (tasks.isEmpty) return;
+    await Future.wait(tasks.map(action));
+    _pruneSelection();
+  }
+
+  Future<bool?> _confirmBulkAction({
+    required String title,
+    required String content,
+    required String confirmLabel,
+  }) => showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Text(content),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+
+  void _pruneSelection() {
+    if (!mounted) return;
+    final available = state.downloads.map((task) => task.id).toSet();
+    final before = _selectedIds.length;
+    _selectedIds.retainAll(available);
+    if (_selectedIds.length == before) return;
+    if (_selectedIds.isEmpty) {
+      _exitSelection();
+    } else {
+      setState(() {});
+    }
+  }
+}
+
+class _DownloadBulkActionMenuLabel extends StatelessWidget {
+  const _DownloadBulkActionMenuLabel({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) =>
+      Row(children: [Icon(icon), const SizedBox(width: 12), Text(label)]);
 }
 
 enum DownloadClearAction { all, completed }
@@ -153,6 +593,10 @@ class DownloadTaskTile extends StatelessWidget {
     required this.task,
     required this.state,
     this.onOpenDetails,
+    this.selectionMode = false,
+    this.selected = false,
+    this.onLongPress,
+    this.onSelectionToggle,
     this.showDivider = true,
     super.key,
   });
@@ -160,6 +604,10 @@ class DownloadTaskTile extends StatelessWidget {
   final DownloadTask task;
   final AppState state;
   final void Function(BuildContext context, AppListing app)? onOpenDetails;
+  final bool selectionMode;
+  final bool selected;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onSelectionToggle;
   final bool showDivider;
 
   @override
@@ -181,32 +629,49 @@ class DownloadTaskTile extends StatelessWidget {
         : buildAppInfoChips(app, compact: true);
     final hasAppIcon = app?.iconUrl.trim().isNotEmpty ?? false;
     final leadingWidth = hasAppIcon ? 72.0 : 40.0;
+    final selectionLeadingWidth = hasAppIcon ? 120.0 : 72.0;
     final leadingGap = hasAppIcon ? 16.0 : 12.0;
     final openDetailsCallback = onOpenDetails;
     final openDetails = app == null || openDetailsCallback == null
         ? null
         : () => openDetailsCallback(context, app);
+    final leadingContent = hasAppIcon
+        ? AppIcon(url: app!.iconUrl, size: 64, borderRadius: 14)
+        : Align(
+            alignment: Alignment.topLeft,
+            child: Icon(icon, color: color),
+          );
+    final leading = selectionMode
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Checkbox(
+                value: selected,
+                onChanged: onSelectionToggle == null
+                    ? null
+                    : (_) => onSelectionToggle!(),
+              ),
+              leadingContent,
+            ],
+          )
+        : leadingContent;
 
     return Column(
       children: [
         Material(
-          color: Colors.transparent,
+          color: selected ? scheme.surfaceContainerHighest : Colors.transparent,
           child: InkWell(
             key: ValueKey('download-task-tile-${task.id}'),
-            onTap: openDetails,
+            onTap: selectionMode ? onSelectionToggle : openDetails,
+            onLongPress: onLongPress,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    width: leadingWidth,
-                    child: hasAppIcon
-                        ? AppIcon(url: app!.iconUrl, size: 64, borderRadius: 14)
-                        : Align(
-                            alignment: Alignment.topLeft,
-                            child: Icon(icon, color: color),
-                          ),
+                    width: selectionMode ? selectionLeadingWidth : leadingWidth,
+                    child: leading,
                   ),
                   SizedBox(width: leadingGap),
                   Expanded(
