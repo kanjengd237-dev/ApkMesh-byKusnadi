@@ -182,7 +182,7 @@ class _ShellState extends State<Shell> {
               child: searchOpen
                   ? SizedBox(
                       key: const ValueKey('search-field'),
-                      width: (constraints.maxWidth - 160).clamp(140.0, 520.0),
+                      width: double.infinity,
                       height: 46,
                       child: TextField(
                         controller: searchController,
