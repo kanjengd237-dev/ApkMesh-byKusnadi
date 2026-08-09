@@ -383,7 +383,7 @@ globalThis.source = {
   manifest: {
     id: 'apktodo',
     name: 'APKTodo',
-    version: '1.2.0',
+    version: '1.2.1',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
     description: '读取 APKTodo 应用元数据、截图、详情和下载项。',
@@ -391,7 +391,7 @@ globalThis.source = {
       network: ['*'],
       browser: true,
       download: true,
-      install: false,
+      install: true,
     },
     debugProjects: [
       {

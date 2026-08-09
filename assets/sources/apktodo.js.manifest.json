@@ -1,14 +1,14 @@
 {
   "id": "apktodo",
   "name": "APKTodo",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "homepage": "https://apktodo.io/",
   "description": "读取 APKTodo 应用元数据、截图、详情和下载项。",
   "permissions": {
     "network": ["*"],
     "browser": true,
     "download": true,
-    "install": false
+    "install": true
   },
   "capabilities": {
     "catalog": true,
