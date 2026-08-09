@@ -72,13 +72,13 @@ uv run apkmesh-debug ../../assets/sources/apkvision.js debug \
 uv run apkmesh-debug --json ../../assets/sources/apkvision.js search minecraft
 ```
 
-检查源主页和分类：
+检查源主页目录标签：
 
 ```bash
 uv run python examples/check_catalog.py ../../assets/sources/apkvision.js
 ```
 
-该脚本使用与调试器相同的 QuickJS/HTTP 宿主，在线调用源的 `home()`，再检查主页返回的每个分类是否能通过 `category()` 返回符合 Source API 的结果。临时只检查前 3 个分类时使用 `--limit 3`。分类 ID 按源返回值原样传递，不假设具体 URL 或站点结构。
+该脚本使用与调试器相同的 QuickJS/HTTP 宿主，在线调用源的 `catalog()`，再通过 `catalogPage(tabId, 1)` 检查每个标签的首屏结果、分页声明和 `hasMore`。临时只检查前 3 个标签时使用 `--limit 3`。标签 ID 按源返回值原样传递，不假设具体 URL 或站点结构；旧 `home()`/`category()` 源仍可使用兼容检查。
 
 ## 离线回放
 

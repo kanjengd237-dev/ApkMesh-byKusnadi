@@ -94,6 +94,57 @@ void main() {
     expect(find.byTooltip('返回主页'), findsNothing);
     expect(find.text('未找到结果'), findsNothing);
   });
+
+  testWidgets('loads the next page for a paged catalog tab', (tester) async {
+    final state = AppState(host: DemoHostApi());
+    final source = _PagedCatalogSource();
+    final controller = TextEditingController();
+    state.registry.replace(source);
+    state.addSource(
+      const ApkSource(
+        id: _PagedCatalogSource.sourceId,
+        name: '分页目录源',
+        homepage: 'example.test',
+        version: '1.0.0',
+        description: '用于验证目录标签分页。',
+        status: SourceStatus.enabled,
+        builtIn: false,
+      ),
+    );
+    state.setHomeSource(_PagedCatalogSource.sourceId);
+    await state.initialize();
+    addTearDown(() {
+      controller.dispose();
+      state.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HomePage(state: state, controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('精选'), findsOneWidget);
+    expect(find.text('精选应用'), findsOneWidget);
+    expect(source.pageCalls, [1]);
+
+    await tester.tap(find.text('分页列表'));
+    await tester.pumpAndSettle();
+    expect(source.pageCalls, [1, 1]);
+
+    for (var index = 0; index < 12; index++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -500));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
+    expect(source.pageCalls, [1, 1, 2]);
+    expect(find.text('第 2 页应用'), findsOneWidget);
+  });
+
   testWidgets('renders listing description and metadata chips', (tester) async {
     final state = AppState();
     const app = AppDetails(
@@ -358,4 +409,105 @@ class _TestDebugSource implements ApkSourceScript, DebugProjectSource {
     SourceHostApi host, {
     int page = 1,
   }) async => const [];
+}
+
+class _PagedCatalogSource implements ApkSourceScript, SourceCatalogScript {
+  static const sourceId = 'paged-catalog-source';
+  final List<int> pageCalls = [];
+
+  @override
+  String get id => sourceId;
+
+  @override
+  String get name => '分页目录源';
+
+  @override
+  SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
+
+  @override
+  bool get supportsCatalog => true;
+
+  @override
+  Future<SourceCatalog> catalog(SourceHostApi host) async =>
+      const SourceCatalog(
+        defaultTabId: 'featured',
+        tabs: [
+          SourceCatalogTab(
+            id: 'featured',
+            name: '精选',
+            sourceId: sourceId,
+            sourceName: '分页目录源',
+            paged: false,
+          ),
+          SourceCatalogTab(
+            id: 'paged',
+            name: '分页列表',
+            sourceId: sourceId,
+            sourceName: '分页目录源',
+            paged: true,
+          ),
+        ],
+      );
+
+  @override
+  Future<SourceCatalogPage> catalogPage(
+    String tabId,
+    SourceHostApi host, {
+    int page = 1,
+  }) async {
+    pageCalls.add(page);
+    if (tabId == 'featured') {
+      return SourceCatalogPage(
+        tabId: tabId,
+        sourceId: id,
+        sourceName: name,
+        page: page,
+        apps: [_listing('featured', '精选应用')],
+        hasMore: false,
+      );
+    }
+    return SourceCatalogPage(
+      tabId: tabId,
+      sourceId: id,
+      sourceName: name,
+      page: page,
+      apps: page == 1
+          ? List.generate(
+              30,
+              (index) => _listing('page-1-$index', '第 1 页应用 $index'),
+            )
+          : page == 2
+          ? [_listing('page-2', '第 2 页应用')]
+          : const [],
+      hasMore: page == 1,
+    );
+  }
+
+  AppListing _listing(String appId, String appName) => AppListing(
+    id: appId,
+    sourceId: id,
+    name: appName,
+    packageName: '',
+    version: '1.0.0',
+    size: '1 MB',
+    updatedAt: '',
+    category: '',
+    sourceName: name,
+    iconUrl: '',
+  );
+
+  @override
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async => const [];
+
+  @override
+  Future<AppDetails> details(String appId, SourceHostApi host) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> dispose() async {}
 }

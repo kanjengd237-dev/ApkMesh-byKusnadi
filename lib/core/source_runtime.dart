@@ -154,8 +154,12 @@ abstract interface class SourceManifestProvider {
 
 abstract interface class SourceCatalogScript {
   bool get supportsCatalog;
-  Future<SourceHome> home(SourceHostApi host);
-  Future<SourceCategory> category(String categoryId, SourceHostApi host);
+  Future<SourceCatalog> catalog(SourceHostApi host);
+  Future<SourceCatalogPage> catalogPage(
+    String tabId,
+    SourceHostApi host, {
+    int page = 1,
+  });
 }
 
 abstract interface class DebugProjectSource {
@@ -458,11 +462,11 @@ class SourceRegistry {
     return (script as DebugProjectSource).runDebugProject(project, input, host);
   }
 
-  Future<SourceHome> home(
+  Future<SourceCatalog> catalog(
     SourceHostApi host, {
     Set<String>? enabledSourceIds,
   }) async {
-    var result = const SourceHome();
+    var result = const SourceCatalog();
     lastErrors.clear();
     for (final script in scripts) {
       if (enabledSourceIds != null && !enabledSourceIds.contains(script.id)) {
@@ -473,7 +477,7 @@ class SourceRegistry {
           : null;
       if (catalog == null || !catalog.supportsCatalog) continue;
       try {
-        result = result.merge(await catalog.home(host));
+        result = result.merge(await catalog.catalog(host));
       } catch (error) {
         lastErrors[script.name] = error.toString();
       }
@@ -481,13 +485,18 @@ class SourceRegistry {
     return result;
   }
 
-  Future<SourceCategory> category(SourceCategory category, SourceHostApi host) {
-    final script = scripts.firstWhere((item) => item.id == category.sourceId);
+  Future<SourceCatalogPage> catalogPage(
+    SourceCatalogTab tab,
+    SourceHostApi host, {
+    int page = 1,
+  }) {
+    if (page < 1) throw ArgumentError.value(page, 'page', '必须大于 0');
+    final script = scripts.firstWhere((item) => item.id == tab.sourceId);
     if (script is! SourceCatalogScript) {
-      throw UnsupportedError('源未声明分类接口');
+      throw UnsupportedError('源未声明目录接口');
     }
     final catalog = script as SourceCatalogScript;
-    return catalog.category(category.id, host);
+    return catalog.catalogPage(tab.id, host, page: page);
   }
 
   Future<void> dispose() async {
@@ -646,29 +655,39 @@ class ApkVisionDemoScript
   );
 
   @override
-  Future<SourceHome> home(SourceHostApi host) async => SourceHome(
-    recommended: [_detail],
-    categories: const [
-      SourceCategory(
+  Future<SourceCatalog> catalog(SourceHostApi host) async => SourceCatalog(
+    defaultTabId: 'recommended',
+    tabs: const [
+      SourceCatalogTab(
+        id: 'recommended',
+        name: '推荐',
+        sourceId: 'apkvision-demo',
+        sourceName: 'APKVision',
+        paged: false,
+      ),
+      SourceCatalogTab(
         id: 'arcade',
         name: 'Arcade',
         sourceId: 'apkvision-demo',
         sourceName: 'APKVision',
+        paged: true,
         description: '动作与街机类应用',
       ),
     ],
   );
 
   @override
-  Future<SourceCategory> category(
-    String categoryId,
-    SourceHostApi host,
-  ) async => SourceCategory(
-    id: categoryId,
-    name: 'Arcade',
+  Future<SourceCatalogPage> catalogPage(
+    String tabId,
+    SourceHostApi host, {
+    int page = 1,
+  }) async => SourceCatalogPage(
+    tabId: tabId,
     sourceId: id,
     sourceName: name,
-    apps: [_detail],
+    page: page,
+    apps: page == 1 ? [_detail] : const [],
+    hasMore: tabId == 'arcade' && page == 1,
   );
 
   @override

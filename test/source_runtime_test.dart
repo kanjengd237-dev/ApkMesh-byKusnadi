@@ -206,21 +206,31 @@ void main() {
     },
   );
 
-  test('registry aggregates optional home and category APIs', () async {
+  test('registry loads source-defined catalog tabs and pages', () async {
     final registry = SourceRegistry(scripts: [ExampleCatalogSource()]);
-    final home = await registry.home(
+    final catalog = await registry.catalog(
       DemoHostApi(),
       enabledSourceIds: {'example-source'},
     );
 
-    expect(home.recommended.single.name, 'Example App');
-    expect(home.categories.single.name, 'Tools');
+    expect(catalog.defaultTabId, 'featured');
+    expect(catalog.tabs.map((tab) => tab.name), ['Featured', 'Tools']);
+    expect(catalog.tabs.first.paged, isFalse);
+    expect(catalog.tabs.last.paged, isTrue);
 
-    final category = await registry.category(
-      home.categories.single,
+    final firstPage = await registry.catalogPage(
+      catalog.tabs.last,
       DemoHostApi(),
     );
-    expect(category.apps.single.name, 'Example App');
+    final secondPage = await registry.catalogPage(
+      catalog.tabs.last,
+      DemoHostApi(),
+      page: 2,
+    );
+    expect(firstPage.apps.single.name, 'Example App');
+    expect(firstPage.hasMore, isTrue);
+    expect(secondPage.apps, isEmpty);
+    expect(secondPage.hasMore, isFalse);
   });
 
   test('registry exposes source failures for the UI', () async {
@@ -271,28 +281,38 @@ class ExampleCatalogSource implements ApkSourceScript, SourceCatalogScript {
   bool get supportsCatalog => true;
 
   @override
-  Future<SourceHome> home(SourceHostApi host) async => SourceHome(
-    recommended: const [_app],
-    categories: [
-      SourceCategory(
+  Future<SourceCatalog> catalog(SourceHostApi host) async => SourceCatalog(
+    defaultTabId: 'featured',
+    tabs: [
+      SourceCatalogTab(
+        id: 'featured',
+        name: 'Featured',
+        sourceId: id,
+        sourceName: name,
+        paged: false,
+      ),
+      SourceCatalogTab(
         id: 'tools',
         name: 'Tools',
         sourceId: id,
         sourceName: name,
+        paged: true,
       ),
     ],
   );
 
   @override
-  Future<SourceCategory> category(
-    String categoryId,
-    SourceHostApi host,
-  ) async => SourceCategory(
-    id: categoryId,
-    name: 'Tools',
+  Future<SourceCatalogPage> catalogPage(
+    String tabId,
+    SourceHostApi host, {
+    int page = 1,
+  }) async => SourceCatalogPage(
+    tabId: tabId,
     sourceId: id,
     sourceName: name,
-    apps: const [_app],
+    page: page,
+    apps: page == 1 ? const [_app] : const [],
+    hasMore: tabId == 'tools' && page == 1,
   );
 
   @override

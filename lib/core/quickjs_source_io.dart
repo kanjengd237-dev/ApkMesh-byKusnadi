@@ -62,6 +62,8 @@ class QuickJsApkSourceScript
         DebugProjectSource,
         SourceCatalogScript,
         SourcePackageLookupScript {
+  static const _legacyRecommendedTabId = '__apkmesh_legacy_recommended__';
+
   QuickJsApkSourceScript(this.scriptText, {String? sourceUrl, this._debug})
     : _sourceUrl = sourceUrl ?? 'quickjs-source.js' {
     _runtime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: false);
@@ -81,8 +83,11 @@ class QuickJsApkSourceScript
   List<SourceDebugProject> _debugProjects = const [];
   SourceHostApi? _host;
   bool _hasCatalog = false;
+  bool _hasLegacyCatalog = false;
   bool _hasPackageLookup = false;
   bool _hasDetailProgress = false;
+  List<AppListing> _legacyRecommended = const [];
+  final Map<String, List<AppListing>> _legacyCatalogPages = {};
   final Map<String, void Function(Map<String, dynamic> payload)>
   _detailProgressCallbacks = {};
   bool _disposed = false;
@@ -237,6 +242,11 @@ class QuickJsApkSourceScript
     final permissions = _dynamicMap(manifest['permissions']);
     _hasCatalog =
         await _evaluateJson(
+          'JSON.stringify(typeof source.catalog === "function" && typeof source.catalogPage === "function")',
+        ) ==
+        true;
+    _hasLegacyCatalog =
+        await _evaluateJson(
           'JSON.stringify(typeof source.home === "function" && typeof source.category === "function")',
         ) ==
         true;
@@ -359,22 +369,113 @@ class QuickJsApkSourceScript
   }
 
   @override
-  bool get supportsCatalog => _hasCatalog;
+  bool get supportsCatalog => _hasCatalog || _hasLegacyCatalog;
 
   @override
-  Future<SourceHome> home(SourceHostApi host) async {
+  Future<SourceCatalog> catalog(SourceHostApi host) async {
+    if (_hasCatalog) {
+      final value = await _callWithArguments('catalog', const [], host);
+      final item = _dynamicMap(value);
+      final tabs = _dynamicList(item['tabs'])
+          .map(_catalogTab)
+          .where((tab) => tab.id.isNotEmpty && tab.name.isNotEmpty)
+          .toList(growable: false);
+      final requestedDefault = item['defaultTabId']?.toString().trim();
+      final defaultTabId = tabs.any((tab) => tab.id == requestedDefault)
+          ? requestedDefault
+          : tabs.firstOrNull?.id;
+      return SourceCatalog(tabs: tabs, defaultTabId: defaultTabId);
+    }
+
     final value = await _callWithArguments('home', const [], host);
     final item = _dynamicMap(value);
-    return SourceHome(
-      recommended: _dynamicList(item['recommended']).map(_listing).toList(),
-      categories: _dynamicList(item['categories']).map(_category).toList(),
-    );
+    _legacyRecommended = _dynamicList(
+      item['recommended'],
+    ).map(_listing).toList(growable: false);
+    _legacyCatalogPages.clear();
+    final tabs = <SourceCatalogTab>[];
+    if (_legacyRecommended.isNotEmpty) {
+      tabs.add(
+        SourceCatalogTab(
+          id: _legacyRecommendedTabId,
+          name: '推荐',
+          sourceId: id,
+          sourceName: name,
+          paged: false,
+        ),
+      );
+    }
+    for (final value in _dynamicList(item['categories'])) {
+      final category = _dynamicMap(value);
+      final tab = _catalogTab(category, paged: false);
+      if (tab.id.isEmpty || tab.name.isEmpty) continue;
+      tabs.add(tab);
+      final apps = _dynamicList(
+        category['apps'],
+      ).map(_listing).toList(growable: false);
+      if (apps.isNotEmpty) _legacyCatalogPages[tab.id] = apps;
+    }
+    return SourceCatalog(tabs: tabs, defaultTabId: tabs.firstOrNull?.id);
   }
 
   @override
-  Future<SourceCategory> category(String categoryId, SourceHostApi host) async {
-    final value = await _call('category', categoryId, host);
-    return _category(_dynamicMap(value));
+  Future<SourceCatalogPage> catalogPage(
+    String tabId,
+    SourceHostApi host, {
+    int page = 1,
+  }) async {
+    if (_hasCatalog) {
+      final value = await _callWithArguments('catalogPage', [
+        tabId,
+        page,
+      ], host);
+      final item = _dynamicMap(value);
+      return SourceCatalogPage(
+        tabId: tabId,
+        sourceId: id,
+        sourceName: name,
+        page: page,
+        apps: _dynamicList(item['apps']).map(_listing).toList(growable: false),
+        hasMore: item['hasMore'] == true,
+      );
+    }
+
+    if (page > 1) {
+      return SourceCatalogPage(
+        tabId: tabId,
+        sourceId: id,
+        sourceName: name,
+        page: page,
+        apps: const [],
+        hasMore: false,
+      );
+    }
+    if (tabId == _legacyRecommendedTabId) {
+      return SourceCatalogPage(
+        tabId: tabId,
+        sourceId: id,
+        sourceName: name,
+        page: page,
+        apps: _legacyRecommended,
+        hasMore: false,
+      );
+    }
+    var apps = _legacyCatalogPages[tabId];
+    if (apps == null) {
+      final value = await _call('category', tabId, host);
+      apps = _dynamicList(
+        _dynamicMap(value)['apps'],
+      ).map(_listing).toList(growable: false);
+      _legacyCatalogPages[tabId] = apps;
+    }
+    return SourceCatalogPage(
+      tabId: tabId,
+      sourceId: id,
+      sourceName: name,
+      page: page,
+      apps: apps,
+      hasMore: false,
+    );
   }
 
   @override
@@ -508,14 +609,15 @@ class QuickJsApkSourceScript
     author: _firstText(item, ['author', 'developer']),
   );
 
-  SourceCategory _category(Map<String, dynamic> item) => SourceCategory(
-    id: (item['id'] ?? item['url'] ?? '').toString(),
-    name: (item['name'] ?? '').toString(),
-    sourceId: id,
-    sourceName: name,
-    description: (item['description'] ?? '').toString(),
-    apps: _dynamicList(item['apps']).map(_listing).toList(),
-  );
+  SourceCatalogTab _catalogTab(Map<String, dynamic> item, {bool? paged}) =>
+      SourceCatalogTab(
+        id: (item['id'] ?? item['url'] ?? '').toString(),
+        name: (item['name'] ?? '').toString(),
+        sourceId: id,
+        sourceName: name,
+        paged: paged ?? item['paged'] == true,
+        description: (item['description'] ?? '').toString(),
+      );
 
   AppDetails _details(Map<String, dynamic> item) => AppDetails(
     id: (item['id'] ?? item['url'] ?? '').toString(),

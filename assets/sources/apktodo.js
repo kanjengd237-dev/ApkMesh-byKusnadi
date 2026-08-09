@@ -1,5 +1,6 @@
 /** APKTodo metadata source for APK Mesh's QuickJS contract. */
 const ORIGIN = 'https://apktodo.io';
+const RECOMMENDED_TAB_ID = 'recommended';
 const SEARCH_HEADERS = {
   Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.8',
@@ -171,6 +172,17 @@ function searchUrl(query, page) {
   return `${ORIGIN}/?s=${encodeURIComponent(query)}${suffix}`;
 }
 
+function catalogPageUrl(tabId, page) {
+  const number = Math.max(1, Number(page) || 1);
+  const base = absoluteUrl(tabId).replace(/\/+$/, '');
+  return number > 1 ? `${base}/page/${number}/` : `${base}/`;
+}
+
+function hasNextPage(html) {
+  return /\brel\s*=\s*['"]next['"]/i.test(html || '') ||
+    /\bclass\s*=\s*['"][^'"]*\bnext\b[^'"]*['"]/i.test(html || '');
+}
+
 async function fetchText(url, referer = ORIGIN) {
   return apkmesh.request(url, {
     headers: {...SEARCH_HEADERS, Referer: referer},
@@ -317,16 +329,17 @@ async function reportDetailProgress(requestId, index, downloads, error) {
   }
 }
 
-const CATEGORIES = [
-  {id: `${ORIGIN}/games/`, name: 'Games', description: 'Android 游戏'},
-  {id: `${ORIGIN}/apps/`, name: 'Apps', description: 'Android 应用'},
+const CATALOG_TABS = [
+  {id: RECOMMENDED_TAB_ID, name: '推荐', paged: false},
+  {id: `${ORIGIN}/games/`, name: '游戏', description: 'Android 游戏', paged: true},
+  {id: `${ORIGIN}/apps/`, name: '应用', description: 'Android 应用', paged: true},
 ];
 
 globalThis.source = {
   manifest: {
     id: 'apktodo',
     name: 'APKTodo',
-    version: '1.0.0',
+    version: '1.1.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
     description: '读取 APKTodo 应用元数据、截图、详情和下载项。',
@@ -355,20 +368,39 @@ globalThis.source = {
       },
       {
         id: 'catalog',
-        name: '检查主页与分类',
-        description: '调用源主页和分类实现，汇总每个分类返回的应用数量。',
-        inputLabel: '分类数量上限',
+        name: '检查目录标签',
+        description: '调用源目录接口，汇总每个标签返回的应用数量。',
+        inputLabel: '标签数量上限',
         placeholder: '0 表示全部',
         defaultInput: '0',
       },
     ],
   },
 
-  async home() {
-    const html = await fetchText(`${ORIGIN}/`);
+  async catalog() {
     return {
-      recommended: parseGridResults(html).slice(0, 24),
-      categories: CATEGORIES,
+      defaultTabId: RECOMMENDED_TAB_ID,
+      tabs: CATALOG_TABS,
+    };
+  },
+
+  async catalogPage(tabId, page = 1) {
+    const number = Math.max(1, Number(page) || 1);
+    if (tabId === RECOMMENDED_TAB_ID) {
+      if (number > 1) return {apps: [], hasMore: false};
+      const html = await fetchText(`${ORIGIN}/`);
+      return {apps: parseGridResults(html).slice(0, 24), hasMore: false};
+    }
+
+    const id = absoluteUrl(tabId).replace(/\/+$/, '') + '/';
+    if (!new RegExp(`^${ORIGIN}/(?:games|apps)/$`, 'i').test(id)) {
+      throw new TypeError('无效的目录标签地址');
+    }
+    const html = await fetchSearchText(catalogPageUrl(id, number));
+    if (html === null) return {apps: [], hasMore: false};
+    return {
+      apps: parseIconResults(html),
+      hasMore: hasNextPage(html),
     };
   },
 
@@ -377,18 +409,6 @@ globalThis.source = {
     if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
     const html = await fetchSearchText(searchUrl(normalized, page));
     return html === null ? [] : parseSearchResults(html);
-  },
-
-  async category(categoryId) {
-    const id = absoluteUrl(categoryId).replace(/\/+$/, '') + '/';
-    const match = new RegExp(`^${ORIGIN}/(games|apps)/$`, 'i').exec(id);
-    if (!match) throw new TypeError('无效的分类地址');
-    const html = await fetchText(id);
-    return {
-      id,
-      name: match[1].toLowerCase() === 'games' ? 'Games' : 'Apps',
-      apps: parseIconResults(html),
-    };
   },
 
   async detailsMetadata(url) {
@@ -505,21 +525,18 @@ globalThis.source = {
       };
     }
     if (projectId === 'catalog') {
-      const home = await this.home();
+      const catalog = await this.catalog();
       const limit = Math.max(0, Number(value) || 0);
-      const selected = limit > 0 ? home.categories.slice(0, limit) : home.categories;
-      const categories = [];
-      for (const category of selected) {
-        const result = await this.category(category.id);
-        categories.push({id: result.id, name: result.name, apps: result.apps.length});
+      const selected = limit > 0 ? catalog.tabs.slice(0, limit) : catalog.tabs;
+      const tabs = [];
+      for (const tab of selected) {
+        const result = await this.catalogPage(tab.id, 1);
+        tabs.push({id: tab.id, name: tab.name, apps: result.apps.length, hasMore: result.hasMore});
       }
       return {
-        title: '主页与分类检查完成',
-        summary: `推荐应用 ${home.recommended.length} 个；检查分类 ${categories.length} 个`,
-        data: {
-          recommended: home.recommended.length,
-          categories,
-        },
+        title: '目录标签检查完成',
+        summary: `检查标签 ${tabs.length} 个`,
+        data: {tabs},
       };
     }
     throw new Error(`未知调试项目：${projectId}`);

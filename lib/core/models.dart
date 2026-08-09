@@ -95,43 +95,52 @@ class SourceImportResult {
   final Map<String, String> failures;
 }
 
-class SourceCategory {
-  const SourceCategory({
+class SourceCatalogTab {
+  const SourceCatalogTab({
     required this.id,
     required this.name,
     required this.sourceId,
     required this.sourceName,
+    required this.paged,
     this.description = '',
-    this.apps = const [],
   });
 
   final String id;
   final String name;
   final String sourceId;
   final String sourceName;
+  final bool paged;
   final String description;
-  final List<AppListing> apps;
+}
 
-  SourceCategory copyWith({List<AppListing>? apps}) => SourceCategory(
-    id: id,
-    name: name,
-    sourceId: sourceId,
-    sourceName: sourceName,
-    description: description,
-    apps: apps ?? this.apps,
+class SourceCatalog {
+  const SourceCatalog({this.tabs = const [], this.defaultTabId});
+
+  final List<SourceCatalogTab> tabs;
+  final String? defaultTabId;
+
+  SourceCatalog merge(SourceCatalog other) => SourceCatalog(
+    tabs: [...tabs, ...other.tabs],
+    defaultTabId: defaultTabId ?? other.defaultTabId,
   );
 }
 
-class SourceHome {
-  const SourceHome({this.recommended = const [], this.categories = const []});
+class SourceCatalogPage {
+  const SourceCatalogPage({
+    required this.tabId,
+    required this.sourceId,
+    required this.sourceName,
+    required this.page,
+    required this.apps,
+    required this.hasMore,
+  });
 
-  final List<AppListing> recommended;
-  final List<SourceCategory> categories;
-
-  SourceHome merge(SourceHome other) => SourceHome(
-    recommended: [...recommended, ...other.recommended],
-    categories: [...categories, ...other.categories],
-  );
+  final String tabId;
+  final String sourceId;
+  final String sourceName;
+  final int page;
+  final List<AppListing> apps;
+  final bool hasMore;
 }
 
 class SourceTestResult {

@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
-    'QuickJS catalog calls serialize object results as JSON',
+    'QuickJS catalog calls serialize tabs and page results as JSON',
     () async {
       final source = QuickJsApkSourceScript('''
       globalThis.source = {
@@ -20,10 +20,55 @@ void main() {
         },
         async search(query, page = 1) { return []; },
         async details(url) { return {id: url, name: 'Example App'}; },
+        async catalog() {
+          return {
+            defaultTabId: 'featured',
+            tabs: [
+              {id: 'featured', name: 'Featured', paged: false},
+              {id: 'tools', name: 'Tools', paged: true},
+            ],
+          };
+        },
+        async catalogPage(tabId, page = 1) {
+          return {
+            apps: [{id: 'https://example.test/app', name: 'Catalog App'}],
+            hasMore: tabId === 'tools' && page === 1,
+          };
+        },
+      };
+    ''');
+
+      await source.initialize();
+      final catalog = await source.catalog(DemoHostApi());
+      final page = await source.catalogPage('tools', DemoHostApi(), page: 1);
+
+      expect(catalog.defaultTabId, 'featured');
+      expect(catalog.tabs.last.id, 'tools');
+      expect(page.apps.single.name, 'Catalog App');
+      expect(page.hasMore, isTrue);
+      await source.dispose();
+    },
+    skip: !Platform.isAndroid,
+  );
+
+  test(
+    'QuickJS adapts legacy home and category methods to catalog tabs',
+    () async {
+      final source = QuickJsApkSourceScript('''
+      globalThis.source = {
+        manifest: {
+          id: 'legacy-catalog-test',
+          name: 'Legacy catalog test',
+          version: '1.0.0',
+          homepage: 'https://example.test/',
+          permissions: {network: ['example.test']},
+        },
+        async search(query, page = 1) { return []; },
+        async details(url) { return {id: url, name: 'Example App'}; },
         async home() {
           return {
             recommended: [{id: 'https://example.test/app', name: 'Home App'}],
-            categories: [{id: 'tools', name: 'Tools', apps: []}],
+            categories: [{id: 'tools', name: 'Tools'}],
           };
         },
         async category(categoryId) {
@@ -33,10 +78,13 @@ void main() {
     ''');
 
       await source.initialize();
-      final home = await source.home(DemoHostApi());
+      final catalog = await source.catalog(DemoHostApi());
+      final categoryPage = await source.catalogPage('tools', DemoHostApi());
 
-      expect(home.recommended.single.name, 'Home App');
-      expect(home.categories.single.id, 'tools');
+      expect(catalog.tabs.map((tab) => tab.name), ['推荐', 'Tools']);
+      expect(catalog.tabs.every((tab) => !tab.paged), isTrue);
+      expect(categoryPage.apps, isEmpty);
+      expect(categoryPage.hasMore, isFalse);
       await source.dispose();
     },
     skip: !Platform.isAndroid,

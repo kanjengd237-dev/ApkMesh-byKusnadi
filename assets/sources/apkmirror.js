@@ -504,7 +504,7 @@ globalThis.source = {
   manifest: {
     id: 'apkmirror',
     name: 'APKMirror',
-    version: '1.0.0',
+    version: '1.1.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
     description: 'APKMirror 版本搜索、详情、变体和下载源。',
@@ -534,15 +534,46 @@ globalThis.source = {
     ],
   },
 
-  async home() {
+  async catalog() {
     return {
-      recommended: [],
-      categories: [
-        {id: `${ORIGIN}/categories/apps/`, name: 'Apps', description: 'Android applications'},
-        {id: `${ORIGIN}/categories/games/`, name: 'Games', description: 'Android games'},
-        {id: `${ORIGIN}/categories/health_and_fitness/`, name: 'Health and Fitness', description: 'Health and fitness apps'},
+      defaultTabId: `${ORIGIN}/categories/game_action/`,
+      tabs: [
+        {id: `${ORIGIN}/categories/game_action/`, name: 'Action Games', description: 'Android action games', paged: false},
+        {id: `${ORIGIN}/categories/game_adventure/`, name: 'Adventure Games', description: 'Android adventure games', paged: false},
+        {id: `${ORIGIN}/categories/health_and_fitness/`, name: 'Health and Fitness', description: 'Health and fitness apps', paged: false},
       ],
     };
+  },
+
+  async catalogPage(tabId, page = 1) {
+    const id = absoluteUrl(tabId);
+    if (!/^https:\/\/www\.apkmirror\.com\/categories\/[^/?#]+\/?$/i.test(id)) {
+      throw new TypeError('Invalid APKMirror catalog tab URL');
+    }
+    if (Math.max(1, Number(page) || 1) > 1) return {apps: [], hasMore: false};
+    const url = id.replace(/\/+$/, '') + '/';
+    try {
+      const html = await fetchSearchText(url);
+      if (html === null) return {apps: [], hasMore: false};
+      return {
+        apps: parseSearchResults(html),
+        hasMore: false,
+      };
+    } catch (error) {
+      const tab = await apkmesh.browser.open(url);
+      try {
+        await tab.waitFor('.appRow');
+        const apps = browserSearchResults(await tab.queryAll('.appRow', {
+          id: '.appRowTitle a@href',
+          name: '.appRowTitle a@text',
+          iconUrl: 'img.ellipsisText@src',
+          updatedAt: '.dateyear_utc@text',
+        }));
+        return {apps, hasMore: false};
+      } finally {
+        await tab.close();
+      }
+    }
   },
 
   async search(query, page = 1) {
@@ -567,18 +598,6 @@ globalThis.source = {
         await tab.close();
       }
     }
-  },
-
-  async category(categoryId) {
-    const id = absoluteUrl(categoryId);
-    if (!/^https:\/\/www\.apkmirror\.com\/categories\/[^/?#]+\/?$/i.test(id)) {
-      throw new TypeError('Invalid APKMirror category URL');
-    }
-    return {
-      id,
-      name: cleanText(id.replace(/\/$/, '').split('/').pop().replace(/[_-]+/g, ' ')),
-      apps: parseSearchResults(await fetchText(id)),
-    };
   },
 
   async detailsMetadata(url) {

@@ -1,6 +1,6 @@
 # APK Mesh Source API v1
 
-源是由 QuickJS 执行的单个 JavaScript 文件。脚本必须设置 `globalThis.source`，其中包含 `manifest`、`search()` 和 `details()`。宿主会验证返回值并在展示前附加源标识。源还可以可选实现 `home()` 和 `category()`，为主页提供推荐应用与分类入口。
+源是由 QuickJS 执行的单个 JavaScript 文件。脚本必须设置 `globalThis.source`，其中包含 `manifest`、`search()` 和 `details()`。宿主会验证返回值并在展示前附加源标识。源还可以可选实现 `catalog()` 和 `catalogPage()`，为主页提供由源定义的内容标签及分页列表。
 
 ## 必需接口
 
@@ -47,28 +47,36 @@ globalThis.source = {
 
 源可以额外实现分阶段详情接口：`detailsMetadata(idOrUrl)` 返回不包含最终下载直链的详情主体，并在 `downloadCandidates` 中返回待解析的下载候选项；`resolveDownloads(candidates, requestId)` 解析这些候选项。解析过程中可调用 `apkmesh.detailProgress(requestId, update)`，其中 `update` 包含候选项 `index`，以及 `download` 或 `downloads`（一个候选项可以产生多个最终文件），失败时包含 `error`。宿主会按候选项顺序逐项更新 UI；只有拿到最终下载对象后才会显示可下载操作，实际下载时仍执行源权限校验。未实现这两个可选接口的源继续使用一次性 `details()`。
 
-## 可选主页与分类接口
+## 可选主页目录接口
 
 ```js
-async home() {
+async catalog() {
   return {
-    recommended: await this.search('featured'),
-    categories: [
-      { id: 'games/action', name: '动作', description: '动作类应用' },
+    defaultTabId: 'featured',
+    tabs: [
+      { id: 'featured', name: '推荐', paged: false },
+      { id: 'games', name: '游戏', paged: true },
+      { id: 'apps', name: '应用', paged: true },
     ],
   };
 }
 
-async category(categoryId) {
+async catalogPage(tabId, page) {
+  const apps = tabId === 'featured'
+    ? await this.search('featured', 1)
+    : await loadCatalogPage(tabId, page);
   return {
-    id: categoryId,
-    name: '动作',
-    apps: [],
+    apps,
+    hasMore: tabId !== 'featured' && apps.length > 0,
   };
 }
 ```
 
-`home()` 返回 `recommended` 推荐应用数组和 `categories` 分类数组。分类至少包含 `id`、`name`，可包含 `description`。用户点击分类时，宿主调用 `category(categoryId)`，返回包含 `id`、`name` 和 `apps` 应用数组的分类对象。`apps` 中的应用字段与 `search()` 返回值相同。搜索结果仍由所有启用源聚合；主页与分类由用户在源管理中选择的单个主页源提供，其他源不会参与 `home()`。
+`catalog()` 返回有序的 `tabs` 数组。每个标签必须包含稳定且非空的 `id`、用于展示的 `name` 和布尔值 `paged`，可包含 `description`。宿主不解释标签 ID，也不假设第一个标签是推荐、主页或分类；源可以按站点结构自由提供推荐、应用、游戏、更新或任意分类标签。`defaultTabId` 可选，必须指向返回的标签；省略或无效时宿主使用第一个标签。
+
+宿主只会立即加载当前标签，不会在主页初始化时请求所有标签内容。`catalogPage(tabId, page)` 中 `page` 从 1 开始，返回 `{ apps, hasMore }`。`apps` 字段与 `search()` 的应用摘要数组相同；`hasMore` 表示成功加载当前页后是否仍可请求下一页。`paged: false` 的标签只请求第 1 页，并应返回 `hasMore: false`。分页请求收到 HTTP 404 时应返回空数组和 `hasMore: false`；其他失败必须作为源错误抛出，不能误报为末页。源应保持跨页 ID 稳定并避免重复结果。
+
+主页目录仍只使用用户在源管理中选择的单个主页源，搜索结果继续由所有启用源聚合。旧版 `home()`/`category()` 源仍由 Flutter 宿主兼容：推荐内容和每个分类会转换为不可分页标签；新源应实现 `catalog()`/`catalogPage()`。
 
 `debugProjects` 是可选的调试项目声明。调试面板会按声明生成输入框和运行按钮，并调用 `debug(projectId, input)`。项目应返回 `{ title, summary, data }`，其中 `data` 会以结构化文本显示在运行结果下方。项目可以复用 `search()`、`details()` 或其他已声明的宿主能力；例如详情项目调用 `apkmesh.browser.open()` 时，面板会同步显示活动 WebView，点击标签即可打开可视化查看器。
 

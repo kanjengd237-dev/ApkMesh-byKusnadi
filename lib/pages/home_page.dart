@@ -28,19 +28,19 @@ class HomePage extends StatefulWidget {
 
 class HomePageState extends State<HomePage> {
   List<AppListing> results = const [];
-  SourceHome home = const SourceHome();
+  SourceCatalog catalog = const SourceCatalog();
   bool loading = false;
   bool loadingMore = false;
-  bool homeLoading = false;
-  bool homeLoaded = false;
+  bool catalogLoading = false;
+  bool catalogLoaded = false;
   String? error;
-  String? homeError;
+  String? catalogError;
   String? submittedQuery;
-  String _selectedTab = 'home';
-  String? _loadedHomeSourceId;
-  final Map<String, Future<SourceCategory>> _categoryLoads = {};
+  String _selectedTab = '';
+  String? _loadedCatalogSourceId;
+  final Map<String, _CatalogTabLoadState> _catalogTabStates = {};
   int _searchGeneration = 0;
-  int _homeGeneration = 0;
+  int _catalogGeneration = 0;
   SearchResultRanker? _searchRanker;
   Map<String, int> _searchSourceOrder = const {};
   Map<String, Map<String, int>> _searchResultOrder = {};
@@ -60,7 +60,7 @@ class HomePageState extends State<HomePage> {
     _contentScrollController = ScrollController()
       ..addListener(_onContentScroll);
     widget.state.addListener(_onStateChanged);
-    _loadHome();
+    _loadCatalog();
   }
 
   @override
@@ -74,53 +74,117 @@ class HomePageState extends State<HomePage> {
 
   void _onStateChanged() {
     if (!mounted || submittedQuery != null) return;
-    if (_loadedHomeSourceId == widget.state.homeSourceId) return;
-    _categoryLoads.clear();
+    if (_loadedCatalogSourceId == widget.state.homeSourceId) return;
+    _catalogTabStates.clear();
     setState(() {
-      homeLoaded = false;
-      homeLoading = false;
-      _selectedTab = 'home';
+      catalog = const SourceCatalog();
+      catalogLoaded = false;
+      catalogLoading = false;
+      _selectedTab = '';
     });
-    _loadHome();
+    _loadCatalog();
   }
 
-  Future<void> _loadHome({bool force = false}) async {
-    if ((homeLoaded && !force) || homeLoading) return;
-    if (force) _categoryLoads.clear();
-    final generation = ++_homeGeneration;
+  Future<void> _loadCatalog({bool force = false}) async {
+    if ((catalogLoaded && !force) || catalogLoading) return;
+    if (force) _catalogTabStates.clear();
+    final generation = ++_catalogGeneration;
     setState(() {
-      homeLoading = true;
-      homeError = null;
+      catalogLoading = true;
+      catalogError = null;
     });
     try {
-      final content = await widget.state.home();
-      if (!mounted || generation != _homeGeneration) return;
+      final content = await widget.state.catalog();
+      if (!mounted || generation != _catalogGeneration) return;
+      final selected = _selectCatalogTab(content);
       setState(() {
-        home = content;
-        _loadedHomeSourceId = widget.state.homeSourceId;
-        homeLoading = false;
-        homeLoaded = true;
-        if (!home.categories.any(
-          (category) =>
-              'category:${category.sourceId}:${category.id}' == _selectedTab,
-        )) {
-          _selectedTab = 'home';
-        }
-        if (content.recommended.isEmpty &&
-            content.categories.isEmpty &&
-            widget.state.sourceErrors.isNotEmpty) {
-          homeError = widget.state.sourceErrors.entries
+        catalog = content;
+        _loadedCatalogSourceId = widget.state.homeSourceId;
+        catalogLoading = false;
+        catalogLoaded = true;
+        _selectedTab = selected == null ? '' : _catalogTabKey(selected);
+        if (content.tabs.isEmpty && widget.state.sourceErrors.isNotEmpty) {
+          catalogError = widget.state.sourceErrors.entries
               .map((entry) => '${entry.key}：${entry.value}')
               .join('\n');
         }
       });
+      if (selected != null) await _loadCatalogTab(selected);
     } catch (loadError) {
-      if (!mounted || generation != _homeGeneration) return;
+      if (!mounted || generation != _catalogGeneration) return;
       setState(() {
-        homeLoading = false;
-        homeLoaded = true;
-        homeError = loadError.toString();
+        catalogLoading = false;
+        catalogLoaded = true;
+        catalogError = loadError.toString();
       });
+    }
+  }
+
+  SourceCatalogTab? _selectCatalogTab(SourceCatalog content) {
+    for (final tab in content.tabs) {
+      if (_catalogTabKey(tab) == _selectedTab) return tab;
+    }
+    for (final tab in content.tabs) {
+      if (tab.id == content.defaultTabId) return tab;
+    }
+    return content.tabs.firstOrNull;
+  }
+
+  String _catalogTabKey(SourceCatalogTab tab) =>
+      'catalog:${tab.sourceId}:${tab.id}';
+
+  Future<void> _loadCatalogTab(
+    SourceCatalogTab tab, {
+    bool refresh = false,
+  }) async {
+    final key = _catalogTabKey(tab);
+    final state = _catalogTabStates.putIfAbsent(
+      key,
+      () => _CatalogTabLoadState(),
+    );
+    if (state.loading || (!refresh && (state.loaded && !state.hasMore))) {
+      return;
+    }
+    if (!refresh && state.loaded && !tab.paged) return;
+
+    final generation = _catalogGeneration;
+    final page = refresh ? 1 : state.nextPage;
+    setState(() {
+      state.loading = true;
+      state.error = null;
+    });
+    try {
+      final result = await widget.state.catalogPage(tab, page: page);
+      if (!mounted || generation != _catalogGeneration) return;
+      final seenIds = refresh ? <String>{} : state.seenIds;
+      final newApps = <AppListing>[];
+      for (final app in result.apps) {
+        if (seenIds.add(app.id)) newApps.add(app);
+      }
+      setState(() {
+        if (refresh) {
+          state.seenIds
+            ..clear()
+            ..addAll(seenIds);
+        }
+        state
+          ..apps = page == 1 ? newApps : [...state.apps, ...newApps]
+          ..loaded = true
+          ..nextPage = page + 1
+          ..hasMore = tab.paged && result.hasMore && newApps.isNotEmpty
+          ..error = null;
+      });
+    } catch (loadError) {
+      if (!mounted || generation != _catalogGeneration) return;
+      setState(() {
+        state
+          ..loaded = true
+          ..error = loadError.toString();
+      });
+    } finally {
+      if (mounted && generation == _catalogGeneration) {
+        setState(() => state.loading = false);
+      }
     }
   }
 
@@ -148,15 +212,20 @@ class HomePageState extends State<HomePage> {
     _nextSearchPage = 2;
     loadingMore = false;
     if (query.isEmpty) {
+      final selected = _selectCatalogTab(catalog);
       setState(() {
         submittedQuery = null;
         results = const [];
         loading = false;
         error = null;
-        _selectedTab = 'home';
+        _selectedTab = selected == null ? '' : _catalogTabKey(selected);
       });
       widget.onSearchLoadingChanged?.call(false);
-      await _loadHome();
+      if (_loadedCatalogSourceId != widget.state.homeSourceId) {
+        await _loadCatalog(force: true);
+      } else if (selected != null) {
+        await _loadCatalogTab(selected);
+      }
       return;
     }
     _searchRanker = SearchResultRanker(query);
@@ -288,12 +357,19 @@ class HomePageState extends State<HomePage> {
   );
 
   void _onContentScroll() {
-    if (!mounted || submittedQuery == null || loading || loadingMore) return;
     if (!_contentScrollController.hasClients ||
         _contentScrollController.position.extentAfter > 480) {
       return;
     }
-    unawaited(_loadNextSearchPage());
+    if (submittedQuery != null) {
+      if (!loading && !loadingMore) unawaited(_loadNextSearchPage());
+      return;
+    }
+    final tab = _activeTab(_tabs)?.catalogTab;
+    if (tab == null || !tab.paged) return;
+    final state = _catalogTabStates[_catalogTabKey(tab)];
+    if (state == null || state.loading || !state.hasMore) return;
+    unawaited(_loadCatalogTab(tab));
   }
 
   Future<void> _loadNextSearchPage() async {
@@ -408,16 +484,23 @@ class HomePageState extends State<HomePage> {
     ++_searchGeneration;
     _resultsListKey = GlobalKey<AnimatedListState>();
     _animatedResultCount = 0;
+    final selected = _selectCatalogTab(catalog);
     setState(() {
       submittedQuery = null;
       results = const [];
       loading = false;
       loadingMore = false;
       error = null;
-      _selectedTab = 'home';
+      _selectedTab = selected == null ? '' : _catalogTabKey(selected);
     });
     widget.onSearchLoadingChanged?.call(false);
-    _loadHome();
+    if (_loadedCatalogSourceId != widget.state.homeSourceId) {
+      _loadCatalog(force: true);
+    } else if (selected != null) {
+      _loadCatalogTab(selected);
+    } else {
+      _loadCatalog();
+    }
   }
 
   Future<void> _refreshContent() async {
@@ -426,32 +509,21 @@ class HomePageState extends State<HomePage> {
       await search(preserveSelectedTab: true);
       return;
     }
-    final category = activeTab.category;
-    if (category != null) {
-      final key = '${category.sourceId}:${category.id}';
-      final future = widget.state.category(category);
-      _categoryLoads[key] = future;
-      setState(() {});
-      try {
-        await future;
-      } catch (_) {}
-      return;
-    }
-    await _loadHome(force: true);
+    final catalogTab = activeTab?.catalogTab;
+    if (catalogTab != null) await _loadCatalogTab(catalogTab, refresh: true);
   }
 
   List<ContentTab> get _tabs {
     if (submittedQuery == null) {
-      return [
-        const ContentTab(id: 'home', label: '主页'),
-        ...home.categories.map(
-          (category) => ContentTab(
-            id: 'category:${category.sourceId}:${category.id}',
-            label: category.name,
-            category: category,
-          ),
-        ),
-      ];
+      return catalog.tabs
+          .map(
+            (tab) => ContentTab(
+              id: _catalogTabKey(tab),
+              label: tab.name,
+              catalogTab: tab,
+            ),
+          )
+          .toList(growable: false);
     }
     return [
       const ContentTab(id: 'all', label: '全部源'),
@@ -467,11 +539,11 @@ class HomePageState extends State<HomePage> {
     ];
   }
 
-  ContentTab _activeTab(List<ContentTab> tabs) {
+  ContentTab? _activeTab(List<ContentTab> tabs) {
     for (final tab in tabs) {
       if (tab.id == _selectedTab) return tab;
     }
-    return tabs.first;
+    return tabs.firstOrNull;
   }
 
   Widget _buildTabBar(
@@ -490,7 +562,11 @@ class HomePageState extends State<HomePage> {
         tabAlignment: TabAlignment.start,
         onTap: (index) {
           if (index < tabs.length) {
-            setState(() => _selectedTab = tabs[index].id);
+            final tab = tabs[index];
+            setState(() => _selectedTab = tab.id);
+            if (tab.catalogTab != null) {
+              unawaited(_loadCatalogTab(tab.catalogTab!));
+            }
           }
         },
         tabs: tabs.map((tab) => Tab(text: tab.label)).toList(),
@@ -498,66 +574,98 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  Future<SourceCategory> _categoryFuture(SourceCategory category) {
-    final key = '${category.sourceId}:${category.id}';
-    return _categoryLoads.putIfAbsent(
-      key,
-      () => category.apps.isNotEmpty
-          ? Future<SourceCategory>.value(category)
-          : widget.state.category(category),
-    );
-  }
-
-  List<Widget> _buildHomeContent(BuildContext context, ContentTab activeTab) {
-    if (homeLoading && !homeLoaded) {
+  List<Widget> _buildCatalogContent(
+    BuildContext context,
+    ContentTab? activeTab,
+  ) {
+    if (catalogLoading && !catalogLoaded) {
       return const [
         SearchLoadingView(icon: Icons.home_outlined, label: '正在加载首页'),
       ];
     }
-    if (homeError != null &&
-        home.recommended.isEmpty &&
-        home.categories.isEmpty) {
+    if (catalogError != null && catalog.tabs.isEmpty) {
       return [
         Card(
           color: Theme.of(context).colorScheme.errorContainer,
           child: ListTile(
             leading: const Icon(Icons.error_outline),
             title: const Text('首页内容加载失败'),
-            subtitle: Text(homeError!),
+            subtitle: Text(catalogError!),
+            trailing: IconButton(
+              tooltip: '重试',
+              icon: const Icon(Icons.refresh),
+              onPressed: () => _loadCatalog(force: true),
+            ),
           ),
         ),
       ];
     }
-    if (activeTab.category != null) {
-      return [
-        CategoryTabContent(
-          category: activeTab.category!,
-          future: _categoryFuture(activeTab.category!),
-          state: widget.state,
-        ),
-      ];
-    }
-    final recommended = home.recommended.take(12).toList();
-    if (recommended.isEmpty) {
+    final tab = activeTab?.catalogTab;
+    if (tab == null) {
       return const [
         EmptyMessage(
           icon: Icons.home_work_outlined,
-          title: '暂无推荐应用',
-          detail: '当前主页源没有返回推荐应用。',
+          title: '暂无目录内容',
+          detail: '当前主页源没有返回可用标签。',
+        ),
+      ];
+    }
+    final state = _catalogTabStates[_catalogTabKey(tab)];
+    if (state == null || (state.loading && !state.loaded)) {
+      return [
+        SearchLoadingView(icon: Icons.apps_outlined, label: '正在加载${tab.name}'),
+      ];
+    }
+    if (state.error != null && state.apps.isEmpty) {
+      return [
+        Card(
+          color: Theme.of(context).colorScheme.errorContainer,
+          child: ListTile(
+            leading: const Icon(Icons.error_outline),
+            title: Text('${tab.name}加载失败'),
+            subtitle: Text(state.error!),
+            trailing: IconButton(
+              tooltip: '重试',
+              icon: const Icon(Icons.refresh),
+              onPressed: () => _loadCatalogTab(tab, refresh: true),
+            ),
+          ),
+        ),
+      ];
+    }
+    if (state.apps.isEmpty) {
+      return const [
+        EmptyMessage(
+          icon: Icons.apps_outage_outlined,
+          title: '暂无应用',
+          detail: '该标签没有返回可用应用。',
         ),
       ];
     }
     return [
-      Text('推荐应用', style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 8),
-      ...recommended.asMap().entries.map(
+      ...state.apps.asMap().entries.map(
         (entry) => AppResultTile(
           app: entry.value,
           state: widget.state,
           onOpen: (app) => showAppDetails(context, widget.state, app),
-          showDivider: entry.key < recommended.length - 1,
+          showDivider: entry.key < state.apps.length - 1,
         ),
       ),
+      if (state.loading)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      if (state.error != null)
+        ListTile(
+          leading: const Icon(Icons.error_outline),
+          title: const Text('加载下一页失败'),
+          trailing: IconButton(
+            tooltip: '重试',
+            icon: const Icon(Icons.refresh),
+            onPressed: () => _loadCatalogTab(tab),
+          ),
+        ),
     ];
   }
 
@@ -681,10 +789,11 @@ class HomePageState extends State<HomePage> {
     final activeTab = _activeTab(tabs);
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: _buildTabBar(context, tabs, activeTab),
-        ),
+        if (activeTab != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: _buildTabBar(context, tabs, activeTab),
+          ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _refreshContent,
@@ -701,8 +810,8 @@ class HomePageState extends State<HomePage> {
                   )
                 else
                   ...(showingHome
-                      ? _buildHomeContent(context, activeTab)
-                      : _buildSearchContent(context, activeTab)),
+                      ? _buildCatalogContent(context, activeTab)
+                      : _buildSearchContent(context, activeTab!)),
               ],
             ),
           ),
@@ -853,65 +962,22 @@ class ContentTab {
   const ContentTab({
     required this.id,
     required this.label,
-    this.category,
+    this.catalogTab,
     this.sourceId,
   });
 
   final String id;
   final String label;
-  final SourceCategory? category;
+  final SourceCatalogTab? catalogTab;
   final String? sourceId;
 }
 
-class CategoryTabContent extends StatelessWidget {
-  const CategoryTabContent({
-    required this.category,
-    required this.future,
-    required this.state,
-    super.key,
-  });
-
-  final SourceCategory category;
-  final Future<SourceCategory> future;
-  final AppState state;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<SourceCategory>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(32),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (snapshot.hasError) {
-          return Text('分类加载失败：${snapshot.error}');
-        }
-        final apps = snapshot.data?.apps ?? const <AppListing>[];
-        if (apps.isEmpty) {
-          return const EmptyMessage(
-            icon: Icons.apps_outage_outlined,
-            title: '分类暂无应用',
-            detail: '该源没有返回可用应用。',
-          );
-        }
-        return Column(
-          children: apps
-              .asMap()
-              .entries
-              .map(
-                (entry) => AppResultTile(
-                  app: entry.value,
-                  state: state,
-                  onOpen: (app) => showAppDetails(context, state, app),
-                  showDivider: entry.key < apps.length - 1,
-                ),
-              )
-              .toList(),
-        );
-      },
-    );
-  }
+class _CatalogTabLoadState {
+  List<AppListing> apps = const [];
+  final Set<String> seenIds = {};
+  int nextPage = 1;
+  bool loaded = false;
+  bool loading = false;
+  bool hasMore = true;
+  String? error;
 }

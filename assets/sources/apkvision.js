@@ -1,6 +1,7 @@
 /** APKVision development source for APK Mesh's QuickJS contract. */
 const ORIGIN = 'https://apkvision.org';
 const SEARCH_PATH = '/?s=';
+const RECOMMENDED_TAB_ID = 'recommended';
 const SEARCH_HEADERS = {
   Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.8',
@@ -89,6 +90,17 @@ function searchUrl(query, page) {
   return `${ORIGIN}${SEARCH_PATH}${encodeURIComponent(query)}${suffix}`;
 }
 
+function catalogPageUrl(tabId, page) {
+  const number = Math.max(1, Number(page) || 1);
+  const base = absoluteUrl(tabId).replace(/\/+$/, '');
+  return number > 1 ? `${base}/page/${number}/` : `${base}/`;
+}
+
+function hasNextPage(html) {
+  return /\brel\s*=\s*["']next["']/i.test(html || '') ||
+    /\bclass\s*=\s*["'][^"']*\bnextpostslink\b/i.test(html || '');
+}
+
 async function fetchText(url) {
   return apkmesh.request(url, {headers: SEARCH_HEADERS});
 }
@@ -107,6 +119,8 @@ async function fetchSearchText(url) {
     throw error;
   }
 }
+
+let catalogHomeHtml = null;
 
 function parseCardResults(html, anchorClass, titleClass, metadataClass) {
   const entries = [];
@@ -246,7 +260,7 @@ globalThis.source = {
   manifest: {
     id: 'apkvision-demo',
     name: 'APKVision',
-    version: '1.0.0',
+    version: '1.1.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
     description: '内置 APKVision 测试源，用于验证搜索、详情和下载接口。',
@@ -276,11 +290,49 @@ globalThis.source = {
     ],
   },
 
-  async home() {
+  async catalog() {
     const html = await fetchText(`${ORIGIN}/`);
+    catalogHomeHtml = html;
+    const tabs = [
+      {id: RECOMMENDED_TAB_ID, name: '推荐', paged: false},
+      {id: `${ORIGIN}/app/`, name: '应用', paged: true},
+      {id: `${ORIGIN}/games/`, name: '游戏', paged: true},
+      {id: `${ORIGIN}/updated/`, name: '最近更新', paged: true},
+      {id: `${ORIGIN}/best-new-releases/`, name: '最佳新作', paged: true},
+    ];
+    const seen = new Set(tabs.map((tab) => tab.id));
+    for (const category of parseCategories(html)) {
+      if (seen.has(category.id)) continue;
+      seen.add(category.id);
+      tabs.push({...category, paged: true});
+    }
     return {
-      recommended: parseSearchResults(html).slice(0, 12),
-      categories: parseCategories(html),
+      defaultTabId: RECOMMENDED_TAB_ID,
+      tabs,
+    };
+  },
+
+  async catalogPage(tabId, page = 1) {
+    const number = Math.max(1, Number(page) || 1);
+    if (tabId === RECOMMENDED_TAB_ID) {
+      if (number > 1) return {apps: [], hasMore: false};
+      const html = catalogHomeHtml || await fetchText(`${ORIGIN}/`);
+      catalogHomeHtml = null;
+      return {
+        apps: parseSearchResults(html).slice(0, 12),
+        hasMore: false,
+      };
+    }
+
+    const id = absoluteUrl(tabId);
+    if (!/^https:\/\/apkvision\.org\/(?:app|apps|games|updated|best-new-releases)(?:\/[^/?#]+)?\/?$/i.test(id)) {
+      throw new TypeError('无效的目录标签地址');
+    }
+    const html = await fetchSearchText(catalogPageUrl(id, number));
+    if (html === null) return {apps: [], hasMore: false};
+    return {
+      apps: parseSearchResults(html),
+      hasMore: hasNextPage(html),
     };
   },
 
@@ -289,20 +341,6 @@ globalThis.source = {
     if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
     const html = await fetchSearchText(searchUrl(normalized, page));
     return html === null ? [] : parseSearchResults(html);
-  },
-
-  async category(categoryId) {
-    const id = absoluteUrl(categoryId);
-    if (!/^https:\/\/apkvision\.org\/(?:games|app|apps)\/[^/?#]+\/?$/i.test(id)) {
-      throw new TypeError('无效的分类地址');
-    }
-    const html = await fetchText(id);
-    const parts = id.replace(/\/$/, '').split('/');
-    return {
-      id,
-      name: humanize(parts[parts.length - 1]),
-      apps: parseSearchResults(html),
-    };
   },
 
   async detailsMetadata(url) {

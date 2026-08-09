@@ -37,6 +37,70 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def check_catalog(runtime: SourceRuntime, limit: int) -> dict[str, Any]:
+    if runtime.has_method("catalog") and runtime.has_method("catalogPage"):
+        return _check_tab_catalog(runtime, limit)
+    return _check_legacy_catalog(runtime, limit)
+
+
+def _check_tab_catalog(runtime: SourceRuntime, limit: int) -> dict[str, Any]:
+    catalog = runtime.call("catalog")
+    if not isinstance(catalog, dict):
+        raise RuntimeError("catalog() did not return an object")
+
+    tabs = catalog.get("tabs")
+    if not isinstance(tabs, list):
+        raise RuntimeError("catalog().tabs must be an array")
+    default_tab_id = catalog.get("defaultTabId")
+    if default_tab_id is not None and (
+        not isinstance(default_tab_id, str)
+        or default_tab_id not in {tab.get("id") for tab in tabs if isinstance(tab, dict)}
+    ):
+        raise RuntimeError("catalog().defaultTabId must reference a returned tab")
+
+    selected = tabs if limit == 0 else tabs[:limit]
+    checked_tabs = []
+    for index, tab in enumerate(selected):
+        if not isinstance(tab, dict):
+            raise RuntimeError(f"catalog().tabs[{index}] must be an object")
+        tab_id = tab.get("id")
+        tab_name = tab.get("name")
+        paged = tab.get("paged")
+        if not isinstance(tab_id, str) or not tab_id.strip():
+            raise RuntimeError(f"catalog().tabs[{index}].id must be a non-empty string")
+        if not isinstance(tab_name, str) or not tab_name.strip():
+            raise RuntimeError(f"catalog().tabs[{index}].name must be a non-empty string")
+        if not isinstance(paged, bool):
+            raise RuntimeError(f"catalog().tabs[{index}].paged must be a boolean")
+
+        result = runtime.call("catalogPage", tab_id, 1)
+        if not isinstance(result, dict):
+            raise RuntimeError(f"catalogPage() did not return an object: {tab_id}")
+        apps = result.get("apps")
+        has_more = result.get("hasMore")
+        _require_app_list(apps, f"catalogPage({tab_id!r}, 1).apps")
+        if not isinstance(has_more, bool):
+            raise RuntimeError(f"catalogPage({tab_id!r}, 1).hasMore must be a boolean")
+        if not paged and has_more:
+            raise RuntimeError(f"non-paged catalog tab returned hasMore=true: {tab_id}")
+        checked_tabs.append(
+            {
+                "id": tab_id,
+                "name": tab_name,
+                "paged": paged,
+                "apps": len(apps),
+                "has_more": has_more,
+                "first_app": apps[0].get("name", "") if apps else "",
+            }
+        )
+
+    return {
+        "ok": True,
+        "catalog": {"tabs": len(tabs), "default_tab_id": default_tab_id},
+        "checked_tabs": checked_tabs,
+    }
+
+
+def _check_legacy_catalog(runtime: SourceRuntime, limit: int) -> dict[str, Any]:
     home = runtime.call("home")
     if not isinstance(home, dict):
         raise RuntimeError("home() did not return an object")
@@ -48,7 +112,18 @@ def check_catalog(runtime: SourceRuntime, limit: int) -> dict[str, Any]:
         raise RuntimeError("home().categories must be an array")
 
     selected = categories if limit == 0 else categories[:limit]
-    category_results = []
+    checked_tabs = []
+    if recommended:
+        checked_tabs.append(
+            {
+                "id": "__legacy_recommended__",
+                "name": "Recommended",
+                "paged": False,
+                "apps": len(recommended),
+                "has_more": False,
+                "first_app": recommended[0].get("name", ""),
+            }
+        )
     for index, category in enumerate(selected):
         if not isinstance(category, dict):
             raise RuntimeError(f"home().categories[{index}] must be an object")
@@ -72,22 +147,22 @@ def check_catalog(runtime: SourceRuntime, limit: int) -> dict[str, Any]:
 
         apps = result.get("apps")
         _require_app_list(apps, f"category({category_id!r}).apps")
-        category_results.append(
+        checked_tabs.append(
             {
                 "id": result_id,
                 "name": result_name,
+                "paged": False,
                 "apps": len(apps),
+                "has_more": False,
                 "first_app": apps[0].get("name", "") if apps else "",
             }
         )
 
     return {
         "ok": True,
-        "home": {
-            "recommended": len(recommended),
-            "categories": len(categories),
-        },
-        "checked_categories": category_results,
+        "legacy": True,
+        "catalog": {"tabs": len(checked_tabs), "default_tab_id": checked_tabs[0]["id"] if checked_tabs else None},
+        "checked_tabs": checked_tabs,
     }
 
 

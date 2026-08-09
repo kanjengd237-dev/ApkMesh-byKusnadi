@@ -868,20 +868,23 @@ class AppState extends ChangeNotifier {
     return registry.details(app, host);
   }
 
-  Future<SourceHome> home() async {
+  Future<SourceCatalog> catalog() async {
     await ready;
-    return registry.home(
+    return registry.catalog(
       host,
       enabledSourceIds: homeSourceId == null ? const {} : {homeSourceId!},
     );
   }
 
-  Future<SourceCategory> category(SourceCategory category) async {
+  Future<SourceCatalogPage> catalogPage(
+    SourceCatalogTab tab, {
+    int page = 1,
+  }) async {
     await ready;
-    if (category.sourceId != homeSourceId) {
-      throw StateError('该分类不属于当前主页源');
+    if (tab.sourceId != homeSourceId) {
+      throw StateError('该目录标签不属于当前主页源');
     }
-    return registry.category(category, host);
+    return registry.catalogPage(tab, host, page: page);
   }
 
   Future<DebugProjectResult> runDebugProject(

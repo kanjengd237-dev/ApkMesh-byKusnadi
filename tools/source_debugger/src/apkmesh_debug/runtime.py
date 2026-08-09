@@ -98,6 +98,12 @@ class SourceRuntime:
             raise RuntimeError("source runtime has been disposed")
         self.host = host
 
+    def has_method(self, method: str) -> bool:
+        if self._disposed:
+            raise RuntimeError("source runtime has been disposed")
+        method_json = json.dumps(method)
+        return bool(self.context.eval(f"typeof source[{method_json}] === 'function'"))
+
     def call(self, method: str, *arguments: Any) -> Any:
         if self._disposed:
             raise RuntimeError("source runtime has been disposed")
