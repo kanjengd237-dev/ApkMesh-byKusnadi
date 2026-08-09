@@ -91,6 +91,7 @@ void main() {
     final home = tester.state<HomePageState>(find.byType(HomePage));
     controller.text = 'scale';
     await home.search();
+    home.results = [_sourceListing('scale-source-4', 'Preview source result')];
     await tester.pump();
 
     expect(find.text('全部源'), findsOneWidget);
@@ -105,9 +106,28 @@ void main() {
     await tester.tap(filterButton);
     await tester.pumpAndSettle();
     expect(find.text('搜索源标签'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).last, 'Scale source 4');
+    await tester.pump();
+    final previewSource = find.widgetWithText(ListTile, 'Scale source 4');
+    await tester.ensureVisible(previewSource);
+    final previewButton = find.descendant(
+      of: previewSource,
+      matching: find.byTooltip('临时查看此源结果'),
+    );
+    await tester.tap(previewButton);
+    await tester.pumpAndSettle();
+
+    expect(state.searchTabSourceIds, isEmpty);
+    expect(find.text('Scale source 4'), findsOneWidget);
+    expect(find.text('Preview source result'), findsOneWidget);
+
+    await tester.tap(filterButton);
+    await tester.pumpAndSettle();
     for (final sourceName in ['Scale source 3', 'Scale source 4']) {
-      final fixedSource = find.widgetWithText(CheckboxListTile, sourceName);
-      await tester.ensureVisible(fixedSource);
+      await tester.enterText(find.byType(TextField).last, sourceName);
+      await tester.pump();
+      final fixedSource = find.widgetWithText(ListTile, sourceName);
       await tester.tap(fixedSource);
       await tester.pump();
     }
@@ -133,6 +153,19 @@ ApkSource _source(int index) => ApkSource(
   description: 'Synthetic scale source',
   status: SourceStatus.enabled,
   builtIn: false,
+);
+
+AppListing _sourceListing(String sourceId, String name) => AppListing(
+  id: '$sourceId-app',
+  sourceId: sourceId,
+  name: name,
+  packageName: 'example.$sourceId',
+  version: '1.0.0',
+  size: '1 MB',
+  updatedAt: '',
+  category: '',
+  sourceName: sourceId,
+  iconUrl: '',
 );
 
 AppListing _listing(int index) => AppListing(

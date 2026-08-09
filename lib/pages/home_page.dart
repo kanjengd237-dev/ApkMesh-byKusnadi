@@ -43,6 +43,7 @@ class HomePageState extends State<HomePage> {
   String? catalogError;
   String? submittedQuery;
   String _selectedTab = '';
+  String? _previewSourceId;
   String? _loadedCatalogSourceId;
   final Map<String, _CatalogTabLoadState> _catalogTabStates = {};
   int _searchGeneration = 0;
@@ -213,6 +214,7 @@ class HomePageState extends State<HomePage> {
   Future<void> search({bool preserveSelectedTab = false}) async {
     final query = widget.controller.text.trim();
     final refreshTab = preserveSelectedTab ? _activeTab(_tabs) : null;
+    if (!preserveSelectedTab) _previewSourceId = null;
     final sourceId = refreshTab?.sourceId;
     final sourceIds = sourceId == null ? null : {sourceId};
     final generation = ++_searchGeneration;
@@ -506,6 +508,7 @@ class HomePageState extends State<HomePage> {
       loadingMore = false;
       error = null;
       _selectedTab = selected == null ? '' : _catalogTabKey(selected);
+      _previewSourceId = null;
     });
     _notifyPageJumpAvailabilityChanged();
     widget.onSearchLoadingChanged?.call(false);
@@ -560,6 +563,10 @@ class HomePageState extends State<HomePage> {
     for (final sourceId in widget.state.searchTabSourceIds) {
       final source = sourcesById[sourceId];
       if (source != null && addedIds.add(source.id)) fixedSources.add(source);
+    }
+    final previewSource = sourcesById[_previewSourceId];
+    if (previewSource != null && addedIds.add(previewSource.id)) {
+      fixedSources.add(previewSource);
     }
 
     final tabs = <ContentTab>[allTab];
@@ -671,7 +678,7 @@ class HomePageState extends State<HomePage> {
     final sources = widget.state.sources
         .where((source) => source.status == SourceStatus.enabled)
         .toList(growable: false);
-    final selectedIds = await showModalBottomSheet<List<String>>(
+    final result = await showModalBottomSheet<_SourcePickerResult>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -680,9 +687,17 @@ class HomePageState extends State<HomePage> {
         selectedSourceIds: widget.state.searchTabSourceIds,
       ),
     );
-    if (!mounted || selectedIds == null) return;
-    widget.state.setSearchTabSourceIds(selectedIds);
-    setState(() {});
+    if (!mounted || result == null) return;
+    final previewSourceId = result.previewSourceId;
+    if (previewSourceId != null) {
+      setState(() {
+        _previewSourceId = previewSourceId;
+        _selectedTab = 'source:$previewSourceId';
+      });
+      return;
+    }
+    widget.state.setSearchTabSourceIds(result.selectedSourceIds!);
+    setState(() => _previewSourceId = null);
   }
 
   Widget _buildStaticContent(List<Widget> children) => ListView(
@@ -966,6 +981,19 @@ class _PageJumpDialogState extends State<_PageJumpDialog> {
   );
 }
 
+class _SourcePickerResult {
+  const _SourcePickerResult.preview(String sourceId)
+    : previewSourceId = sourceId,
+      selectedSourceIds = null;
+
+  const _SourcePickerResult.apply(List<String> sourceIds)
+    : previewSourceId = null,
+      selectedSourceIds = sourceIds;
+
+  final String? previewSourceId;
+  final List<String>? selectedSourceIds;
+}
+
 class _SourcePickerSheet extends StatefulWidget {
   const _SourcePickerSheet({
     required this.sources,
@@ -993,6 +1021,16 @@ class _SourcePickerSheetState extends State<_SourcePickerSheet> {
   void dispose() {
     _query.dispose();
     super.dispose();
+  }
+
+  void _setSelected(String sourceId, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedIds.add(sourceId);
+      } else {
+        _selectedIds.remove(sourceId);
+      }
+    });
   }
 
   @override
@@ -1056,18 +1094,44 @@ class _SourcePickerSheetState extends State<_SourcePickerSheet> {
               itemCount: sources.length,
               itemBuilder: (context, index) {
                 final source = sources[index];
-                return CheckboxListTile(
-                  value: _selectedIds.contains(source.id),
-                  secondary: const Icon(Icons.hub_outlined),
-                  title: Text(source.name),
-                  subtitle: Text(source.homepage),
-                  onChanged: (selected) => setState(() {
-                    if (selected ?? false) {
-                      _selectedIds.add(source.id);
-                    } else {
-                      _selectedIds.remove(source.id);
-                    }
-                  }),
+                final selected = _selectedIds.contains(source.id);
+                return ListTile(
+                  leading: const Icon(Icons.hub_outlined),
+                  title: Text(
+                    source.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    source.homepage,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: '临时查看此源结果',
+                        constraints: const BoxConstraints.tightFor(
+                          width: 40,
+                          height: 40,
+                        ),
+                        onPressed: () => Navigator.pop(
+                          context,
+                          _SourcePickerResult.preview(source.id),
+                        ),
+                        icon: const Icon(Icons.arrow_forward),
+                      ),
+                      const SizedBox(width: 2),
+                      Checkbox(
+                        value: selected,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onChanged: (value) =>
+                            _setSelected(source.id, value ?? false),
+                      ),
+                    ],
+                  ),
+                  onTap: () => _setSelected(source.id, !selected),
                 );
               },
             ),
@@ -1078,10 +1142,13 @@ class _SourcePickerSheetState extends State<_SourcePickerSheet> {
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: () => Navigator.pop(context, [
-                  for (final source in widget.sources)
-                    if (_selectedIds.contains(source.id)) source.id,
-                ]),
+                onPressed: () => Navigator.pop(
+                  context,
+                  _SourcePickerResult.apply([
+                    for (final source in widget.sources)
+                      if (_selectedIds.contains(source.id)) source.id,
+                  ]),
+                ),
                 icon: const Icon(Icons.check),
                 label: const Text('应用'),
               ),

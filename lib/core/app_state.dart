@@ -806,6 +806,7 @@ class AppState extends ChangeNotifier {
   Future<List<SourceTestResult>> testAllSources({
     String query = 'hello',
     Set<String>? sourceIds,
+    void Function(SourceTestResult result)? onResult,
   }) async {
     await ready;
     final normalized = query.trim();
@@ -821,33 +822,37 @@ class AppState extends ChangeNotifier {
     final availableSourceIds = sourceSnapshot
         .map((source) => source.id)
         .toSet();
+    final sourcesById = {
+      for (final source in sourceSnapshot) source.id: source,
+    };
+    final reportedSourceIds = <String>{};
+    SourceTestResult resultFor(ApkSource source, SourceSearchPage? page) =>
+        SourceTestResult(
+          sourceId: source.id,
+          sourceName: source.name,
+          resultCount: page?.results.length ?? 0,
+          error: page?.error ?? (page == null ? '源运行时未加载' : null),
+        );
+
     debug.add('开始批量测试源：搜索“$normalized”', category: 'Source');
     final pages = await registry.searchPage(
       normalized,
       host,
       enabledSourceIds: availableSourceIds,
       clearErrors: true,
+      onSourcePageCompleted: (_, page) {
+        final source = sourcesById[page.sourceId];
+        if (source == null || !reportedSourceIds.add(source.id)) return;
+        onResult?.call(resultFor(source, page));
+      },
     );
     final pagesBySource = {for (final page in pages) page.sourceId: page};
     final results = sourceSnapshot
-        .map((source) {
-          final page = pagesBySource[source.id];
-          if (page == null) {
-            return SourceTestResult(
-              sourceId: source.id,
-              sourceName: source.name,
-              resultCount: 0,
-              error: '源运行时未加载',
-            );
-          }
-          return SourceTestResult(
-            sourceId: source.id,
-            sourceName: source.name,
-            resultCount: page.results.length,
-            error: page.error,
-          );
-        })
+        .map((source) => resultFor(source, pagesBySource[source.id]))
         .toList(growable: false);
+    for (final result in results) {
+      if (reportedSourceIds.add(result.sourceId)) onResult?.call(result);
+    }
     final failed = results.where((result) => !result.succeeded).length;
     debug.add(
       '批量测试完成：可用 ${results.length - failed} 个，失败 $failed 个',

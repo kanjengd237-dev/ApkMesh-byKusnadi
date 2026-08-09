@@ -52,6 +52,10 @@ class _SourceBatchTestSheetState extends State<SourceBatchTestSheet> {
       final results = await state.testAllSources(
         query: _query,
         sourceIds: widget.sourceIds,
+        onResult: (result) {
+          if (!mounted) return;
+          setState(() => _results[result.sourceId] = result);
+        },
       );
       if (!mounted) return;
       setState(() {
@@ -162,14 +166,22 @@ class _SourceBatchTestSheetState extends State<SourceBatchTestSheet> {
                 ],
               ),
             ),
-            if (_loading) const LinearProgressIndicator(minHeight: 2),
+            if (_loading)
+              LinearProgressIndicator(
+                minHeight: 2,
+                value: _sources.isEmpty
+                    ? null
+                    : _results.length / _sources.length,
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      _loading ? '正在测试…' : '可用 $succeeded 个 · 失败 $failed 个',
+                      _loading
+                          ? '正在测试 · 已完成 ${_results.length}/${_sources.length} · 可用 $succeeded 个 · 失败 $failed 个'
+                          : '可用 $succeeded 个 · 失败 $failed 个',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
