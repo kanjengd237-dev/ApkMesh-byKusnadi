@@ -175,8 +175,12 @@ function imageUrl(imageTag) {
 
 function parseSearchResults(html) {
   const newsEntries = parseCardResults(html, 'main-news', 'main-news-title', 'main-news-cat');
-  if (newsEntries.length) return newsEntries;
-  return parseCardResults(html, 'mainb-item', 'mainb-title', 'mainb-cat');
+  const entries = newsEntries.length
+    ? newsEntries
+    : parseCardResults(html, 'mainb-item', 'mainb-title', 'mainb-cat');
+  return entries.filter((item, index, all) =>
+    all.findIndex((candidate) => candidate.id === item.id) === index,
+  );
 }
 
 function parseCategories(html) {
@@ -260,10 +264,10 @@ globalThis.source = {
   manifest: {
     id: 'apkvision-demo',
     name: 'APKVision',
-    version: '1.1.0',
+    version: '1.2.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '内置 APKVision 测试源，用于验证搜索、详情和下载接口。',
+    description: '读取 APKVision 应用与游戏的搜索、目录、详情、截图和下载项。',
     permissions: {
       network: ['apkvision.org', '*.apkvision.org'],
       browser: true,
@@ -344,7 +348,9 @@ globalThis.source = {
   },
 
   async detailsMetadata(url) {
-    const tab = await apkmesh.browser.open(url);
+    const id = absoluteUrl(url);
+    if (!isApkVisionUrl(id)) throw new TypeError('无效的 APKVision 详情地址');
+    const tab = await apkmesh.browser.open(id);
     try {
       await tab.waitFor('#MobileApplication');
       const app = await tab.query({
@@ -381,7 +387,7 @@ globalThis.source = {
       app.screenshots = screenshotNodes.map((item) => {
         const candidate = item.dataSrc || item.dataLazySrc || item.dataOriginal || item.src || item.srcset || '';
         return absoluteUrl(candidate.split(',')[0].trim().split(' ')[0]);
-      }).filter(Boolean);
+      }).filter(Boolean).filter((item, index, all) => all.indexOf(item) === index);
 
       const commentNodes = await tab.queryAll('.comment-content, .comment-body', {text: '@text'});
       app.comments = commentNodes.map((item) => cleanText(item.text)).filter(Boolean);
@@ -400,7 +406,9 @@ globalThis.source = {
           url: absoluteUrl(item.url),
           size: extractSize(sizeText),
         };
-      }).filter((item) => item.label && isApkVisionUrl(item.url)).slice(0, 20);
+      }).filter((item) => item.label && isApkVisionUrl(item.url))
+        .filter((item, index, all) => all.findIndex((candidate) => candidate.url === item.url) === index)
+        .slice(0, 20);
       app.downloadCandidates = candidates;
       return app;
     } finally {

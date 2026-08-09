@@ -22,6 +22,50 @@ def source_runtime(source_name: str) -> SourceRuntime:
     return runtime
 
 
+def test_all_builtin_source_sidecars_match_runtime_contract():
+    source_names = sorted(path.name for path in SOURCES.glob("*.js"))
+
+    assert source_names
+    for source_name in source_names:
+        runtime = source_runtime(source_name)
+        sidecar = json.loads((SOURCES / f"{source_name}.manifest.json").read_text())
+        manifest = runtime.manifest.raw
+        try:
+            assert runtime.has_method("search"), source_name
+            assert runtime.has_method("details"), source_name
+            for field in (
+                "id",
+                "name",
+                "version",
+                "homepage",
+                "description",
+                "permissions",
+                "debugProjects",
+            ):
+                assert sidecar.get(field) == manifest.get(field), (
+                    source_name,
+                    field,
+                )
+
+            has_catalog = runtime.has_method("catalog")
+            assert has_catalog == runtime.has_method("catalogPage"), source_name
+            has_detail_progress = runtime.has_method("detailsMetadata")
+            assert has_detail_progress == runtime.has_method(
+                "resolveDownloads"
+            ), source_name
+            has_package_lookup = runtime.has_method("packageLookupUrl")
+            assert has_package_lookup == bool(manifest.get("packageLookup")), source_name
+
+            capabilities = sidecar.get("capabilities")
+            assert capabilities == {
+                "catalog": has_catalog,
+                "detailProgress": has_detail_progress,
+                "packageLookup": has_package_lookup,
+            }, source_name
+        finally:
+            runtime.close()
+
+
 @pytest.mark.parametrize(
     "source_name", ["apktodo.js", "aptoide.js", "downloadit.js"]
 )

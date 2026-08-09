@@ -1,9 +1,9 @@
 {
   "id": "apkvision-demo",
   "name": "APKVision",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "homepage": "https://apkvision.org/",
-  "description": "内置 APKVision 测试源，用于验证搜索、详情和下载接口。",
+  "description": "读取 APKVision 应用与游戏的搜索、目录、详情、截图和下载项。",
   "permissions": {
     "network": ["apkvision.org", "*.apkvision.org"],
     "browser": true,
