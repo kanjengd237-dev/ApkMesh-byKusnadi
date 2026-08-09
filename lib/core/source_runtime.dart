@@ -1,5 +1,6 @@
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import 'concurrency_limiter.dart';
 import 'models.dart';
 import 'debug_log.dart';
 
@@ -106,6 +107,18 @@ abstract interface class SourceHostApi {
   Future<ShizukuStatus> shizukuStatus();
   Future<ShizukuStatus> requestShizukuPermission();
   Future<void> dispose();
+}
+
+abstract interface class SourceHostConcurrencyApi {
+  void setSourceConcurrency(SourceConcurrencySettings settings);
+}
+
+class SourceSearchCancellation {
+  bool _cancelled = false;
+
+  bool get isCancelled => _cancelled;
+
+  void cancel() => _cancelled = true;
 }
 
 abstract interface class ApkSourceScript {
@@ -222,10 +235,20 @@ List<AppListing> _rankSearchResults(
 }
 
 class SourceRegistry {
-  SourceRegistry({List<ApkSourceScript> scripts = const []})
-    : scripts = [...scripts];
+  SourceRegistry({
+    List<ApkSourceScript> scripts = const [],
+    int maxConcurrentOperations = SourceConcurrencySettings.defaultHttpRequests,
+  }) : scripts = [...scripts],
+       _scriptsById = {for (final script in scripts) script.id: script},
+       _operations = AdjustableSemaphore(maxConcurrentOperations);
   final List<ApkSourceScript> scripts;
+  final Map<String, ApkSourceScript> _scriptsById;
   final Map<String, String> lastErrors = {};
+  final AdjustableSemaphore _operations;
+
+  int get maxConcurrentOperations => _operations.limit;
+
+  set maxConcurrentOperations(int value) => _operations.limit = value;
 
   void replace(ApkSourceScript script) {
     final index = scripts.indexWhere((item) => item.id == script.id);
@@ -236,12 +259,14 @@ class SourceRegistry {
       scripts[index] = script;
       previous.dispose();
     }
+    _scriptsById[script.id] = script;
   }
 
   Future<void> remove(String id) async {
     final index = scripts.indexWhere((item) => item.id == id);
     if (index == -1) return;
     final script = scripts.removeAt(index);
+    _scriptsById.remove(id);
     await script.dispose();
   }
 
@@ -252,12 +277,14 @@ class SourceRegistry {
     Set<String>? enabledSourceIds,
     void Function(ApkSourceScript source, List<AppListing> results)?
     onSourceCompleted,
+    SourceSearchCancellation? cancellation,
   }) async {
     final pages = await searchPage(
       query,
       host,
       page: page,
       enabledSourceIds: enabledSourceIds,
+      cancellation: cancellation,
       onSourcePageCompleted: (source, result) {
         if (result.succeeded) {
           onSourceCompleted?.call(source, result.results);
@@ -276,6 +303,7 @@ class SourceRegistry {
     int page = 1,
     Set<String>? enabledSourceIds,
     bool clearErrors = true,
+    SourceSearchCancellation? cancellation,
     void Function(ApkSourceScript source, SourceSearchPage result)?
     onSourcePageCompleted,
   }) async {
@@ -292,31 +320,45 @@ class SourceRegistry {
     // has ended can be removed from enabledSourceIds by the caller before the
     // next request.
     return Future.wait(
-      selectedScripts.map((script) async {
-        try {
-          final sourceResults = await script.search(query, host, page: page);
-          final result = SourceSearchPage(
-            sourceId: script.id,
-            sourceName: script.name,
-            page: page,
-            results: sourceResults,
-          );
-          onSourcePageCompleted?.call(script, result);
-          return result;
-        } catch (error) {
-          final message = error.toString();
-          lastErrors[script.name] = message;
-          final result = SourceSearchPage(
-            sourceId: script.id,
-            sourceName: script.name,
-            page: page,
-            results: const [],
-            error: message,
-          );
-          onSourcePageCompleted?.call(script, result);
-          return result;
-        }
-      }),
+      selectedScripts.map(
+        (script) => _operations.withPermit(() async {
+          if (cancellation?.isCancelled == true) {
+            return SourceSearchPage(
+              sourceId: script.id,
+              sourceName: script.name,
+              page: page,
+              results: const [],
+            );
+          }
+          try {
+            final sourceResults = await script.search(query, host, page: page);
+            final result = SourceSearchPage(
+              sourceId: script.id,
+              sourceName: script.name,
+              page: page,
+              results: sourceResults,
+            );
+            if (cancellation?.isCancelled != true) {
+              onSourcePageCompleted?.call(script, result);
+            }
+            return result;
+          } catch (error) {
+            final message = error.toString();
+            lastErrors[script.name] = message;
+            final result = SourceSearchPage(
+              sourceId: script.id,
+              sourceName: script.name,
+              page: page,
+              results: const [],
+              error: message,
+            );
+            if (cancellation?.isCancelled != true) {
+              onSourcePageCompleted?.call(script, result);
+            }
+            return result;
+          }
+        }),
+      ),
     );
   }
 
@@ -325,7 +367,7 @@ class SourceRegistry {
     SourceHostApi host, {
     required void Function(AppDetailsProgress progress) onProgress,
   }) async {
-    final script = scripts.firstWhere((item) => item.id == app.sourceId);
+    final script = scriptFor(app.sourceId);
     final SourceDetailProgressScript? detailScript =
         script is SourceDetailProgressScript
         ? script as SourceDetailProgressScript
@@ -396,7 +438,7 @@ class SourceRegistry {
   }
 
   Future<AppDetails> details(AppListing app, SourceHostApi host) {
-    final script = scripts.firstWhere((item) => item.id == app.sourceId);
+    final script = scriptFor(app.sourceId);
     return script.details(app.id, host);
   }
 
@@ -420,30 +462,32 @@ class SourceRegistry {
         .toList(growable: false);
 
     final batches = await Future.wait(
-      selectedScripts.map((script) async {
-        final packageSource = script as SourcePackageLookupScript;
-        try {
-          final url = (await packageSource.packageLookupUrl(
-            normalized,
-            host,
-          ))?.trim();
-          if (url == null || url.isEmpty) return const <AppListing>[];
-          final details = await script.details(url, host);
-          return details.packageName.trim().toLowerCase() ==
-                  normalized.toLowerCase()
-              ? <AppListing>[details]
-              : const <AppListing>[];
-        } catch (error) {
-          lastErrors[script.name] = error.toString();
-          return const <AppListing>[];
-        }
-      }),
+      selectedScripts.map(
+        (script) => _operations.withPermit(() async {
+          final packageSource = script as SourcePackageLookupScript;
+          try {
+            final url = (await packageSource.packageLookupUrl(
+              normalized,
+              host,
+            ))?.trim();
+            if (url == null || url.isEmpty) return const <AppListing>[];
+            final details = await script.details(url, host);
+            return details.packageName.trim().toLowerCase() ==
+                    normalized.toLowerCase()
+                ? <AppListing>[details]
+                : const <AppListing>[];
+          } catch (error) {
+            lastErrors[script.name] = error.toString();
+            return const <AppListing>[];
+          }
+        }),
+      ),
     );
     return batches.expand((batch) => batch).toList(growable: false);
   }
 
   ApkSourceScript scriptFor(String sourceId) =>
-      scripts.firstWhere((item) => item.id == sourceId);
+      _scriptsById[sourceId] ?? (throw StateError('源运行时不存在：$sourceId'));
 
   List<SourceDebugProject> get debugProjects => scripts
       .whereType<DebugProjectSource>()
@@ -491,7 +535,7 @@ class SourceRegistry {
     int page = 1,
   }) {
     if (page < 1) throw ArgumentError.value(page, 'page', '必须大于 0');
-    final script = scripts.firstWhere((item) => item.id == tab.sourceId);
+    final script = scriptFor(tab.sourceId);
     if (script is! SourceCatalogScript) {
       throw UnsupportedError('源未声明目录接口');
     }

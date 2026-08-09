@@ -50,9 +50,10 @@ class HomePageState extends State<HomePage> {
   Map<String, String> _searchPageErrors = {};
   String? _lastShownSearchError;
   int _nextSearchPage = 2;
+  final List<AppListing> _pendingSearchResults = [];
+  Timer? _searchMergeTimer;
+  SourceSearchCancellation? _searchCancellation;
   late final ScrollController _contentScrollController;
-  GlobalKey<AnimatedListState> _resultsListKey = GlobalKey<AnimatedListState>();
-  int _animatedResultCount = 0;
 
   @override
   void initState() {
@@ -65,6 +66,8 @@ class HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _searchCancellation?.cancel();
+    _searchMergeTimer?.cancel();
     widget.state.removeListener(_onStateChanged);
     _contentScrollController
       ..removeListener(_onContentScroll)
@@ -194,8 +197,9 @@ class HomePageState extends State<HomePage> {
     final sourceId = refreshTab?.sourceId;
     final sourceIds = sourceId == null ? null : {sourceId};
     final generation = ++_searchGeneration;
-    _resultsListKey = GlobalKey<AnimatedListState>();
-    _animatedResultCount = 0;
+    _searchCancellation?.cancel();
+    final cancellation = SourceSearchCancellation();
+    _searchCancellation = cancellation;
     _searchRanker = null;
     _searchSourceOrder = const {};
     _searchResultOrder = {};
@@ -210,6 +214,9 @@ class HomePageState extends State<HomePage> {
     _searchPageErrors = {};
     _lastShownSearchError = null;
     _nextSearchPage = 2;
+    _searchMergeTimer?.cancel();
+    _searchMergeTimer = null;
+    _pendingSearchResults.clear();
     loadingMore = false;
     if (query.isEmpty) {
       final selected = _selectCatalogTab(catalog);
@@ -221,6 +228,7 @@ class HomePageState extends State<HomePage> {
         _selectedTab = selected == null ? '' : _catalogTabKey(selected);
       });
       widget.onSearchLoadingChanged?.call(false);
+      _searchCancellation = null;
       if (_loadedCatalogSourceId != widget.state.homeSourceId) {
         await _loadCatalog(force: true);
       } else if (selected != null) {
@@ -247,12 +255,14 @@ class HomePageState extends State<HomePage> {
         query,
         page: 1,
         sourceIds: sourceIds,
+        cancellation: cancellation,
         onSourcePage: (page) {
           if (!mounted || generation != _searchGeneration) return;
           _handleSearchPage(page);
         },
       );
       if (mounted && generation == _searchGeneration) {
+        _flushSearchResults();
         final found = pages.fold<int>(
           0,
           (total, page) => total + page.results.length,
@@ -285,9 +295,12 @@ class HomePageState extends State<HomePage> {
 
   void _handleSearchPage(SourceSearchPage page) {
     final newResults = _collectSearchPageResults(page);
-    for (final app in newResults) {
-      _insertRegisteredSearchResult(app);
-    }
+    if (newResults.isEmpty) return;
+    _pendingSearchResults.addAll(newResults);
+    _searchMergeTimer ??= Timer(
+      const Duration(milliseconds: 16),
+      _flushSearchResults,
+    );
   }
 
   List<AppListing> _collectSearchPageResults(SourceSearchPage page) {
@@ -391,6 +404,7 @@ class HomePageState extends State<HomePage> {
         submittedQuery!,
         page: page,
         sourceIds: sourceIds,
+        cancellation: _searchCancellation,
       );
       if (!mounted || generation != _searchGeneration) return;
       final newResults = <AppListing>[];
@@ -419,22 +433,7 @@ class HomePageState extends State<HomePage> {
   void _appendSearchResults(List<AppListing> newResults) {
     if (newResults.isEmpty) return;
     final sortedResults = [...newResults]..sort(_compareSearchResults);
-    final startIndex = results.length;
-    final listKey = _resultsListKey;
-    final animatedList = listKey.currentState;
-    setState(() {
-      results = [...results, ...sortedResults];
-      if (animatedList == null) _animatedResultCount = results.length;
-    });
-    if (animatedList != null) {
-      for (var index = 0; index < sortedResults.length; index++) {
-        animatedList.insertItem(
-          startIndex + index,
-          duration: const Duration(milliseconds: 260),
-        );
-      }
-      _animatedResultCount += sortedResults.length;
-    }
+    setState(() => results = [...results, ...sortedResults]);
   }
 
   int _compareSearchResults(AppListing left, AppListing right) {
@@ -456,34 +455,28 @@ class HomePageState extends State<HomePage> {
     return leftResultOrder.compareTo(rightResultOrder);
   }
 
-  void _insertRegisteredSearchResult(AppListing app) {
-    var insertionIndex = results.length;
-    for (var index = 0; index < results.length; index++) {
-      if (_compareSearchResults(app, results[index]) < 0) {
-        insertionIndex = index;
-        break;
-      }
-    }
+  void _mergeRegisteredSearchResults(List<AppListing> newResults) {
+    if (newResults.isEmpty) return;
+    final merged = [...results, ...newResults]..sort(_compareSearchResults);
+    setState(() => results = merged);
+  }
 
-    final listKey = _resultsListKey;
-    final animatedList = listKey.currentState;
-    setState(() {
-      results = [...results]..insert(insertionIndex, app);
-      if (animatedList == null) _animatedResultCount = results.length;
-    });
-    if (animatedList != null) {
-      animatedList.insertItem(
-        insertionIndex,
-        duration: const Duration(milliseconds: 260),
-      );
-      _animatedResultCount += 1;
-    }
+  void _flushSearchResults() {
+    _searchMergeTimer?.cancel();
+    _searchMergeTimer = null;
+    if (!mounted || _pendingSearchResults.isEmpty) return;
+    final pending = List<AppListing>.of(_pendingSearchResults);
+    _pendingSearchResults.clear();
+    _mergeRegisteredSearchResults(pending);
   }
 
   void showHome() {
     ++_searchGeneration;
-    _resultsListKey = GlobalKey<AnimatedListState>();
-    _animatedResultCount = 0;
+    _searchCancellation?.cancel();
+    _searchCancellation = null;
+    _searchMergeTimer?.cancel();
+    _searchMergeTimer = null;
+    _pendingSearchResults.clear();
     final selected = _selectCatalogTab(catalog);
     setState(() {
       submittedQuery = null;
@@ -525,18 +518,29 @@ class HomePageState extends State<HomePage> {
           )
           .toList(growable: false);
     }
-    return [
-      const ContentTab(id: 'all', label: '全部源'),
-      ...widget.state.sources
-          .where((source) => source.status == SourceStatus.enabled)
-          .map(
-            (source) => ContentTab(
-              id: 'source:${source.id}',
-              label: source.name,
-              sourceId: source.id,
-            ),
+    final tabs = <ContentTab>[const ContentTab(id: 'all', label: '全部源')];
+    final selectedSourceId = _selectedTab.startsWith('source:')
+        ? _selectedTab.substring('source:'.length)
+        : null;
+    if (selectedSourceId != null) {
+      final selected = widget.state.sources
+          .where(
+            (source) =>
+                source.id == selectedSourceId &&
+                source.status == SourceStatus.enabled,
+          )
+          .firstOrNull;
+      if (selected != null) {
+        tabs.add(
+          ContentTab(
+            id: 'source:${selected.id}',
+            label: selected.name,
+            sourceId: selected.id,
           ),
-    ];
+        );
+      }
+    }
+    return tabs;
   }
 
   ContentTab? _activeTab(List<ContentTab> tabs) {
@@ -553,7 +557,7 @@ class HomePageState extends State<HomePage> {
   ) {
     final tabKey = tabs.map((tab) => tab.id).join('|');
     final activeIndex = tabs.indexWhere((tab) => tab.id == activeTab.id);
-    return DefaultTabController(
+    final tabBar = DefaultTabController(
       key: ValueKey(tabKey),
       length: tabs.length,
       initialIndex: activeIndex < 0 ? 0 : activeIndex,
@@ -572,19 +576,57 @@ class HomePageState extends State<HomePage> {
         tabs: tabs.map((tab) => Tab(text: tab.label)).toList(),
       ),
     );
+    if (submittedQuery == null) return tabBar;
+    return Row(
+      children: [
+        Expanded(child: tabBar),
+        IconButton(
+          tooltip: '筛选搜索源',
+          onPressed: _showSourcePicker,
+          icon: const Icon(Icons.filter_list),
+        ),
+      ],
+    );
   }
 
-  List<Widget> _buildCatalogContent(
-    BuildContext context,
-    ContentTab? activeTab,
-  ) {
+  Future<void> _showSourcePicker() async {
+    final sources = widget.state.sources
+        .where((source) => source.status == SourceStatus.enabled)
+        .toList(growable: false);
+    final selectedId = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _SourcePickerSheet(sources: sources),
+    );
+    if (!mounted || selectedId == null) return;
+    setState(() => _selectedTab = 'source:$selectedId');
+  }
+
+  Widget _buildStaticContent(List<Widget> children) => ListView(
+    controller: _contentScrollController,
+    physics: const AlwaysScrollableScrollPhysics(),
+    padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+    children: children,
+  );
+
+  Widget _buildCatalogView(BuildContext context, ContentTab? activeTab) {
+    if (!widget.state.hasEnabledSource) {
+      return _buildStaticContent(const [
+        EmptyMessage(
+          icon: Icons.hub_outlined,
+          title: '没有启用的源',
+          detail: '请先在源管理中启用一个源。',
+        ),
+      ]);
+    }
     if (catalogLoading && !catalogLoaded) {
-      return const [
+      return _buildStaticContent(const [
         SearchLoadingView(icon: Icons.home_outlined, label: '正在加载首页'),
-      ];
+      ]);
     }
     if (catalogError != null && catalog.tabs.isEmpty) {
-      return [
+      return _buildStaticContent([
         Card(
           color: Theme.of(context).colorScheme.errorContainer,
           child: ListTile(
@@ -598,26 +640,26 @@ class HomePageState extends State<HomePage> {
             ),
           ),
         ),
-      ];
+      ]);
     }
     final tab = activeTab?.catalogTab;
     if (tab == null) {
-      return const [
+      return _buildStaticContent(const [
         EmptyMessage(
           icon: Icons.home_work_outlined,
           title: '暂无目录内容',
           detail: '当前主页源没有返回可用标签。',
         ),
-      ];
+      ]);
     }
     final state = _catalogTabStates[_catalogTabKey(tab)];
     if (state == null || (state.loading && !state.loaded)) {
-      return [
+      return _buildStaticContent([
         SearchLoadingView(icon: Icons.apps_outlined, label: '正在加载${tab.name}'),
-      ];
+      ]);
     }
     if (state.error != null && state.apps.isEmpty) {
-      return [
+      return _buildStaticContent([
         Card(
           color: Theme.of(context).colorScheme.errorContainer,
           child: ListTile(
@@ -631,33 +673,39 @@ class HomePageState extends State<HomePage> {
             ),
           ),
         ),
-      ];
+      ]);
     }
     if (state.apps.isEmpty) {
-      return const [
+      return _buildStaticContent(const [
         EmptyMessage(
           icon: Icons.apps_outage_outlined,
           title: '暂无应用',
           detail: '该标签没有返回可用应用。',
         ),
-      ];
+      ]);
     }
-    return [
-      ...state.apps.asMap().entries.map(
-        (entry) => AppResultTile(
-          app: entry.value,
-          state: widget.state,
-          onOpen: (app) => showAppDetails(context, widget.state, app),
-          showDivider: entry.key < state.apps.length - 1,
-        ),
-      ),
-      if (state.loading)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      if (state.error != null)
-        ListTile(
+    final hasFooter = state.loading || state.error != null;
+    return ListView.builder(
+      controller: _contentScrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      itemCount: state.apps.length + (hasFooter ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index < state.apps.length) {
+          return AppResultTile(
+            app: state.apps[index],
+            state: widget.state,
+            onOpen: (app) => showAppDetails(context, widget.state, app),
+            showDivider: index < state.apps.length - 1,
+          );
+        }
+        if (state.loading) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return ListTile(
           leading: const Icon(Icons.error_outline),
           title: const Text('加载下一页失败'),
           trailing: IconButton(
@@ -665,121 +713,66 @@ class HomePageState extends State<HomePage> {
             icon: const Icon(Icons.refresh),
             onPressed: () => _loadCatalogTab(tab),
           ),
-        ),
-    ];
-  }
-
-  Widget _buildAnimatedResults(BuildContext context) {
-    return AnimatedList(
-      key: _resultsListKey,
-      initialItemCount: _animatedResultCount,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemBuilder: (context, index, animation) {
-        final easedAnimation = animation.drive(
-          CurveTween(curve: Curves.easeOutCubic),
-        );
-        final offsetAnimation = Tween<Offset>(
-          begin: const Offset(0, 0.035),
-          end: Offset.zero,
-        ).animate(easedAnimation);
-        return SizeTransition(
-          sizeFactor: easedAnimation,
-          alignment: Alignment.topCenter,
-          child: FadeTransition(
-            opacity: easedAnimation,
-            child: SlideTransition(
-              position: offsetAnimation,
-              child: AppResultTile(
-                app: results[index],
-                state: widget.state,
-                onOpen: (app) => showAppDetails(context, widget.state, app),
-                showDivider: index < results.length - 1,
-              ),
-            ),
-          ),
         );
       },
     );
   }
 
-  Widget _buildSearchStage(
-    BuildContext context,
-    ContentTab activeTab,
-    List<AppListing> visibleResults,
-  ) {
-    final Widget stage;
-    final Key stageKey;
-    if (visibleResults.isNotEmpty) {
-      final resultList = activeTab.sourceId == null
-          ? _buildAnimatedResults(context)
-          : Column(
-              children: visibleResults
-                  .asMap()
-                  .entries
-                  .map(
-                    (entry) => AppResultTile(
-                      app: entry.value,
-                      state: widget.state,
-                      onOpen: (app) =>
-                          showAppDetails(context, widget.state, app),
-                      showDivider: entry.key < visibleResults.length - 1,
-                    ),
-                  )
-                  .toList(),
-            );
-      stage = resultList;
-      stageKey = ValueKey('results:${activeTab.id}');
-    } else if (loading) {
-      stage = const SearchLoadingView();
-      stageKey = const ValueKey('search-loading');
-    } else {
-      stage = EmptyMessage(
-        icon: Icons.manage_search,
-        title: '未找到结果',
-        detail: error == null
-            ? activeTab.sourceId == null
-                  ? '已在所有启用的源中搜索“$submittedQuery”。'
-                  : '当前源没有返回“$submittedQuery”的结果。'
-            : '源请求未完成，请打开错误详情查看原因。',
-      );
-      stageKey = ValueKey('search-empty:${activeTab.id}:$submittedQuery');
-    }
-
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 360),
-      reverseDuration: const Duration(milliseconds: 240),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) {
-        final easedAnimation = animation.drive(
-          CurveTween(curve: Curves.easeOutCubic),
-        );
-        final offsetAnimation = Tween<Offset>(
-          begin: const Offset(0, 0.025),
-          end: Offset.zero,
-        ).animate(easedAnimation);
-        return FadeTransition(
-          opacity: easedAnimation,
-          child: SlideTransition(position: offsetAnimation, child: child),
-        );
-      },
-      child: KeyedSubtree(key: stageKey, child: stage),
+  Widget _buildSearchEmpty(BuildContext context, ContentTab activeTab) {
+    if (loading) return const SearchLoadingView();
+    return EmptyMessage(
+      icon: Icons.manage_search,
+      title: '未找到结果',
+      detail: error == null
+          ? activeTab.sourceId == null
+                ? '已在所有启用的源中搜索“$submittedQuery”。'
+                : '当前源没有返回“$submittedQuery”的结果。'
+          : '源请求未完成，请打开错误详情查看原因。',
     );
   }
 
-  List<Widget> _buildSearchContent(BuildContext context, ContentTab activeTab) {
+  Widget _buildSearchView(BuildContext context, ContentTab activeTab) {
     final visibleResults = activeTab.sourceId == null
         ? results
         : results.where((app) => app.sourceId == activeTab.sourceId).toList();
-    return [
-      _buildSearchStage(context, activeTab, visibleResults),
-      if (loadingMore)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-    ];
+    if (!widget.state.hasEnabledSource || visibleResults.isEmpty) {
+      return ListView(
+        controller: _contentScrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+        children: [
+          if (!widget.state.hasEnabledSource)
+            const EmptyMessage(
+              icon: Icons.hub_outlined,
+              title: '没有启用的源',
+              detail: '请先在源管理中启用一个源。',
+            )
+          else
+            _buildSearchEmpty(context, activeTab),
+        ],
+      );
+    }
+    final itemCount = visibleResults.length + (loadingMore ? 1 : 0);
+    return ListView.builder(
+      controller: _contentScrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      itemCount: itemCount,
+      itemBuilder: (context, index) {
+        if (index == visibleResults.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return AppResultTile(
+          app: visibleResults[index],
+          state: widget.state,
+          onOpen: (app) => showAppDetails(context, widget.state, app),
+          showDivider: index < visibleResults.length - 1,
+        );
+      },
+    );
   }
 
   @override
@@ -797,26 +790,99 @@ class HomePageState extends State<HomePage> {
         Expanded(
           child: RefreshIndicator(
             onRefresh: _refreshContent,
-            child: ListView(
-              controller: _contentScrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
-              children: [
-                if (!widget.state.hasEnabledSource)
-                  const EmptyMessage(
-                    icon: Icons.hub_outlined,
-                    title: '没有启用的源',
-                    detail: '请先在源管理中启用一个源。',
-                  )
-                else
-                  ...(showingHome
-                      ? _buildCatalogContent(context, activeTab)
-                      : _buildSearchContent(context, activeTab!)),
-              ],
-            ),
+            child: showingHome
+                ? _buildCatalogView(context, activeTab)
+                : _buildSearchView(context, activeTab!),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SourcePickerSheet extends StatefulWidget {
+  const _SourcePickerSheet({required this.sources});
+
+  final List<ApkSource> sources;
+
+  @override
+  State<_SourcePickerSheet> createState() => _SourcePickerSheetState();
+}
+
+class _SourcePickerSheetState extends State<_SourcePickerSheet> {
+  final _query = TextEditingController();
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final keyword = _query.text.trim().toLowerCase();
+    final sources = keyword.isEmpty
+        ? widget.sources
+        : widget.sources
+              .where(
+                (source) =>
+                    source.name.toLowerCase().contains(keyword) ||
+                    source.id.toLowerCase().contains(keyword) ||
+                    source.homepage.toLowerCase().contains(keyword),
+              )
+              .toList(growable: false);
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * .82,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '筛选搜索源',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: '关闭',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: TextField(
+              controller: _query,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: '搜索源名称或域名',
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              itemCount: sources.length,
+              itemBuilder: (context, index) {
+                final source = sources[index];
+                return ListTile(
+                  leading: const Icon(Icons.hub_outlined),
+                  title: Text(source.name),
+                  subtitle: Text(source.homepage),
+                  onTap: () => Navigator.pop(context, source.id),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

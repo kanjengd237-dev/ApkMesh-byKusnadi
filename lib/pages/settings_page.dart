@@ -44,6 +44,8 @@ class SettingsPage extends StatelessWidget {
         subtitle: Text('系统默认下载目录'),
       ),
       const Divider(),
+      _SourceConcurrencySettingsPanel(state: state),
+      const Divider(),
       TranslationSettingsPanel(state: state),
       const Divider(),
       ListTile(
@@ -73,6 +75,96 @@ class SettingsPage extends StatelessWidget {
         leading: Icon(Icons.info_outline),
         title: Text('关于 APK Mesh'),
         subtitle: Text('开源源聚合客户端 · 0.1.0'),
+      ),
+    ],
+  );
+}
+
+class _SourceConcurrencySettingsPanel extends StatefulWidget {
+  const _SourceConcurrencySettingsPanel({required this.state});
+
+  final AppState state;
+
+  @override
+  State<_SourceConcurrencySettingsPanel> createState() =>
+      _SourceConcurrencySettingsPanelState();
+}
+
+class _SourceConcurrencySettingsPanelState
+    extends State<_SourceConcurrencySettingsPanel> {
+  late int _httpRequests;
+  late int _webViews;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncSettings();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SourceConcurrencySettingsPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final settings = widget.state.sourceConcurrency;
+    if (settings.httpRequests != _httpRequests ||
+        settings.webViews != _webViews) {
+      _syncSettings();
+    }
+  }
+
+  void _syncSettings() {
+    final settings = widget.state.sourceConcurrency;
+    _httpRequests = settings.httpRequests;
+    _webViews = settings.webViews;
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.speed_outlined),
+        title: Text('源并发'),
+      ),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('HTTP 请求'),
+        subtitle: Slider(
+          value: _httpRequests.toDouble(),
+          min: SourceConcurrencySettings.minHttpRequests.toDouble(),
+          max: SourceConcurrencySettings.maxHttpRequests.toDouble(),
+          divisions:
+              SourceConcurrencySettings.maxHttpRequests -
+              SourceConcurrencySettings.minHttpRequests,
+          label: '$_httpRequests',
+          onChanged: (value) => setState(() => _httpRequests = value.round()),
+          onChangeEnd: (value) =>
+              widget.state.setSourceConcurrency(httpRequests: value.round()),
+        ),
+        trailing: SizedBox(
+          width: 40,
+          child: Text('$_httpRequests', textAlign: TextAlign.end),
+        ),
+      ),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('隐藏 WebView'),
+        subtitle: Slider(
+          value: _webViews.toDouble(),
+          min: SourceConcurrencySettings.minWebViews.toDouble(),
+          max: SourceConcurrencySettings.maxWebViews.toDouble(),
+          divisions:
+              SourceConcurrencySettings.maxWebViews -
+              SourceConcurrencySettings.minWebViews,
+          label: '$_webViews',
+          onChanged: (value) => setState(() => _webViews = value.round()),
+          onChangeEnd: (value) =>
+              widget.state.setSourceConcurrency(webViews: value.round()),
+        ),
+        trailing: SizedBox(
+          width: 40,
+          child: Text('$_webViews', textAlign: TextAlign.end),
+        ),
       ),
     ],
   );

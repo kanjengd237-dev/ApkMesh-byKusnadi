@@ -6,6 +6,35 @@ import 'package:apk_mesh/core/source_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('QuickJS sidecar exposes metadata without creating a runtime', () async {
+    final source = QuickJsApkSourceScript(
+      'throw new Error("must stay lazy")',
+      initialManifest: const {
+        'id': 'lazy-source',
+        'name': 'Lazy source',
+        'version': '2.0.0',
+        'homepage': 'https://example.test/',
+        'description': 'Lazy metadata',
+        'permissions': {
+          'network': ['example.test'],
+          'browser': true,
+        },
+        'capabilities': {
+          'catalog': true,
+          'detailProgress': false,
+          'packageLookup': false,
+        },
+      },
+    );
+
+    expect(source.id, 'lazy-source');
+    expect(source.name, 'Lazy source');
+    expect(source.version, '2.0.0');
+    expect(source.supportsCatalog, isTrue);
+    expect(source.policy.allowBrowser, isTrue);
+    await source.dispose();
+  });
+
   test(
     'QuickJS catalog calls serialize tabs and page results as JSON',
     () async {

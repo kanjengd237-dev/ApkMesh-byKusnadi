@@ -4,6 +4,32 @@ enum InstallMethod { system, shizuku }
 
 enum ShizukuStatus { unsupported, unavailable, denied, authorized }
 
+class SourceConcurrencySettings {
+  const SourceConcurrencySettings({
+    this.httpRequests = defaultHttpRequests,
+    this.webViews = defaultWebViews,
+  });
+
+  static const defaultHttpRequests = 50;
+  static const defaultWebViews = 5;
+  static const minHttpRequests = 1;
+  static const maxHttpRequests = 100;
+  static const minWebViews = 1;
+  static const maxWebViews = 10;
+
+  final int httpRequests;
+  final int webViews;
+
+  SourceConcurrencySettings copyWith({int? httpRequests, int? webViews}) =>
+      SourceConcurrencySettings(
+        httpRequests: (httpRequests ?? this.httpRequests).clamp(
+          minHttpRequests,
+          maxHttpRequests,
+        ),
+        webViews: (webViews ?? this.webViews).clamp(minWebViews, maxWebViews),
+      );
+}
+
 class ApkInstallInfo {
   const ApkInstallInfo({
     required this.supported,

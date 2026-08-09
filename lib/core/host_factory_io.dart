@@ -10,6 +10,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'concurrency_limiter.dart';
 import 'debug_log.dart';
 import 'download_path.dart';
 import 'models.dart';
@@ -18,7 +19,7 @@ import 'source_runtime.dart';
 SourceHostApi createPlatformHostApi({DebugLogStore? debug}) =>
     NativeHostApi(debug: debug);
 
-class NativeHostApi implements SourceHostApi {
+class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
   NativeHostApi({this._debug});
 
   static const _installChannel = MethodChannel('com.apkmesh/install');
@@ -34,6 +35,19 @@ class NativeHostApi implements SourceHostApi {
   final Map<String, Map<String, String>> _browserCookies = {};
   final http.Client _client = http.Client();
   final Map<String, _NativeDownloadSession> _downloadSessions = {};
+  final AdjustableSemaphore _httpRequests = AdjustableSemaphore(
+    SourceConcurrencySettings.defaultHttpRequests,
+  );
+  final AdjustableSemaphore _webViews = AdjustableSemaphore(
+    SourceConcurrencySettings.defaultWebViews,
+  );
+  final Set<String> _browserPermits = {};
+
+  @override
+  void setSourceConcurrency(SourceConcurrencySettings settings) {
+    _httpRequests.limit = settings.httpRequests;
+    _webViews.limit = settings.webViews;
+  }
 
   bool get _hasHeadlessWebView =>
       Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
@@ -108,7 +122,7 @@ class NativeHostApi implements SourceHostApi {
     String url, {
     Map<String, String> headers = const {},
     required SourcePolicy policy,
-  }) async {
+  }) => _httpRequests.withPermit(() async {
     final requestId = _debug?.beginRequest(url, headers: headers);
     var requestRecorded = false;
     _log('HTTP $url', category: 'HTTP');
@@ -154,14 +168,14 @@ class NativeHostApi implements SourceHostApi {
       );
       rethrow;
     }
-  }
+  });
 
   @override
   Future<List<int>> requestBytes(
     String url, {
     Map<String, String> headers = const {},
     required SourcePolicy policy,
-  }) async {
+  }) => _httpRequests.withPermit(() async {
     _log('HTTP bytes $url', category: 'HTTP');
     final response = await _getWithRedirects(
       Uri.parse(url),
@@ -174,7 +188,7 @@ class NativeHostApi implements SourceHostApi {
     }
     _log('HTTP bytes $url -> ${response.statusCode}', category: 'HTTP');
     return bytes;
-  }
+  });
 
   Future<http.StreamedResponse> _getWithRedirects(
     Uri initialUri,
@@ -214,88 +228,105 @@ class NativeHostApi implements SourceHostApi {
       throw UnsupportedError('Linux/Windows 当前没有隐藏 WebView 实现');
     }
 
-    final tabId = DateTime.now().microsecondsSinceEpoch.toString();
-    _tabStates[tabId] = BrowserTabDebugInfo(
-      id: tabId,
-      url: url,
-      state: 'starting',
-      startedAt: DateTime.now(),
-    );
-    _tabPolicies[tabId] = policy;
-    _log('WebView opening $tabId $url');
-    final controllerReady = Completer<InAppWebViewController>();
-    final pageLoaded = Completer<void>();
-    var loaded = false;
-    late final HeadlessInAppWebView tab;
-    tab = HeadlessInAppWebView(
-      initialSettings: InAppWebViewSettings(
-        javaScriptEnabled: true,
-        domStorageEnabled: true,
-        incognito: true,
-        useOnDownloadStart: true,
-        useShouldOverrideUrlLoading: true,
-        useShouldInterceptRequest: true,
-        userAgent:
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
-      ),
-      initialUrlRequest: URLRequest(url: WebUri(uri.toString())),
-      onWebViewCreated: (controller) {
-        _controllers[tabId] = controller;
-        _setTabState(tabId, state: 'created');
-        if (!controllerReady.isCompleted) controllerReady.complete(controller);
-      },
-      onLoadStop: (controller, url) {
-        loaded = true;
-        _setTabState(tabId, url: url?.toString(), state: 'ready');
-        if (!pageLoaded.isCompleted) pageLoaded.complete();
-      },
-      onDownloadStarting: (controller, request) {
-        final downloadUrl = request.url.toString();
-        if (!policy.permits(request.url)) {
-          _log(
-            'WebView download blocked $tabId $downloadUrl',
-            level: DebugLogLevel.warning,
-            category: 'WebView',
-          );
+    await _webViews.acquire();
+    String? permitTabId;
+    try {
+      final tabId = DateTime.now().microsecondsSinceEpoch.toString();
+      permitTabId = tabId;
+      _browserPermits.add(tabId);
+      _tabStates[tabId] = BrowserTabDebugInfo(
+        id: tabId,
+        url: url,
+        state: 'starting',
+        startedAt: DateTime.now(),
+      );
+      _tabPolicies[tabId] = policy;
+      _log('WebView opening $tabId $url');
+      final controllerReady = Completer<InAppWebViewController>();
+      final pageLoaded = Completer<void>();
+      var loaded = false;
+      late final HeadlessInAppWebView tab;
+      tab = HeadlessInAppWebView(
+        initialSettings: InAppWebViewSettings(
+          javaScriptEnabled: true,
+          domStorageEnabled: true,
+          incognito: true,
+          useOnDownloadStart: true,
+          useShouldOverrideUrlLoading: true,
+          useShouldInterceptRequest: true,
+          userAgent:
+              'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
+        ),
+        initialUrlRequest: URLRequest(url: WebUri(uri.toString())),
+        onWebViewCreated: (controller) {
+          _controllers[tabId] = controller;
+          _setTabState(tabId, state: 'created');
+          if (!controllerReady.isCompleted) {
+            controllerReady.complete(controller);
+          }
+        },
+        onLoadStop: (controller, url) {
+          loaded = true;
+          _setTabState(tabId, url: url?.toString(), state: 'ready');
+          if (!pageLoaded.isCompleted) pageLoaded.complete();
+        },
+        onDownloadStarting: (controller, request) {
+          final downloadUrl = request.url.toString();
+          if (!policy.permits(request.url)) {
+            _log(
+              'WebView download blocked $tabId $downloadUrl',
+              level: DebugLogLevel.warning,
+              category: 'WebView',
+            );
+            return null;
+          }
+          _recordWebViewDownload(tabId, request.url);
           return null;
-        }
-        _recordWebViewDownload(tabId, request.url);
-        return null;
-      },
-      shouldOverrideUrlLoading: (_, action) async {
-        final next = action.request.url;
-        if (next == null || !policy.permits(next)) {
-          return NavigationActionPolicy.CANCEL;
-        }
-        _setTabState(tabId, url: next.toString(), state: 'navigating');
-        return NavigationActionPolicy.ALLOW;
-      },
-      shouldInterceptRequest: (_, request) async {
-        final resource = request.url;
-        if (policy.permits(resource) && _looksLikeApkDownload(resource)) {
-          _recordWebViewDownload(tabId, resource);
-        }
-        if ((resource.scheme == 'http' || resource.scheme == 'https') &&
-            !policy.permits(resource)) {
-          return WebResourceResponse(
-            statusCode: 403,
-            reasonPhrase: 'Source domain is not allowed',
-            contentType: 'text/plain',
-            data: Uint8List.fromList(utf8.encode('blocked by source policy')),
-          );
-        }
-        return null;
-      },
-    );
-    _tabs[tabId] = tab;
-    await tab.run();
-    await controllerReady.future.timeout(const Duration(seconds: 15));
-    await pageLoaded.future.timeout(
-      const Duration(seconds: 30),
-      onTimeout: () {},
-    );
-    if (!loaded) _setTabState(tabId, state: 'load-timeout');
-    return tabId;
+        },
+        shouldOverrideUrlLoading: (_, action) async {
+          final next = action.request.url;
+          if (next == null || !policy.permits(next)) {
+            return NavigationActionPolicy.CANCEL;
+          }
+          _setTabState(tabId, url: next.toString(), state: 'navigating');
+          return NavigationActionPolicy.ALLOW;
+        },
+        shouldInterceptRequest: (_, request) async {
+          final resource = request.url;
+          if (policy.permits(resource) && _looksLikeApkDownload(resource)) {
+            _recordWebViewDownload(tabId, resource);
+          }
+          if ((resource.scheme == 'http' || resource.scheme == 'https') &&
+              !policy.permits(resource)) {
+            return WebResourceResponse(
+              statusCode: 403,
+              reasonPhrase: 'Source domain is not allowed',
+              contentType: 'text/plain',
+              data: Uint8List.fromList(utf8.encode('blocked by source policy')),
+            );
+          }
+          return null;
+        },
+      );
+      _tabs[tabId] = tab;
+      await tab.run();
+      await controllerReady.future.timeout(const Duration(seconds: 15));
+      await pageLoaded.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {},
+      );
+      if (!loaded) _setTabState(tabId, state: 'load-timeout');
+      return tabId;
+    } catch (_) {
+      if (permitTabId == null) {
+        _webViews.release();
+      } else {
+        try {
+          await browserClose(permitTabId);
+        } catch (_) {}
+      }
+      rethrow;
+    }
   }
 
   InAppWebViewController _controller(String tabId) =>
@@ -491,21 +522,25 @@ class NativeHostApi implements SourceHostApi {
 
   @override
   Future<void> browserClose(String tabId) async {
-    _log('WebView closing $tabId', category: 'WebView');
-    final tab = _tabs.remove(tabId);
-    final keepAlive = _attachedTabs.remove(tabId);
-    final state = _tabStates[tabId];
-    _tabPolicies.remove(tabId);
-    _controllers.remove(tabId);
-    _tabDownloadUrls.remove(tabId);
-    final url = state == null ? null : Uri.tryParse(state.url);
-    if (url != null) await _captureBrowserCookies(url);
-    if (keepAlive != null) {
-      await InAppWebViewController.disposeKeepAlive(keepAlive);
-    } else {
-      await tab?.dispose();
+    try {
+      _log('WebView closing $tabId', category: 'WebView');
+      final tab = _tabs.remove(tabId);
+      final keepAlive = _attachedTabs.remove(tabId);
+      final state = _tabStates[tabId];
+      _tabPolicies.remove(tabId);
+      _controllers.remove(tabId);
+      _tabDownloadUrls.remove(tabId);
+      final url = state == null ? null : Uri.tryParse(state.url);
+      if (url != null) await _captureBrowserCookies(url);
+      if (keepAlive != null) {
+        await InAppWebViewController.disposeKeepAlive(keepAlive);
+      } else {
+        await tab?.dispose();
+      }
+      _setTabState(tabId, state: 'closed', active: false);
+    } finally {
+      if (_browserPermits.remove(tabId)) _webViews.release();
     }
-    _setTabState(tabId, state: 'closed', active: false);
   }
 
   Future<Directory> _downloadDirectory() async {

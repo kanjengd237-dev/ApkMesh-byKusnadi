@@ -6,9 +6,68 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_js/flutter_js.dart';
 
+import 'concurrency_limiter.dart';
 import 'models.dart';
 import 'source_runtime.dart';
 import 'debug_log.dart';
+
+final _quickJsRuntimePool = _QuickJsRuntimePool();
+
+void setQuickJsRuntimeConcurrency(int value) {
+  _quickJsRuntimePool.maxActive = value;
+}
+
+class _QuickJsRuntimePool {
+  _QuickJsRuntimePool()
+    : _active = AdjustableSemaphore(
+        SourceConcurrencySettings.defaultHttpRequests,
+      );
+
+  static const maxWarm = 12;
+  final AdjustableSemaphore _active;
+  final Map<QuickJsApkSourceScript, AdjustableSemaphore> _sourceLocks = {};
+  final Set<QuickJsApkSourceScript> _idle = <QuickJsApkSourceScript>{};
+
+  set maxActive(int value) => _active.limit = value;
+
+  Future<T> run<T>(QuickJsApkSourceScript source, Future<T> Function() action) {
+    return _active.withPermit(() {
+      final sourceLock = _sourceLocks.putIfAbsent(
+        source,
+        () => AdjustableSemaphore(1),
+      );
+      return sourceLock.withPermit(() async {
+        _idle.remove(source);
+        await source._activateRuntime();
+        try {
+          return await action();
+        } finally {
+          if (!source._disposed && source._runtime != null) _idle.add(source);
+          await _trim();
+        }
+      });
+    });
+  }
+
+  Future<void> remove(QuickJsApkSourceScript source) async {
+    _idle.remove(source);
+    final sourceLock = _sourceLocks[source];
+    if (sourceLock == null) {
+      await source._deactivateRuntime();
+    } else {
+      await sourceLock.withPermit(source._deactivateRuntime);
+      _sourceLocks.remove(source);
+    }
+  }
+
+  Future<void> _trim() async {
+    while (_idle.length > maxWarm) {
+      final source = _idle.first;
+      _idle.remove(source);
+      await source._deactivateRuntime();
+    }
+  }
+}
 
 Future<List<String>> discoverSourceAssets() async {
   if (!Platform.isAndroid) return const [];
@@ -34,7 +93,12 @@ Future<ApkSourceScript?> loadQuickJsSourceText(
     sourceUrl: sourceUrl,
     debug: debug,
   );
-  await source.initialize();
+  try {
+    await source.initialize();
+  } catch (_) {
+    await source.dispose();
+    rethrow;
+  }
   return source;
 }
 
@@ -45,12 +109,27 @@ Future<ApkSourceScript?> loadQuickJsSource(
   // QuickJS is used for the Android runtime; other native platforms retain the demo source.
   if (!Platform.isAndroid) return null;
   final script = await rootBundle.loadString(assetPath);
+  Map<String, dynamic>? manifest;
+  try {
+    final text = await rootBundle.loadString('$assetPath.manifest.json');
+    manifest = (jsonDecode(text) as Map).cast<String, dynamic>();
+  } on FlutterError {
+    // Older or externally supplied asset bundles may not provide a sidecar.
+  }
   final source = QuickJsApkSourceScript(
     script,
     sourceUrl: assetPath,
     debug: debug,
+    initialManifest: manifest,
   );
-  await source.initialize();
+  if (manifest == null) {
+    try {
+      await source.initialize();
+    } catch (_) {
+      await source.dispose();
+      rethrow;
+    }
+  }
   return source;
 }
 
@@ -64,17 +143,21 @@ class QuickJsApkSourceScript
         SourcePackageLookupScript {
   static const _legacyRecommendedTabId = '__apkmesh_legacy_recommended__';
 
-  QuickJsApkSourceScript(this.scriptText, {String? sourceUrl, this._debug})
-    : _sourceUrl = sourceUrl ?? 'quickjs-source.js' {
-    _runtime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: false);
-    _installBridge();
+  QuickJsApkSourceScript(
+    this.scriptText, {
+    String? sourceUrl,
+    this._debug,
+    Map<String, dynamic>? initialManifest,
+  }) : _sourceUrl = sourceUrl ?? 'quickjs-source.js',
+       assert(initialManifest == null || initialManifest.isNotEmpty) {
+    if (initialManifest != null) _applyManifest(initialManifest);
   }
 
   final String scriptText;
   final String _sourceUrl;
   final DebugLogStore? _debug;
-  late final JavascriptRuntime _runtime;
-  late final SourcePolicy _policy;
+  JavascriptRuntime? _runtime;
+  late SourcePolicy _policy;
   String? _sourceId;
   String? _sourceName;
   String? _sourceVersion;
@@ -106,7 +189,7 @@ class QuickJsApkSourceScript
     _debug?.add(message, level: level, category: 'QuickJS');
   }
 
-  Future<void> initialize() => _evaluateScript();
+  Future<void> initialize() => _quickJsRuntimePool.run(this, () async {});
 
   @override
   String get id => _sourceId ?? 'quickjs-source';
@@ -117,8 +200,8 @@ class QuickJsApkSourceScript
   @override
   SourcePolicy get policy => _policy;
 
-  void _installBridge() {
-    _runtime.onMessage('apkmesh.request', (args) async {
+  void _installBridge(JavascriptRuntime runtime) {
+    runtime.onMessage('apkmesh.request', (args) async {
       final payload = _payload(args);
       final body = await _host!.request(
         payload['url'] as String,
@@ -127,11 +210,11 @@ class QuickJsApkSourceScript
       );
       return body;
     });
-    _runtime.onMessage('apkmesh.browser.open', (args) async {
+    runtime.onMessage('apkmesh.browser.open', (args) async {
       final payload = _payload(args);
       return _host!.browserOpen(payload['url'] as String, policy: _policy);
     });
-    _runtime.onMessage('apkmesh.browser.waitFor', (args) async {
+    runtime.onMessage('apkmesh.browser.waitFor', (args) async {
       final payload = _payload(args);
       await _host!.browserWaitFor(
         payload['tabId'] as String,
@@ -139,21 +222,21 @@ class QuickJsApkSourceScript
       );
       return true;
     });
-    _runtime.onMessage('apkmesh.browser.waitForUrlChange', (args) async {
+    runtime.onMessage('apkmesh.browser.waitForUrlChange', (args) async {
       final payload = _payload(args);
       return _host!.browserWaitForUrlChange(
         payload['tabId'] as String,
         payload['previousUrl'] as String,
       );
     });
-    _runtime.onMessage('apkmesh.browser.query', (args) async {
+    runtime.onMessage('apkmesh.browser.query', (args) async {
       final payload = _payload(args);
       return _host!.browserQuery(
         payload['tabId'] as String,
         _dynamicMap(payload['selectors']),
       );
     });
-    _runtime.onMessage('apkmesh.browser.queryAll', (args) async {
+    runtime.onMessage('apkmesh.browser.queryAll', (args) async {
       final payload = _payload(args);
       return _host!.browserQueryAll(
         payload['tabId'] as String,
@@ -161,11 +244,11 @@ class QuickJsApkSourceScript
         _dynamicMap(payload['selectors']),
       );
     });
-    _runtime.onMessage('apkmesh.browser.close', (args) async {
+    runtime.onMessage('apkmesh.browser.close', (args) async {
       await _host!.browserClose(_payload(args)['tabId'] as String);
       return true;
     });
-    _runtime.onMessage('apkmesh.download', (args) async {
+    runtime.onMessage('apkmesh.download', (args) async {
       final payload = _payload(args);
       return _host!.download(
         payload['url'] as String,
@@ -174,7 +257,7 @@ class QuickJsApkSourceScript
         policy: _policy,
       );
     });
-    _runtime.onMessage('apkmesh.detailProgress', (args) {
+    runtime.onMessage('apkmesh.detailProgress', (args) {
       final payload = _payload(args);
       final requestId = payload['requestId']?.toString() ?? '';
       final update = _dynamicMap(payload['update']);
@@ -182,7 +265,7 @@ class QuickJsApkSourceScript
       callback?.call(update);
       return true;
     });
-    _runtime.onMessage('apkmesh.install', (args) async {
+    runtime.onMessage('apkmesh.install', (args) async {
       final payload = _payload(args);
       return _host!.install(payload['filePath'] as String, policy: _policy);
     });
@@ -202,7 +285,30 @@ class QuickJsApkSourceScript
   Map<String, dynamic> _dynamicMap(dynamic value) =>
       value is Map ? value.cast<String, dynamic>() : <String, dynamic>{};
 
+  Future<void> _activateRuntime() async {
+    if (_disposed) throw StateError('源已释放');
+    if (_runtime != null) return;
+    final runtime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: false);
+    _runtime = runtime;
+    try {
+      _installBridge(runtime);
+      await _evaluateScript();
+    } catch (_) {
+      runtime.dispose();
+      _runtime = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _deactivateRuntime() async {
+    final runtime = _runtime;
+    _runtime = null;
+    _host = null;
+    runtime?.dispose();
+  }
+
   Future<void> _evaluateScript() async {
+    final runtime = _runtime ?? (throw StateError('QuickJS 运行时未激活'));
     final bootstrap = '''
       globalThis.apkmesh = {
         request: (url, options = {}) => sendMessage('apkmesh.request', JSON.stringify({url, headers: options.headers || {}})),
@@ -227,20 +333,19 @@ class QuickJsApkSourceScript
         install: (filePath) => sendMessage('apkmesh.install', JSON.stringify({filePath})),
       };
     ''';
-    _runtime.evaluate(bootstrap);
-    _runtime.evaluate(scriptText, sourceUrl: _sourceUrl);
+    runtime.evaluate(bootstrap);
+    runtime.evaluate(scriptText, sourceUrl: _sourceUrl);
     final manifestResult = await _evaluateJson(
       'JSON.stringify(source.manifest)',
     );
     final manifest = (manifestResult as Map).cast<String, dynamic>();
-    _sourceId = manifest['id'] as String?;
-    _sourceName = manifest['name'] as String?;
-    _sourceVersion = manifest['version']?.toString();
-    _sourceHomepage = manifest['homepage']?.toString();
-    _sourceDescription = manifest['description']?.toString();
-    _debugProjects = _parseDebugProjects(manifest['debugProjects']);
-    final permissions = _dynamicMap(manifest['permissions']);
-    _hasCatalog =
+    final actualId = manifest['id']?.toString();
+    if (_sourceId != null && actualId != _sourceId) {
+      throw FormatException(
+        '源 sidecar ID 与脚本 manifest 不一致：$_sourceId != $actualId',
+      );
+    }
+    final hasCatalog =
         await _evaluateJson(
           'JSON.stringify(typeof source.catalog === "function" && typeof source.catalogPage === "function")',
         ) ==
@@ -250,17 +355,43 @@ class QuickJsApkSourceScript
           'JSON.stringify(typeof source.home === "function" && typeof source.category === "function")',
         ) ==
         true;
-    _hasDetailProgress =
+    final hasDetailProgress =
         await _evaluateJson(
           'JSON.stringify(typeof source.detailsMetadata === "function" && typeof source.resolveDownloads === "function")',
         ) ==
         true;
-    _hasPackageLookup =
+    final hasPackageLookup =
         manifest['packageLookup'] == true &&
         await _evaluateJson(
               'JSON.stringify(typeof source.packageLookupUrl === "function")',
             ) ==
             true;
+    _applyManifest(
+      manifest,
+      capabilities: {
+        'catalog': hasCatalog,
+        'detailProgress': hasDetailProgress,
+        'packageLookup': hasPackageLookup,
+      },
+    );
+  }
+
+  void _applyManifest(
+    Map<String, dynamic> manifest, {
+    Map<String, dynamic>? capabilities,
+  }) {
+    _sourceId = manifest['id']?.toString();
+    _sourceName = manifest['name']?.toString();
+    _sourceVersion = manifest['version']?.toString();
+    _sourceHomepage = manifest['homepage']?.toString();
+    _sourceDescription = manifest['description']?.toString();
+    final declaredCapabilities =
+        capabilities ?? _dynamicMap(manifest['capabilities']);
+    _hasCatalog = declaredCapabilities['catalog'] == true;
+    _hasDetailProgress = declaredCapabilities['detailProgress'] == true;
+    _hasPackageLookup = declaredCapabilities['packageLookup'] == true;
+    _debugProjects = _parseDebugProjects(manifest['debugProjects']);
+    final permissions = _dynamicMap(manifest['permissions']);
     final hosts = (permissions['network'] as List? ?? const [])
         .map((item) => item.toString())
         .toSet();
@@ -313,14 +444,12 @@ class QuickJsApkSourceScript
   }
 
   Future<dynamic> _evaluateJson(String expression) async {
-    var result = await _runtime.evaluateAsync(
-      expression,
-      sourceUrl: _sourceUrl,
-    );
-    _runtime.executePendingJob();
+    final runtime = _runtime ?? (throw StateError('QuickJS 运行时未激活'));
+    var result = await runtime.evaluateAsync(expression, sourceUrl: _sourceUrl);
+    runtime.executePendingJob();
     if (result.stringResult == '[object Promise]' ||
         result.stringResult.contains("Instance of 'Future")) {
-      result = await _runtime
+      result = await runtime
           .handlePromise(result)
           .timeout(const Duration(minutes: 2));
     }
@@ -342,13 +471,9 @@ class QuickJsApkSourceScript
     String method,
     List<dynamic> arguments,
     SourceHostApi host,
-  ) async {
-    if (_disposed) throw StateError('源已释放');
+  ) => _quickJsRuntimePool.run(this, () async {
     _host = host;
     _log('QuickJS call $method');
-    if (_sourceId == null) {
-      await _evaluateScript();
-    }
     try {
       final result = await _evaluateJson(
         '(async () => { '
@@ -366,7 +491,7 @@ class QuickJsApkSourceScript
       _log('QuickJS call $method failed: $error', level: DebugLogLevel.error);
       rethrow;
     }
-  }
+  });
 
   @override
   bool get supportsCatalog => _hasCatalog || _hasLegacyCatalog;
@@ -664,6 +789,6 @@ class QuickJsApkSourceScript
   @override
   Future<void> dispose() async {
     _disposed = true;
-    _runtime.dispose();
+    await _quickJsRuntimePool.remove(this);
   }
 }

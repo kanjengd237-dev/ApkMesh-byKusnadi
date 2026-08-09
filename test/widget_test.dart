@@ -36,6 +36,21 @@ void main() {
     );
   });
 
+  testWidgets('shows configurable source concurrency defaults', (tester) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byIcon(Icons.settings_outlined).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('源并发'), findsOneWidget);
+    expect(find.text('HTTP 请求'), findsOneWidget);
+    expect(find.text('隐藏 WebView'), findsOneWidget);
+    final values = tester
+        .widgetList<Slider>(find.byType(Slider))
+        .map((slider) => slider.value)
+        .toList();
+    expect(values, containsAll(<double>[50, 5]));
+  });
+
   testWidgets('opens the download manager', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
     await tester.tap(find.text('下载'));

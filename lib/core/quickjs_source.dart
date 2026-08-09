@@ -8,6 +8,9 @@ import 'debug_log.dart';
 Future<List<String>> discoverSourceAssets() =>
     implementation.discoverSourceAssets();
 
+void setQuickJsRuntimeConcurrency(int value) =>
+    implementation.setQuickJsRuntimeConcurrency(value);
+
 Future<ApkSourceScript?> loadQuickJsSourceText(
   String scriptText, {
   required String sourceUrl,

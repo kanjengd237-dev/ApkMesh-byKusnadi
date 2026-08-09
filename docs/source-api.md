@@ -80,6 +80,24 @@ async catalogPage(tabId, page) {
 
 `debugProjects` 是可选的调试项目声明。调试面板会按声明生成输入框和运行按钮，并调用 `debug(projectId, input)`。项目应返回 `{ title, summary, data }`，其中 `data` 会以结构化文本显示在运行结果下方。项目可以复用 `search()`、`details()` 或其他已声明的宿主能力；例如详情项目调用 `apkmesh.browser.open()` 时，面板会同步显示活动 WebView，点击标签即可打开可视化查看器。
 
+### 内置源懒加载 sidecar
+
+Source API 仍以单个 JavaScript 文件为完整、可导入的源格式。应用内置大量源时，可以为资产脚本增加同名的 `<script>.manifest.json` sidecar，例如 `apkvision.js.manifest.json`。宿主启动时从 sidecar 读取源目录信息和权限，不创建 QuickJS 运行时；源第一次执行时才加载脚本，并重新读取脚本自身的 manifest。
+
+sidecar 复制脚本 manifest 的 `id`、`name`、`version`、`homepage`、`description`、`permissions` 和 `debugProjects`，并增加宿主预计算的能力声明：
+
+```json
+{
+  "capabilities": {
+    "catalog": true,
+    "detailProgress": true,
+    "packageLookup": false
+  }
+}
+```
+
+修改内置脚本 manifest 或可选接口时必须同步更新 sidecar。宿主首次激活脚本时会拒绝 sidecar 与脚本 manifest ID 不一致的源；没有 sidecar 的资产和用户导入的单文件源继续通过执行脚本读取 manifest，不影响第三方源兼容性。
+
 `permissions.network` 支持精确主机名、`*.example.com` 子域名规则，以及显式的 `'*'` 任意主机权限。`'*'` 仍只允许 `http`/`https`，并会在每一次重定向时重新执行策略检查；它只应由用户明确信任、需要临时下载主机的源声明。
 
 ```js

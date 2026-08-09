@@ -147,6 +147,51 @@ void main() {
     },
   );
 
+  test('registry limits concurrently executing source operations', () async {
+    final tracker = _ConcurrentTracker();
+    final registry = SourceRegistry(
+      maxConcurrentOperations: 2,
+      scripts: List.generate(
+        5,
+        (index) => _LimitedConcurrentSource('limited-$index', tracker),
+      ),
+    );
+
+    final search = registry.search('example', DemoHostApi());
+    await tracker.firstWave.future;
+    expect(tracker.started, 2);
+    expect(tracker.peak, 2);
+
+    tracker.release.complete();
+    final results = await search;
+    expect(results, hasLength(5));
+    expect(tracker.peak, 2);
+  });
+
+  test('registry skips queued source operations after cancellation', () async {
+    final tracker = _CancellationTracker();
+    final cancellation = SourceSearchCancellation();
+    final registry = SourceRegistry(
+      maxConcurrentOperations: 1,
+      scripts: List.generate(
+        4,
+        (index) => _CancellableSource('cancel-$index', tracker),
+      ),
+    );
+
+    final search = registry.searchPage(
+      'example',
+      DemoHostApi(),
+      cancellation: cancellation,
+    );
+    await tracker.firstStarted.future;
+    cancellation.cancel();
+    tracker.release.complete();
+    await search;
+
+    expect(tracker.started, 1);
+  });
+
   test(
     'registry forwards pages and preserves an empty page as success',
     () async {
@@ -499,6 +544,92 @@ class _ConcurrentSource implements ApkSourceScript {
     if (gate.started == 2) gate.bothStarted.complete();
     await gate.release.future;
     return const [ExampleCatalogSource._app];
+  }
+
+  @override
+  Future<AppDetails> details(String appId, SourceHostApi host) async =>
+      ExampleCatalogSource._app;
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class _ConcurrentTracker {
+  int active = 0;
+  int started = 0;
+  int peak = 0;
+  final firstWave = Completer<void>();
+  final release = Completer<void>();
+}
+
+class _LimitedConcurrentSource implements ApkSourceScript {
+  _LimitedConcurrentSource(this.id, this.tracker);
+
+  @override
+  final String id;
+  final _ConcurrentTracker tracker;
+
+  @override
+  String get name => id;
+
+  @override
+  SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
+
+  @override
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async {
+    tracker.active += 1;
+    tracker.started += 1;
+    if (tracker.active > tracker.peak) tracker.peak = tracker.active;
+    if (tracker.started == 2) tracker.firstWave.complete();
+    try {
+      await tracker.release.future;
+      return [_listing(id, name)];
+    } finally {
+      tracker.active -= 1;
+    }
+  }
+
+  @override
+  Future<AppDetails> details(String appId, SourceHostApi host) async =>
+      ExampleCatalogSource._app;
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class _CancellationTracker {
+  int started = 0;
+  final firstStarted = Completer<void>();
+  final release = Completer<void>();
+}
+
+class _CancellableSource implements ApkSourceScript {
+  _CancellableSource(this.id, this.tracker);
+
+  @override
+  final String id;
+  final _CancellationTracker tracker;
+
+  @override
+  String get name => id;
+
+  @override
+  SourcePolicy get policy => const SourcePolicy(allowedHosts: {});
+
+  @override
+  Future<List<AppListing>> search(
+    String query,
+    SourceHostApi host, {
+    int page = 1,
+  }) async {
+    tracker.started += 1;
+    if (!tracker.firstStarted.isCompleted) tracker.firstStarted.complete();
+    await tracker.release.future;
+    return [_listing(id, name)];
   }
 
   @override

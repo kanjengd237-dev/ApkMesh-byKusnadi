@@ -41,24 +41,37 @@ class _SourcesPageState extends State<SourcesPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-      children: [
-        _buildHeader(context),
-        const SizedBox(height: 20),
-        Column(
-          children: state.sources.asMap().entries.map((entry) {
-            final source = entry.value;
-            return SourceTile(
-              key: ValueKey(source.id),
-              source: source,
-              state: state,
-              selectionMode: _selectionMode,
-              selected: _selectedSourceIds.contains(source.id),
-              onLongPress: () => _enterSelection(entry.key),
-              onSelectionToggle: () => _toggleSelection(entry.key),
-            );
-          }).toList(),
+    final sources = state.sources;
+    final sourceIds = sources.map((source) => source.id).toSet();
+    final selectedSourceIds = _selectedIds.intersection(sourceIds);
+    final projectsBySource = <String, List<SourceDebugProject>>{};
+    for (final project in state.debugProjects) {
+      projectsBySource.putIfAbsent(project.sourceId, () => []).add(project);
+    }
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+          sliver: SliverToBoxAdapter(child: _buildHeader(context)),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
+          sliver: SliverList.builder(
+            itemCount: sources.length,
+            itemBuilder: (context, index) {
+              final source = sources[index];
+              return SourceTile(
+                key: ValueKey(source.id),
+                source: source,
+                state: state,
+                projects: projectsBySource[source.id] ?? const [],
+                selectionMode: _selectionMode,
+                selected: selectedSourceIds.contains(source.id),
+                onLongPress: () => _enterSelection(index),
+                onSelectionToggle: () => _toggleSelection(index),
+              );
+            },
+          ),
         ),
       ],
     );
@@ -473,6 +486,7 @@ class SourceTile extends StatelessWidget {
   const SourceTile({
     required this.source,
     required this.state,
+    required this.projects,
     required this.selectionMode,
     required this.selected,
     required this.onLongPress,
@@ -482,6 +496,7 @@ class SourceTile extends StatelessWidget {
 
   final ApkSource source;
   final AppState state;
+  final List<SourceDebugProject> projects;
   final bool selectionMode;
   final bool selected;
   final VoidCallback onLongPress;
@@ -490,9 +505,6 @@ class SourceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = source.status == SourceStatus.enabled;
-    final projects = state.debugProjects
-        .where((project) => project.sourceId == source.id)
-        .toList(growable: false);
     final leading = CircleAvatar(
       child: Icon(source.builtIn ? Icons.inventory_2_outlined : Icons.code),
     );

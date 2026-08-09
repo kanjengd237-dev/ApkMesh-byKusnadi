@@ -32,6 +32,7 @@ class AppState extends ChangeNotifier {
         lastSync: DateTime.now(),
       ),
     ];
+    _sourceView = List<ApkSource>.unmodifiable(_sources);
     _downloadNotifications = DownloadNotifications(
       onAction: _handleDownloadNotificationAction,
     );
@@ -40,6 +41,7 @@ class AppState extends ChangeNotifier {
 
   final SourceHostApi? _hostOverride;
   late List<ApkSource> _sources;
+  late List<ApkSource> _sourceView;
   final SourceRegistry registry = SourceRegistry(
     scripts: [ApkVisionDemoScript()],
   );
@@ -60,6 +62,10 @@ class AppState extends ChangeNotifier {
   final Map<String, Map<String, AppDetailsProgress>> _detailsCache = {};
   Timer? _translationQueueTimer;
   TranslationSettings _translationSettings = const TranslationSettings();
+  SourceConcurrencySettings _sourceConcurrency =
+      const SourceConcurrencySettings();
+  Set<String> _disabledSourceIds = {};
+  String? _preferredHomeSourceId;
   AppThemeMode _themeMode = AppThemeMode.system;
   InstallMethod _installMethod = InstallMethod.system;
   ShizukuStatus _shizukuStatus = ShizukuStatus.unsupported;
@@ -78,7 +84,7 @@ class AppState extends ChangeNotifier {
   bool _isDisposing = false;
   bool _sourceRuntimeReady = false;
   String? _runtimeError;
-  List<ApkSource> get sources => List.unmodifiable(_sources);
+  List<ApkSource> get sources => _sourceView;
   List<DownloadTask> get downloads => List.unmodifiable(_downloads);
   bool get sourceRuntimeReady => _sourceRuntimeReady;
   Future<void> get ready => _ready.future;
@@ -97,6 +103,7 @@ class AppState extends ChangeNotifier {
 
   List<SourceDebugProject> get debugProjects => registry.debugProjects;
   TranslationSettings get translationSettings => _translationSettings;
+  SourceConcurrencySettings get sourceConcurrency => _sourceConcurrency;
   AppThemeMode get themeMode => _themeMode;
   InstallMethod get installMethod => _installMethod;
   bool get useShizukuInstaller => _installMethod == InstallMethod.shizuku;
@@ -345,6 +352,10 @@ class AppState extends ChangeNotifier {
       final preferences = await SharedPreferences.getInstance();
       if (_isDisposing) return;
       _preferences = preferences;
+      _disabledSourceIds =
+          preferences.getStringList('source.disabledIds')?.toSet() ?? {};
+      _preferredHomeSourceId = preferences.getString('source.homeId');
+      _applyStoredSourcePreferences();
       final providerIndex = preferences.getInt('translation.provider') ?? 0;
       final provider =
           providerIndex >= 0 &&
@@ -362,6 +373,11 @@ class AppState extends ChangeNotifier {
         _ => InstallMethod.system,
       };
       host.setInstallMethod(_installMethod);
+      _sourceConcurrency = const SourceConcurrencySettings().copyWith(
+        httpRequests: preferences.getInt('source.httpConcurrency'),
+        webViews: preferences.getInt('source.webViewConcurrency'),
+      );
+      _applySourceConcurrency();
       _translationSettings = TranslationSettings(
         provider: provider,
         targetLanguage:
@@ -421,6 +437,90 @@ class AppState extends ChangeNotifier {
     );
     await preferences.setInt('theme.mode', _themeMode.index);
     await preferences.setString('install.method', _installMethod.name);
+    await preferences.setInt(
+      'source.httpConcurrency',
+      _sourceConcurrency.httpRequests,
+    );
+    await preferences.setInt(
+      'source.webViewConcurrency',
+      _sourceConcurrency.webViews,
+    );
+    final disabledIds =
+        _sources
+            .where((source) => source.status == SourceStatus.disabled)
+            .map((source) => source.id)
+            .toList()
+          ..sort();
+    await preferences.setStringList('source.disabledIds', disabledIds);
+    final selectedHomeSourceId = homeSourceId;
+    if (selectedHomeSourceId == null) {
+      await preferences.remove('source.homeId');
+    } else {
+      await preferences.setString('source.homeId', selectedHomeSourceId);
+    }
+  }
+
+  void _refreshSourceView() {
+    _sourceView = List<ApkSource>.unmodifiable(_sources);
+  }
+
+  void _applyStoredSourcePreferences() {
+    _sources = _sources
+        .map(
+          (source) => source.copyWith(
+            status: _disabledSourceIds.contains(source.id)
+                ? SourceStatus.disabled
+                : SourceStatus.enabled,
+            homeSource: false,
+          ),
+        )
+        .toList();
+    final preferred = _preferredHomeSourceId;
+    final selectedId = _sources
+        .where(
+          (source) =>
+              source.status == SourceStatus.enabled && source.id == preferred,
+        )
+        .map((source) => source.id)
+        .firstOrNull;
+    final fallbackId =
+        selectedId ??
+        _sources
+            .where((source) => source.status == SourceStatus.enabled)
+            .map((source) => source.id)
+            .firstOrNull;
+    if (fallbackId != null) {
+      _sources = _sources
+          .map((source) => source.copyWith(homeSource: source.id == fallbackId))
+          .toList();
+    }
+    _refreshSourceView();
+  }
+
+  void setSourceConcurrency({int? httpRequests, int? webViews}) {
+    final next = _sourceConcurrency.copyWith(
+      httpRequests: httpRequests,
+      webViews: webViews,
+    );
+    if (next.httpRequests == _sourceConcurrency.httpRequests &&
+        next.webViews == _sourceConcurrency.webViews) {
+      return;
+    }
+    _sourceConcurrency = next;
+    _applySourceConcurrency();
+    notifyListeners();
+    unawaited(_persistSettings());
+  }
+
+  void _applySourceConcurrency() {
+    registry.maxConcurrentOperations = _sourceConcurrency.httpRequests;
+    setQuickJsRuntimeConcurrency(_sourceConcurrency.httpRequests);
+    final currentHost = host;
+    if (currentHost is SourceHostConcurrencyApi) {
+      (currentHost as SourceHostConcurrencyApi).setSourceConcurrency(
+        _sourceConcurrency,
+      );
+    }
   }
 
   ApkSource _sourceForScript(ApkSourceScript script, {required bool builtIn}) {
@@ -433,8 +533,11 @@ class AppState extends ChangeNotifier {
       homepage: manifest?.homepage ?? '',
       version: manifest?.version ?? '0.0.0',
       description: manifest?.description ?? '内置 QuickJS 源',
-      status: SourceStatus.enabled,
+      status: _disabledSourceIds.contains(script.id)
+          ? SourceStatus.disabled
+          : SourceStatus.enabled,
       builtIn: builtIn,
+      homeSource: _preferredHomeSourceId == script.id,
       supportsPackageLookup:
           script is SourcePackageLookupScript &&
           (script as SourcePackageLookupScript).supportsPackageLookup,
@@ -452,8 +555,12 @@ class AppState extends ChangeNotifier {
 
     final existing = _sources[index];
     _sources[index] = source.copyWith(
-      status: existing.status,
-      homeSource: existing.homeSource,
+      status: _disabledSourceIds.contains(source.id)
+          ? SourceStatus.disabled
+          : existing.status,
+      homeSource: _preferredHomeSourceId == null
+          ? existing.homeSource
+          : _preferredHomeSourceId == source.id,
     );
   }
 
@@ -576,6 +683,7 @@ class AppState extends ChangeNotifier {
         }
       }
       if (loadedCount > 0) {
+        _applyStoredSourcePreferences();
         _sourceRuntimeReady = true;
         notifyListeners();
       }
@@ -634,6 +742,7 @@ class AppState extends ChangeNotifier {
     }
 
     if (imported.isNotEmpty) {
+      _refreshSourceView();
       notifyListeners();
       debug.add(
         '已导入 ${imported.length} 个源，失败 ${failures.length} 个',
@@ -774,6 +883,7 @@ class AppState extends ChangeNotifier {
     int page = 1,
     Set<String>? sourceIds,
     void Function(SourceSearchPage page)? onSourcePage,
+    SourceSearchCancellation? cancellation,
   }) async {
     await ready;
     debug.add(
@@ -794,6 +904,7 @@ class AppState extends ChangeNotifier {
       page: page,
       enabledSourceIds: enabledSourceIds,
       clearErrors: page == 1,
+      cancellation: cancellation,
       onSourcePageCompleted: (_, result) => onSourcePage?.call(result),
     );
     for (final entry in sourceErrors.entries) {
@@ -1443,7 +1554,10 @@ class AppState extends ChangeNotifier {
     _sources = _sources
         .map((item) => item.copyWith(homeSource: item.id == selected!.id))
         .toList();
+    _preferredHomeSourceId = selected.id;
+    _refreshSourceView();
     notifyListeners();
+    unawaited(_persistSettings());
   }
 
   void toggleSource(String id, bool enabled) {
@@ -1459,7 +1573,16 @@ class AppState extends ChangeNotifier {
               : source,
         )
         .toList();
+    _disabledSourceIds = _sources
+        .where((source) => source.status == SourceStatus.disabled)
+        .map((source) => source.id)
+        .toSet();
+    if (!enabled && _preferredHomeSourceId == id) {
+      _preferredHomeSourceId = null;
+    }
+    _refreshSourceView();
     notifyListeners();
+    unawaited(_persistSettings());
   }
 
   void setSourcesEnabled(Iterable<String> ids, bool enabled) {
@@ -1478,7 +1601,20 @@ class AppState extends ChangeNotifier {
         homeSource: enabled ? source.homeSource : false,
       );
     }).toList();
-    if (changed) notifyListeners();
+    if (changed) {
+      _disabledSourceIds = _sources
+          .where((source) => source.status == SourceStatus.disabled)
+          .map((source) => source.id)
+          .toSet();
+      final currentHome = _sources
+          .where((source) => source.homeSource)
+          .map((source) => source.id)
+          .firstOrNull;
+      _preferredHomeSourceId = currentHome;
+      _refreshSourceView();
+      notifyListeners();
+      unawaited(_persistSettings());
+    }
   }
 
   void enableSources(Iterable<String> ids) => setSourcesEnabled(ids, true);
@@ -1489,12 +1625,17 @@ class AppState extends ChangeNotifier {
     final source = _sources.where((item) => item.id == id).firstOrNull;
     if (source == null || source.builtIn) return;
     _sources.removeWhere((item) => item.id == id);
+    _disabledSourceIds.remove(id);
+    if (_preferredHomeSourceId == id) _preferredHomeSourceId = null;
+    _refreshSourceView();
     unawaited(registry.remove(id));
     notifyListeners();
+    unawaited(_persistSettings());
   }
 
   void addSource(ApkSource source) {
     _sources = [..._sources, source];
+    _refreshSourceView();
     notifyListeners();
   }
 
