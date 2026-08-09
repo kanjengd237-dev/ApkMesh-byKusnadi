@@ -5,6 +5,7 @@ import 'package:apk_mesh/core/translation_service.dart';
 import 'package:apk_mesh/main.dart';
 import 'package:apk_mesh/widgets/app_result_tile.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -70,6 +71,38 @@ void main() {
     expect(find.textContaining('文件会保存到当前平台提供的下载目录'), findsOneWidget);
     await tester.tap(find.byTooltip('关闭').last);
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('opens the GitHub repository from settings', (tester) async {
+    const launcherChannel = MethodChannel('plugins.flutter.io/url_launcher');
+    String? launchedUrl;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(launcherChannel, (call) async {
+          if (call.method == 'launch') {
+            launchedUrl =
+                (call.arguments as Map<Object?, Object?>)['url'] as String?;
+            return true;
+          }
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(launcherChannel, null),
+    );
+
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byIcon(Icons.settings_outlined).last);
+    await tester.pumpAndSettle();
+
+    final githubItem = find.text('GitHub 项目');
+    await tester.ensureVisible(githubItem);
+    await tester.pumpAndSettle();
+    expect(find.text('查看源代码、问题和版本发布'), findsOneWidget);
+
+    await tester.tap(githubItem);
+    await tester.pumpAndSettle();
+
+    expect(launchedUrl, 'https://github.com/wsdx233/ApkMesh');
   });
 
   testWidgets('selects the browser download method', (tester) async {

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_state.dart';
 import '../core/models.dart';
@@ -10,6 +11,7 @@ import '../core/translation_service.dart';
 
 const _settingsTilePadding = EdgeInsets.symmetric(horizontal: 16);
 const _settingsControlWidth = 152.0;
+final _githubRepositoryUri = Uri.parse('https://github.com/wsdx233/ApkMesh');
 
 String _themeModeLabel(AppThemeMode mode) => switch (mode) {
   AppThemeMode.system => '跟随系统',
@@ -124,6 +126,15 @@ class SettingsPage extends StatelessWidget {
                   ],
                 ),
                 const Divider(),
+                ListTile(
+                  contentPadding: _settingsTilePadding,
+                  leading: const Icon(Icons.code),
+                  title: const Text('GitHub 项目'),
+                  subtitle: const Text('查看源代码、问题和版本发布'),
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: () => _openGitHubRepository(context),
+                ),
+                const Divider(),
                 const _InformationSettingsTile(
                   icon: Icons.info_outline,
                   title: '关于 APK Mesh',
@@ -140,6 +151,22 @@ class SettingsPage extends StatelessWidget {
       ),
     ],
   );
+}
+
+Future<void> _openGitHubRepository(BuildContext context) async {
+  try {
+    final launched = await launchUrl(
+      _githubRepositoryUri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (launched) return;
+  } catch (_) {
+    // The same user-facing message covers unavailable and failing handlers.
+  }
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(const SnackBar(content: Text('无法打开 GitHub 项目')));
 }
 
 class _DownloadMethodSettingsTile extends StatelessWidget {
