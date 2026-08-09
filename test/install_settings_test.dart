@@ -98,6 +98,27 @@ void main() {
     expect(restored.homeSourceId, isNull);
     restored.dispose();
   });
+
+  test('persists and restores fixed search tab sources', () async {
+    final state = AppState(host: DemoHostApi());
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    state.setSearchTabSourceIds(['source-b', 'source-a', 'source-b']);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getStringList('source.searchTabIds'), [
+      'source-b',
+      'source-a',
+    ]);
+    state.dispose();
+
+    final restored = AppState(host: DemoHostApi());
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(restored.searchTabSourceIds, ['source-b', 'source-a']);
+    restored.dispose();
+  });
 }
 
 class _InstallHost extends DemoHostApi implements SourceHostConcurrencyApi {

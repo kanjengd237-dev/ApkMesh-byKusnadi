@@ -29,6 +29,10 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> {
+  static const _horizontalContentPadding = 24.0;
+  static const _filterButtonExtent = 48.0;
+  static const _tabLabelHorizontalPadding = 32.0;
+
   List<AppListing> results = const [];
   SourceCatalog catalog = const SourceCatalog();
   bool loading = false;
@@ -536,29 +540,61 @@ class HomePageState extends State<HomePage> {
           )
           .toList(growable: false);
     }
-    final tabs = <ContentTab>[const ContentTab(id: 'all', label: '全部源')];
-    final selectedSourceId = _selectedTab.startsWith('source:')
-        ? _selectedTab.substring('source:'.length)
-        : null;
-    if (selectedSourceId != null) {
-      final selected = widget.state.sources
-          .where(
-            (source) =>
-                source.id == selectedSourceId &&
-                source.status == SourceStatus.enabled,
-          )
-          .firstOrNull;
-      if (selected != null) {
-        tabs.add(
-          ContentTab(
-            id: 'source:${selected.id}',
-            label: selected.name,
-            sourceId: selected.id,
-          ),
-        );
-      }
+    return [
+      const ContentTab(id: 'all', label: '全部源'),
+      for (final source in widget.state.sources)
+        if (source.status == SourceStatus.enabled) _sourceTab(source),
+    ];
+  }
+
+  List<ContentTab> _visibleSearchTabs(BuildContext context, double maxWidth) {
+    const allTab = ContentTab(id: 'all', label: '全部源');
+    final enabledSources = widget.state.sources
+        .where((source) => source.status == SourceStatus.enabled)
+        .toList(growable: false);
+    final sourcesById = {
+      for (final source in enabledSources) source.id: source,
+    };
+    final fixedSources = <ApkSource>[];
+    final addedIds = <String>{};
+    for (final sourceId in widget.state.searchTabSourceIds) {
+      final source = sourcesById[sourceId];
+      if (source != null && addedIds.add(source.id)) fixedSources.add(source);
+    }
+
+    final tabs = <ContentTab>[allTab];
+    var usedWidth = _searchTabWidth(context, allTab.label);
+    for (final source in fixedSources) {
+      tabs.add(_sourceTab(source));
+      usedWidth += _searchTabWidth(context, source.name);
+    }
+    for (final source in enabledSources) {
+      if (!addedIds.add(source.id)) continue;
+      final width = _searchTabWidth(context, source.name);
+      if (tabs.length > 1 && usedWidth + width > maxWidth) break;
+      tabs.add(_sourceTab(source));
+      usedWidth += width;
     }
     return tabs;
+  }
+
+  ContentTab _sourceTab(ApkSource source) => ContentTab(
+    id: 'source:${source.id}',
+    label: source.name,
+    sourceId: source.id,
+  );
+
+  double _searchTabWidth(BuildContext context, String label) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    return painter.width + _tabLabelHorizontalPadding;
   }
 
   ContentTab? _activeTab(List<ContentTab> tabs) {
@@ -635,14 +671,18 @@ class HomePageState extends State<HomePage> {
     final sources = widget.state.sources
         .where((source) => source.status == SourceStatus.enabled)
         .toList(growable: false);
-    final selectedId = await showModalBottomSheet<String>(
+    final selectedIds = await showModalBottomSheet<List<String>>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => _SourcePickerSheet(sources: sources),
+      builder: (_) => _SourcePickerSheet(
+        sources: sources,
+        selectedSourceIds: widget.state.searchTabSourceIds,
+      ),
     );
-    if (!mounted || selectedId == null) return;
-    setState(() => _selectedTab = 'source:$selectedId');
+    if (!mounted || selectedIds == null) return;
+    widget.state.setSearchTabSourceIds(selectedIds);
+    setState(() {});
   }
 
   Widget _buildStaticContent(List<Widget> children) => ListView(
@@ -818,28 +858,45 @@ class HomePageState extends State<HomePage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final showingHome = submittedQuery == null;
-    final tabs = _tabs;
-    final activeTab = _activeTab(tabs);
-    return Column(
-      children: [
-        if (activeTab != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: _buildTabBar(context, tabs, activeTab),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final showingHome = submittedQuery == null;
+      final tabBarWidth =
+          constraints.maxWidth -
+          (_horizontalContentPadding * 2) -
+          _filterButtonExtent;
+      final tabs = showingHome
+          ? _tabs
+          : _visibleSearchTabs(context, tabBarWidth);
+      final activeTab = _activeTab(tabs);
+      if (!showingHome && activeTab?.id != _selectedTab) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && submittedQuery != null) {
+            setState(() => _selectedTab = activeTab?.id ?? 'all');
+          }
+        });
+      }
+      return Column(
+        children: [
+          if (activeTab != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: _horizontalContentPadding,
+              ),
+              child: _buildTabBar(context, tabs, activeTab),
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _refreshContent,
+              child: showingHome
+                  ? _buildCatalogView(context, activeTab)
+                  : _buildSearchView(context, activeTab!),
+            ),
           ),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _refreshContent,
-            child: showingHome
-                ? _buildCatalogView(context, activeTab)
-                : _buildSearchView(context, activeTab!),
-          ),
-        ),
-      ],
-    );
-  }
+        ],
+      );
+    },
+  );
 }
 
 class _PageJumpDialog extends StatefulWidget {
@@ -910,9 +967,13 @@ class _PageJumpDialogState extends State<_PageJumpDialog> {
 }
 
 class _SourcePickerSheet extends StatefulWidget {
-  const _SourcePickerSheet({required this.sources});
+  const _SourcePickerSheet({
+    required this.sources,
+    required this.selectedSourceIds,
+  });
 
   final List<ApkSource> sources;
+  final List<String> selectedSourceIds;
 
   @override
   State<_SourcePickerSheet> createState() => _SourcePickerSheetState();
@@ -920,6 +981,13 @@ class _SourcePickerSheet extends StatefulWidget {
 
 class _SourcePickerSheetState extends State<_SourcePickerSheet> {
   final _query = TextEditingController();
+  late final Set<String> _selectedIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = widget.selectedSourceIds.toSet();
+  }
 
   @override
   void dispose() {
@@ -950,9 +1018,16 @@ class _SourcePickerSheetState extends State<_SourcePickerSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    '筛选搜索源',
+                    '搜索源标签',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
+                ),
+                IconButton(
+                  tooltip: '恢复自动显示',
+                  onPressed: _selectedIds.isEmpty
+                      ? null
+                      : () => setState(_selectedIds.clear),
+                  icon: const Icon(Icons.restart_alt),
                 ),
                 IconButton(
                   tooltip: '关闭',
@@ -981,13 +1056,35 @@ class _SourcePickerSheetState extends State<_SourcePickerSheet> {
               itemCount: sources.length,
               itemBuilder: (context, index) {
                 final source = sources[index];
-                return ListTile(
-                  leading: const Icon(Icons.hub_outlined),
+                return CheckboxListTile(
+                  value: _selectedIds.contains(source.id),
+                  secondary: const Icon(Icons.hub_outlined),
                   title: Text(source.name),
                   subtitle: Text(source.homepage),
-                  onTap: () => Navigator.pop(context, source.id),
+                  onChanged: (selected) => setState(() {
+                    if (selected ?? false) {
+                      _selectedIds.add(source.id);
+                    } else {
+                      _selectedIds.remove(source.id);
+                    }
+                  }),
                 );
               },
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.pop(context, [
+                  for (final source in widget.sources)
+                    if (_selectedIds.contains(source.id)) source.id,
+                ]),
+                icon: const Icon(Icons.check),
+                label: const Text('应用'),
+              ),
             ),
           ),
         ],

@@ -64,6 +64,65 @@ void main() {
     controller.dispose();
     state.dispose();
   });
+
+  testWidgets('fixed search tabs replace automatically filled source tabs', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final state = AppState(host: DemoHostApi());
+    await state.initialize();
+    for (var index = 0; index < 5; index++) {
+      state.addSource(_source(index));
+    }
+    final controller = TextEditingController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HomePage(state: state, controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final home = tester.state<HomePageState>(find.byType(HomePage));
+    controller.text = 'scale';
+    await home.search();
+    await tester.pump();
+
+    expect(find.text('全部源'), findsOneWidget);
+    expect(find.text('APKVision'), findsOneWidget);
+    expect(find.text('Scale source 0'), findsNothing);
+    final filterButton = find.byTooltip('筛选搜索源');
+    expect(
+      tester.getCenter(filterButton).dx,
+      greaterThan(tester.getTopRight(find.text('APKVision')).dx),
+    );
+
+    await tester.tap(filterButton);
+    await tester.pumpAndSettle();
+    expect(find.text('搜索源标签'), findsOneWidget);
+    for (final sourceName in ['Scale source 3', 'Scale source 4']) {
+      final fixedSource = find.widgetWithText(CheckboxListTile, sourceName);
+      await tester.ensureVisible(fixedSource);
+      await tester.tap(fixedSource);
+      await tester.pump();
+    }
+    await tester.tap(find.widgetWithText(FilledButton, '应用'));
+    await tester.pumpAndSettle();
+
+    expect(state.searchTabSourceIds, ['scale-source-3', 'scale-source-4']);
+    expect(find.text('Scale source 3'), findsOneWidget);
+    expect(find.text('Scale source 4'), findsOneWidget);
+    expect(find.text('APKVision'), findsNothing);
+    expect(find.byTooltip('筛选搜索源'), findsOneWidget);
+
+    controller.dispose();
+    state.dispose();
+  });
 }
 
 ApkSource _source(int index) => ApkSource(

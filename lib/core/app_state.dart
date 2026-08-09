@@ -68,6 +68,7 @@ class AppState extends ChangeNotifier {
       const SourceConcurrencySettings();
   DownloadMethod _downloadMethod = DownloadMethod.internal;
   Set<String> _disabledSourceIds = {};
+  List<String> _searchTabSourceIds = const [];
   String? _preferredHomeSourceId;
   AppThemeMode _themeMode = AppThemeMode.system;
   InstallMethod _installMethod = InstallMethod.system;
@@ -107,6 +108,7 @@ class AppState extends ChangeNotifier {
   List<SourceDebugProject> get debugProjects => registry.debugProjects;
   TranslationSettings get translationSettings => _translationSettings;
   SourceConcurrencySettings get sourceConcurrency => _sourceConcurrency;
+  List<String> get searchTabSourceIds => _searchTabSourceIds;
   DownloadMethod get downloadMethod => _downloadMethod;
   bool get supportsExternalDownloader =>
       external_download.supportsExternalDownloader;
@@ -225,6 +227,18 @@ class AppState extends ChangeNotifier {
   void setDownloadMethod(DownloadMethod method) {
     if (_downloadMethod == method) return;
     _downloadMethod = method;
+    notifyListeners();
+    unawaited(_persistSettings());
+  }
+
+  void setSearchTabSourceIds(Iterable<String> ids) {
+    final next = <String>[];
+    final seen = <String>{};
+    for (final id in ids) {
+      if (id.isNotEmpty && seen.add(id)) next.add(id);
+    }
+    if (listEquals(_searchTabSourceIds, next)) return;
+    _searchTabSourceIds = List.unmodifiable(next);
     notifyListeners();
     unawaited(_persistSettings());
   }
@@ -367,6 +381,9 @@ class AppState extends ChangeNotifier {
       _preferences = preferences;
       _disabledSourceIds =
           preferences.getStringList('source.disabledIds')?.toSet() ?? {};
+      _searchTabSourceIds = List.unmodifiable(
+        preferences.getStringList('source.searchTabIds') ?? const <String>[],
+      );
       _preferredHomeSourceId = preferences.getString('source.homeId');
       _applyStoredSourcePreferences();
       final providerIndex = preferences.getInt('translation.provider') ?? 0;
@@ -471,6 +488,7 @@ class AppState extends ChangeNotifier {
             .toList()
           ..sort();
     await preferences.setStringList('source.disabledIds', disabledIds);
+    await preferences.setStringList('source.searchTabIds', _searchTabSourceIds);
     final selectedHomeSourceId = homeSourceId;
     if (selectedHomeSourceId == null) {
       await preferences.remove('source.homeId');
