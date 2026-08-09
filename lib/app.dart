@@ -94,7 +94,7 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   int index = 0;
   bool searchOpen = false;
-  bool searchResultsVisible = false;
+  String? submittedSearchQuery;
   bool searchLoading = false;
   bool searchTranslationLoading = false;
   bool pageJumpAvailable = false;
@@ -147,10 +147,12 @@ class _ShellState extends State<Shell> {
         label: '设置',
       ),
     ];
+    final visibleSearchQuery = index == 0 ? submittedSearchQuery : null;
+    final interceptSearchBack = visibleSearchQuery != null;
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 760;
-        return Scaffold(
+        final scaffold = Scaffold(
           appBar: AppBar(
             backgroundColor: Theme.of(context).colorScheme.surface,
             scrolledUnderElevation: 0,
@@ -161,7 +163,7 @@ class _ShellState extends State<Shell> {
                     child: LinearProgressIndicator(minHeight: 3),
                   )
                 : null,
-            leading: index == 0 && searchResultsVisible
+            leading: visibleSearchQuery != null
                 ? IconButton(
                     tooltip: '返回主页',
                     onPressed: _returnHome,
@@ -227,7 +229,16 @@ class _ShellState extends State<Shell> {
                         ),
                       ),
                     )
-                  : const Text('APK Mesh', key: ValueKey('app-title')),
+                  : Text(
+                      visibleSearchQuery ?? 'APK Mesh',
+                      key: ValueKey(
+                        visibleSearchQuery == null
+                            ? 'app-title'
+                            : 'search-title',
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
             ),
             actions: [
               if (index == 0)
@@ -311,6 +322,13 @@ class _ShellState extends State<Shell> {
                   destinations: destinations,
                 ),
         );
+        return PopScope<Object?>(
+          canPop: !interceptSearchBack,
+          onPopInvokedWithResult: (didPop, result) {
+            if (!didPop && interceptSearchBack) _returnHome();
+          },
+          child: scaffold,
+        );
       },
     );
   }
@@ -363,11 +381,11 @@ class _ShellState extends State<Shell> {
   }
 
   Future<void> _submitSearch() async {
-    final hasQuery = searchController.text.trim().isNotEmpty;
+    final query = searchController.text.trim();
     setState(() {
       index = 0;
       searchOpen = false;
-      searchResultsVisible = hasQuery;
+      submittedSearchQuery = query.isEmpty ? null : query;
     });
     await homeKey.currentState?.search();
   }
@@ -376,7 +394,7 @@ class _ShellState extends State<Shell> {
     setState(() {
       index = 0;
       searchOpen = false;
-      searchResultsVisible = false;
+      submittedSearchQuery = null;
     });
     searchController.clear();
     homeKey.currentState?.showHome();

@@ -230,6 +230,29 @@ void main() {
     expect(find.text('输入关键词开始搜索'), findsNothing);
   });
 
+  testWidgets('shows the query in the app bar after searching', (tester) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'missing-package');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    final title = tester.widget<Text>(
+      find.byKey(const ValueKey('search-title')),
+    );
+    expect(title.data, 'missing-package');
+
+    await tester.tap(find.text('下载'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('app-title')), findsOneWidget);
+    expect(find.byKey(const ValueKey('search-title')), findsNothing);
+
+    await tester.tap(find.text('主页').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('search-title')), findsOneWidget);
+  });
+
   testWidgets('returns to the home page from search results', (tester) async {
     await tester.pumpWidget(const ApkMeshApp());
     await tester.tap(find.byTooltip('搜索'));
@@ -243,6 +266,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byTooltip('返回主页'), findsNothing);
+    expect(find.byKey(const ValueKey('app-title')), findsOneWidget);
+    expect(find.text('未找到结果'), findsNothing);
+  });
+
+  testWidgets('system back returns from search results to the home page', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const ApkMeshApp());
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'missing-package');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('search-title')), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('返回主页'), findsNothing);
+    expect(find.byKey(const ValueKey('app-title')), findsOneWidget);
     expect(find.text('未找到结果'), findsNothing);
   });
 
