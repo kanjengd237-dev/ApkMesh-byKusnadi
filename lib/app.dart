@@ -97,6 +97,7 @@ class _ShellState extends State<Shell> {
   bool searchResultsVisible = false;
   bool searchLoading = false;
   bool searchTranslationLoading = false;
+  bool pageJumpAvailable = false;
   final searchController = TextEditingController();
   final homeKey = GlobalKey<HomePageState>();
 
@@ -114,6 +115,7 @@ class _ShellState extends State<Shell> {
         state: widget.state,
         controller: searchController,
         onSearchLoadingChanged: _handleSearchLoadingChanged,
+        onPageJumpAvailabilityChanged: _handlePageJumpAvailabilityChanged,
       ),
       DownloadsPage(
         state: widget.state,
@@ -251,6 +253,13 @@ class _ShellState extends State<Shell> {
                           icon: const Icon(Icons.search),
                         ),
                 ),
+              if (index == 0 && !searchOpen && pageJumpAvailable)
+                IconButton(
+                  key: const ValueKey('jump-to-page'),
+                  tooltip: '跳转页码',
+                  onPressed: () => homeKey.currentState?.showPageJumpDialog(),
+                  icon: const Icon(Icons.find_in_page_outlined),
+                ),
               if (kDebugMode)
                 IconButton(
                   tooltip: '调试',
@@ -323,6 +332,11 @@ class _ShellState extends State<Shell> {
   void _handleSearchLoadingChanged(bool loading) {
     if (!mounted || searchLoading == loading) return;
     setState(() => searchLoading = loading);
+  }
+
+  void _handlePageJumpAvailabilityChanged(bool available) {
+    if (!mounted || pageJumpAvailable == available) return;
+    setState(() => pageJumpAvailable = available);
   }
 
   Future<void> _translateSearch() async {

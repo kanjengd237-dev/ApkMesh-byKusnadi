@@ -15,12 +15,14 @@ class HomePage extends StatefulWidget {
     required this.state,
     required this.controller,
     this.onSearchLoadingChanged,
+    this.onPageJumpAvailabilityChanged,
     super.key,
   });
 
   final AppState state;
   final TextEditingController controller;
   final ValueChanged<bool>? onSearchLoadingChanged;
+  final ValueChanged<bool>? onPageJumpAvailabilityChanged;
 
   @override
   HomePageState createState() => HomePageState();
@@ -85,6 +87,7 @@ class HomePageState extends State<HomePage> {
       catalogLoading = false;
       _selectedTab = '';
     });
+    _notifyPageJumpAvailabilityChanged();
     _loadCatalog();
   }
 
@@ -112,6 +115,7 @@ class HomePageState extends State<HomePage> {
               .join('\n');
         }
       });
+      _notifyPageJumpAvailabilityChanged();
       if (selected != null) await _loadCatalogTab(selected);
     } catch (loadError) {
       if (!mounted || generation != _catalogGeneration) return;
@@ -139,19 +143,22 @@ class HomePageState extends State<HomePage> {
   Future<void> _loadCatalogTab(
     SourceCatalogTab tab, {
     bool refresh = false,
+    int? targetPage,
   }) async {
     final key = _catalogTabKey(tab);
     final state = _catalogTabStates.putIfAbsent(
       key,
       () => _CatalogTabLoadState(),
     );
-    if (state.loading || (!refresh && (state.loaded && !state.hasMore))) {
+    if (state.loading ||
+        (targetPage == null && !refresh && state.loaded && !state.hasMore)) {
       return;
     }
-    if (!refresh && state.loaded && !tab.paged) return;
+    if (targetPage == null && !refresh && state.loaded && !tab.paged) return;
 
     final generation = _catalogGeneration;
-    final page = refresh ? 1 : state.nextPage;
+    final page = targetPage ?? (refresh ? 1 : state.nextPage);
+    final replaceApps = refresh || targetPage != null;
     setState(() {
       state.loading = true;
       state.error = null;
@@ -159,24 +166,32 @@ class HomePageState extends State<HomePage> {
     try {
       final result = await widget.state.catalogPage(tab, page: page);
       if (!mounted || generation != _catalogGeneration) return;
-      final seenIds = refresh ? <String>{} : state.seenIds;
+      final seenIds = replaceApps ? <String>{} : state.seenIds;
       final newApps = <AppListing>[];
       for (final app in result.apps) {
         if (seenIds.add(app.id)) newApps.add(app);
       }
       setState(() {
-        if (refresh) {
+        if (replaceApps) {
           state.seenIds
             ..clear()
             ..addAll(seenIds);
         }
         state
-          ..apps = page == 1 ? newApps : [...state.apps, ...newApps]
+          ..apps = replaceApps ? newApps : [...state.apps, ...newApps]
           ..loaded = true
+          ..currentPage = page
           ..nextPage = page + 1
           ..hasMore = tab.paged && result.hasMore && newApps.isNotEmpty
           ..error = null;
       });
+      if (targetPage != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _contentScrollController.hasClients) {
+            _contentScrollController.jumpTo(0);
+          }
+        });
+      }
     } catch (loadError) {
       if (!mounted || generation != _catalogGeneration) return;
       setState(() {
@@ -227,6 +242,7 @@ class HomePageState extends State<HomePage> {
         error = null;
         _selectedTab = selected == null ? '' : _catalogTabKey(selected);
       });
+      _notifyPageJumpAvailabilityChanged();
       widget.onSearchLoadingChanged?.call(false);
       _searchCancellation = null;
       if (_loadedCatalogSourceId != widget.state.homeSourceId) {
@@ -249,6 +265,7 @@ class HomePageState extends State<HomePage> {
       submittedQuery = query;
       _selectedTab = refreshTab?.id ?? 'all';
     });
+    _notifyPageJumpAvailabilityChanged();
     widget.onSearchLoadingChanged?.call(true);
     try {
       final pages = await widget.state.searchPage(
@@ -486,6 +503,7 @@ class HomePageState extends State<HomePage> {
       error = null;
       _selectedTab = selected == null ? '' : _catalogTabKey(selected);
     });
+    _notifyPageJumpAvailabilityChanged();
     widget.onSearchLoadingChanged?.call(false);
     if (_loadedCatalogSourceId != widget.state.homeSourceId) {
       _loadCatalog(force: true);
@@ -550,6 +568,29 @@ class HomePageState extends State<HomePage> {
     return tabs.firstOrNull;
   }
 
+  void _notifyPageJumpAvailabilityChanged() {
+    final activeTab = _activeTab(_tabs)?.catalogTab;
+    widget.onPageJumpAvailabilityChanged?.call(
+      submittedQuery == null && activeTab?.paged == true,
+    );
+  }
+
+  Future<void> showPageJumpDialog() async {
+    final tab = _activeTab(_tabs)?.catalogTab;
+    if (submittedQuery != null || tab == null || !tab.paged) return;
+    final tabKey = _catalogTabKey(tab);
+    final targetPage = await showDialog<int>(
+      context: context,
+      builder: (_) => _PageJumpDialog(
+        initialPage: _catalogTabStates[tabKey]?.currentPage ?? 1,
+      ),
+    );
+    if (!mounted || targetPage == null) return;
+    final currentTab = _activeTab(_tabs)?.catalogTab;
+    if (currentTab == null || _catalogTabKey(currentTab) != tabKey) return;
+    await _loadCatalogTab(tab, targetPage: targetPage);
+  }
+
   Widget _buildTabBar(
     BuildContext context,
     List<ContentTab> tabs,
@@ -568,6 +609,7 @@ class HomePageState extends State<HomePage> {
           if (index < tabs.length) {
             final tab = tabs[index];
             setState(() => _selectedTab = tab.id);
+            _notifyPageJumpAvailabilityChanged();
             if (tab.catalogTab != null) {
               unawaited(_loadCatalogTab(tab.catalogTab!));
             }
@@ -798,6 +840,73 @@ class HomePageState extends State<HomePage> {
       ],
     );
   }
+}
+
+class _PageJumpDialog extends StatefulWidget {
+  const _PageJumpDialog({required this.initialPage});
+
+  final int initialPage;
+
+  @override
+  State<_PageJumpDialog> createState() => _PageJumpDialogState();
+}
+
+class _PageJumpDialogState extends State<_PageJumpDialog> {
+  late final TextEditingController _controller;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    final text = widget.initialPage.toString();
+    _controller = TextEditingController.fromValue(
+      TextEditingValue(
+        text: text,
+        selection: TextSelection(baseOffset: 0, extentOffset: text.length),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final page = int.tryParse(_controller.text);
+    if (page == null || page < 1) {
+      setState(() => _errorText = '请输入大于 0 的页码');
+      return;
+    }
+    Navigator.pop(context, page);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('跳转页码'),
+    content: TextField(
+      key: const ValueKey('page-jump-field'),
+      controller: _controller,
+      autofocus: true,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) => _submit(),
+      decoration: InputDecoration(
+        labelText: '页码',
+        prefixIcon: const Icon(Icons.numbers),
+        errorText: _errorText,
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('取消'),
+      ),
+      FilledButton(onPressed: _submit, child: const Text('跳转')),
+    ],
+  );
 }
 
 class _SourcePickerSheet extends StatefulWidget {
@@ -1041,6 +1150,7 @@ class ContentTab {
 class _CatalogTabLoadState {
   List<AppListing> apps = const [];
   final Set<String> seenIds = {};
+  int currentPage = 1;
   int nextPage = 1;
   bool loaded = false;
   bool loading = false;

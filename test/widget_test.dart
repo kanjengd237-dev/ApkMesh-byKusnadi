@@ -180,6 +180,50 @@ void main() {
     expect(find.text('第 2 页应用'), findsOneWidget);
   });
 
+  testWidgets('shows page jump only on paged tabs and loads the target page', (
+    tester,
+  ) async {
+    final state = AppState(host: DemoHostApi());
+    final source = _PagedCatalogSource();
+    state.registry.replace(source);
+    state.addSource(
+      const ApkSource(
+        id: _PagedCatalogSource.sourceId,
+        name: '分页目录源',
+        homepage: 'example.test',
+        version: '1.0.0',
+        description: '用于验证目录标签分页。',
+        status: SourceStatus.enabled,
+        builtIn: false,
+      ),
+    );
+    state.setHomeSource(_PagedCatalogSource.sourceId);
+    await state.initialize();
+    addTearDown(state.dispose);
+
+    await tester.pumpWidget(MaterialApp(home: Shell(state: state)));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('跳转页码'), findsNothing);
+    await tester.tap(find.text('分页列表'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('跳转页码'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('跳转页码'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('page-jump-field')), '7');
+    await tester.tap(find.widgetWithText(FilledButton, '跳转'));
+    await tester.pumpAndSettle();
+
+    expect(source.pageCalls, [1, 1, 7]);
+    expect(find.text('第 7 页应用'), findsOneWidget);
+    expect(find.text('第 1 页应用 0'), findsNothing);
+
+    await tester.tap(find.text('精选'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('跳转页码'), findsNothing);
+  });
+
   testWidgets('renders listing description and metadata chips', (tester) async {
     final state = AppState();
     const app = AppDetails(
@@ -511,9 +555,7 @@ class _PagedCatalogSource implements ApkSourceScript, SourceCatalogScript {
               30,
               (index) => _listing('page-1-$index', '第 1 页应用 $index'),
             )
-          : page == 2
-          ? [_listing('page-2', '第 2 页应用')]
-          : const [],
+          : [_listing('page-$page', '第 $page 页应用')],
       hasMore: page == 1,
     );
   }
