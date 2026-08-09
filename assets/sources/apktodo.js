@@ -208,16 +208,19 @@ function downloadHeaders(referer) {
   return {...SEARCH_HEADERS, Referer: referer};
 }
 
-function isApkDownloadUrl(url, label = '') {
+function isApkDownloadUrl(url) {
   if (/^https:\/\/files\.apktodo\.store\/[^?#]+\.(?:apk|apks|xapk|zip)(?:[?#]|$)/i.test(url)) {
     return true;
   }
-  return /^https:\/\/(?:www\.)?apktodo\.net\/download\/mod\/[^?#]+/i.test(url) &&
-    /\bAPK\b/i.test(label);
+  return /^https:\/\/(?:www\.)?apktodo\.net\/download\/mod\/[^?#]+/i.test(url);
 }
 
 function isApkTodoLandingUrl(url) {
   return /^https:\/\/(?:www\.)?apktodo\.net\/(?!download(?:\/|$))[^?#]+\/?$/i.test(url);
+}
+
+function isPcDownloadPage(html) {
+  return /\bfor\s+PC\b/i.test(textFromHtml(html));
 }
 
 function downloadLabel(value) {
@@ -256,8 +259,9 @@ function parseDownloadTargets(html, referer) {
 }
 
 function parseDownloadLinks(html, referer) {
+  if (isPcDownloadPage(html)) return [];
   return parseDownloadTargets(html, referer)
-      .filter((item) => isApkDownloadUrl(item.url, item.text))
+      .filter((item) => isApkDownloadUrl(item.url))
       .map((item) => ({
         label: item.label,
         url: item.url,
@@ -272,7 +276,50 @@ function uniqueDownloads(items) {
   );
 }
 
-async function resolveDownloadPage(downloadPage) {
+function fallbackLandingUrls(downloadPage, appName) {
+  const urls = [];
+  let normalizedName = cleanText(appName).toLowerCase();
+  try {
+    normalizedName = normalizedName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  } catch (_) {
+    // Older QuickJS builds can continue with the original name.
+  }
+  const nameSlug = normalizedName
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (nameSlug) urls.push(`https://apktodo.net/${nameSlug}/`);
+  const hostMatch = /^https:\/\/([a-z0-9-]+)\.apktodo\.io\//i.exec(downloadPage || '');
+  if (!urls.length && hostMatch) {
+    urls.push(`https://apktodo.net/${hostMatch[1].toLowerCase()}/`);
+  }
+  return urls;
+}
+
+async function fetchOptionalText(url, referer) {
+  try {
+    return await fetchText(url, referer);
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+async function downloadsFromLanding(landingUrl, referer) {
+  const landingHtml = await fetchOptionalText(landingUrl, referer);
+  if (landingHtml === null) return [];
+  const landingLink = /<div\b[^>]*\bclass\s*=\s*['"][^'"]*\bbtn_download\b[^'"]*['"][^>]*>[\s\S]*?<a\b([^>]*)>/i.exec(landingHtml);
+  if (!landingLink) return [];
+  const landingTag = `<a${landingLink[1]}>`;
+  const landingDownloadUrl = resolveUrl(attribute(landingTag, 'href'), landingUrl);
+  if (!/^https:\/\/(?:www\.)?apktodo\.net\/download\//i.test(landingDownloadUrl)) return [];
+  const downloadHtml = await fetchOptionalText(landingDownloadUrl, landingUrl);
+  return downloadHtml === null ? [] : parseDownloadLinks(downloadHtml, landingDownloadUrl);
+}
+
+async function resolveDownloadPage(candidate) {
+  const downloadPage = cleanText(candidate && candidate.url);
+  if (!downloadPage) return [];
   const prepareHtml = await fetchText(downloadPage, downloadPage);
   const linkMatch = /<div\b[^>]*\bid\s*=\s*['"]download-container['"][^>]*>[\s\S]*?<a\b([^>]*)>/i.exec(prepareHtml);
   if (!linkMatch) return [];
@@ -282,18 +329,15 @@ async function resolveDownloadPage(downloadPage) {
 
   const downloadHtml = await fetchText(downloadUrl, downloadUrl);
   const downloads = parseDownloadLinks(downloadHtml, downloadUrl);
-  const landingTargets = parseDownloadTargets(downloadHtml, downloadUrl)
-    .filter((item) => isApkTodoLandingUrl(item.url));
+  const landingUrls = parseDownloadTargets(downloadHtml, downloadUrl)
+    .filter((item) => isApkTodoLandingUrl(item.url))
+    .map((item) => item.url);
+  if (!downloads.length && !landingUrls.length) {
+    landingUrls.push(...fallbackLandingUrls(downloadPage, candidate.label));
+  }
 
-  for (const landing of landingTargets) {
-    const landingHtml = await fetchText(landing.url, downloadUrl);
-    const landingLink = /<div\b[^>]*\bclass\s*=\s*['"][^'"]*\bbtn_download\b[^'"]*['"][^>]*>[\s\S]*?<a\b([^>]*)>/i.exec(landingHtml);
-    if (!landingLink) continue;
-    const landingTag = `<a${landingLink[1]}>`;
-    const landingDownloadUrl = resolveUrl(attribute(landingTag, 'href'), landing.url);
-    if (!/^https:\/\/(?:www\.)?apktodo\.net\/download\//i.test(landingDownloadUrl)) continue;
-    const landingDownloadHtml = await fetchText(landingDownloadUrl, landing.url);
-    downloads.push(...parseDownloadLinks(landingDownloadHtml, landingDownloadUrl));
+  for (const landingUrl of landingUrls.filter((url, index, all) => all.indexOf(url) === index)) {
+    downloads.push(...await downloadsFromLanding(landingUrl, downloadUrl));
   }
   return uniqueDownloads(downloads);
 }
@@ -339,7 +383,7 @@ globalThis.source = {
   manifest: {
     id: 'apktodo',
     name: 'APKTodo',
-    version: '1.1.0',
+    version: '1.2.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
     description: '读取 APKTodo 应用元数据、截图、详情和下载项。',
@@ -364,7 +408,7 @@ globalThis.source = {
         description: '打开 APKTodo 子域名详情页，读取元数据、截图和下载页地址。',
         inputLabel: '应用详情 URL',
         placeholder: '粘贴源详情页 URL',
-        defaultInput: 'https://hello-neighbor-fredbear.apktodo.io/',
+        defaultInput: 'https://grok.apktodo.io/',
       },
       {
         id: 'catalog',
@@ -462,7 +506,7 @@ globalThis.source = {
       app.comments = uniqueStrings(commentNodes.map((item) => cleanText(item.text)));
       app.downloadPage = resolveUrl(app.downloadPage || '', openUrl);
       app.downloadCandidates = app.downloadPage
-        ? [{label: 'APK 下载链接', url: app.downloadPage, size: ''}]
+        ? [{label: app.name || 'APK', url: app.downloadPage, size: app.size || ''}]
         : [];
       return app;
     } finally {
@@ -475,7 +519,7 @@ globalThis.source = {
     for (let index = 0; index < (candidates || []).length; index += 1) {
       const candidate = candidates[index];
       try {
-        const downloads = await resolveDownloadPage(candidate.url);
+        const downloads = await resolveDownloadPage(candidate);
         await reportDetailProgress(requestId, index, downloads, null);
         resolved.push(...downloads);
       } catch (error) {

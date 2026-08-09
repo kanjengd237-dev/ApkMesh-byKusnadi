@@ -6,6 +6,11 @@ const SEARCH_HEADERS = {
   Referer: `${ORIGIN}/`,
   'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
 };
+const CATALOG_TABS = [
+  {id: 'games', name: '游戏', description: 'Download.it Android 游戏', query: 'game'},
+  {id: 'tools', name: '工具', description: 'Download.it Android 工具', query: 'tools'},
+  {id: 'music', name: '音乐', description: 'Download.it Android 音乐应用', query: 'music'},
+];
 
 function decodeHtml(value) {
   return String(value || '')
@@ -227,7 +232,7 @@ globalThis.source = {
   manifest: {
     id: 'downloadit',
     name: 'Download.it',
-    version: '1.0.0',
+    version: '1.1.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
     description: '读取 Download.it 的 Android 应用搜索、详情、截图和 APK 下载项。',
@@ -262,6 +267,25 @@ globalThis.source = {
         defaultInput: 'https://trap-beats.en.download.it/android',
       },
     ],
+  },
+
+  async catalog() {
+    return {
+      defaultTabId: CATALOG_TABS[0].id,
+      tabs: CATALOG_TABS.map((tab) => ({
+        id: tab.id,
+        name: tab.name,
+        description: tab.description,
+        paged: false,
+      })),
+    };
+  },
+
+  async catalogPage(tabId, page = 1) {
+    const tab = CATALOG_TABS.find((item) => item.id === tabId);
+    if (!tab) throw new TypeError('无效的 Download.it 目录标签');
+    if (Math.max(1, Number(page) || 1) > 1) return {apps: [], hasMore: false};
+    return {apps: await this.search(tab.query, 1), hasMore: false};
   },
 
   async search(query, page = 1) {

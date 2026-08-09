@@ -1,7 +1,7 @@
 {
   "id": "aptoide",
   "name": "Aptoide",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "homepage": "https://en.aptoide.com/",
   "description": "Reads Aptoide search results and app detail pages, including APK downloads.",
   "permissions": {
@@ -11,7 +11,7 @@
     "install": true
   },
   "capabilities": {
-    "catalog": false,
+    "catalog": true,
     "detailProgress": true,
     "packageLookup": false
   },

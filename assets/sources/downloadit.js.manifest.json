@@ -1,7 +1,7 @@
 {
   "id": "downloadit",
   "name": "Download.it",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "homepage": "https://en.download.it/",
   "description": "读取 Download.it 的 Android 应用搜索、详情、截图和 APK 下载项。",
   "permissions": {
@@ -18,7 +18,7 @@
     "install": false
   },
   "capabilities": {
-    "catalog": false,
+    "catalog": true,
     "detailProgress": true,
     "packageLookup": false
   },

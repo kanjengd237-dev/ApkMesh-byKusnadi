@@ -2,6 +2,12 @@
 const ORIGIN = 'https://en.aptoide.com';
 const API_ORIGIN = 'https://ws2-cache.aptoide.com/api/7';
 const PAGE_SIZE = 20;
+const CATALOG_TABS = [
+  {id: 'apps-trending', name: '热门应用', description: 'Aptoide 热门 Android 应用', path: '/apps/trending', category: '应用'},
+  {id: 'apps-latest', name: '最新应用', description: 'Aptoide 最新 Android 应用', path: '/apps/latest', category: '应用'},
+  {id: 'games-trending', name: '热门游戏', description: 'Aptoide 热门 Android 游戏', path: '/games/trending', category: '游戏'},
+  {id: 'games-latest', name: '最新游戏', description: 'Aptoide 最新 Android 游戏', path: '/games/latest', category: '游戏'},
+];
 const REQUEST_HEADERS = {
   Accept: 'application/json,text/plain,*/*',
   'Accept-Language': 'en-US,en;q=0.8',
@@ -89,8 +95,12 @@ function searchUrl(query, page) {
   return `${API_ORIGIN}/apps/search?${params.join('&')}`;
 }
 
+async function fetchText(url) {
+  return apkmesh.request(url, {headers: REQUEST_HEADERS});
+}
+
 async function fetchJson(url) {
-  const response = await apkmesh.request(url, {headers: REQUEST_HEADERS});
+  const response = await fetchText(url);
   try {
     return JSON.parse(response);
   } catch (error) {
@@ -102,7 +112,11 @@ function parseSearchResults(payload) {
   const list = payload && payload.datalist && Array.isArray(payload.datalist.list)
     ? payload.datalist.list
     : [];
-  return list.map((item) => {
+  return mapApiApps(list);
+}
+
+function mapApiApps(list, category = '') {
+  return (list || []).map((item) => {
     const id = appUrl(item && item.uname);
     const file = item && item.file ? item.file : {};
     if (!id || !item || !cleanText(item.name)) return null;
@@ -111,14 +125,54 @@ function parseSearchResults(payload) {
       name: cleanText(item.name),
       packageName: cleanText(item.package),
       version: cleanText(file.vername),
-      size: formatBytes(item.size || file.filesize),
+      size: typeof item.size === 'string' ? cleanText(item.size) : formatBytes(item.size || file.filesize),
       updatedAt: cleanText(item.updated || item.modified),
-      category: '',
+      category,
       iconUrl: absoluteHttpsUrl(item.icon),
     };
   }).filter(Boolean).filter((item, index, all) =>
     all.findIndex((candidate) => candidate.id === item.id) === index,
   );
+}
+
+function catalogUrl(tab, page) {
+  const number = Math.max(1, Number(page) || 1);
+  return `${ORIGIN}${tab.path}${number > 1 ? `?page=${number}` : ''}`;
+}
+
+function parseCatalogPage(html, tab) {
+  const match = /<script\b[^>]*\bid\s*=\s*['"]__NEXT_DATA__['"][^>]*>([\s\S]*?)<\/script>/i.exec(html || '');
+  if (!match) throw new Error('Aptoide catalog data was not found');
+  let payload;
+  try {
+    payload = JSON.parse(match[1]);
+  } catch (error) {
+    throw new Error(`Aptoide returned invalid catalog data: ${error}`);
+  }
+  const pageProps = payload && payload.props && payload.props.pageProps;
+  const grid = pageProps && pageProps.gridApps;
+  if (!grid || !Array.isArray(grid.list)) {
+    throw new Error('Aptoide catalog app list was not found');
+  }
+  return {
+    apps: mapApiApps(grid.list, tab.category),
+    hasMore: grid.list.length > 0 && grid.next !== null && grid.next !== undefined,
+  };
+}
+
+function isNotFoundError(error) {
+  const message = error && error.message ? error.message : String(error || '');
+  return /\bHTTP\s+404\b/i.test(message) ||
+    /\bstatus(?:\s+code)?\s*[:=]?\s*404\b/i.test(message);
+}
+
+async function fetchCatalogText(url) {
+  try {
+    return await fetchText(url);
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
 }
 
 function parseJsonLd(nodes) {
@@ -265,7 +319,7 @@ globalThis.source = {
   manifest: {
     id: 'aptoide',
     name: 'Aptoide',
-    version: '1.0.0',
+    version: '1.1.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
     description: 'Reads Aptoide search results and app detail pages, including APK downloads.',
@@ -293,6 +347,25 @@ globalThis.source = {
         defaultInput: 'https://micro-battles-3.en.aptoide.com/app',
       },
     ],
+  },
+
+  async catalog() {
+    return {
+      defaultTabId: CATALOG_TABS[0].id,
+      tabs: CATALOG_TABS.map((tab) => ({
+        id: tab.id,
+        name: tab.name,
+        description: tab.description,
+        paged: true,
+      })),
+    };
+  },
+
+  async catalogPage(tabId, page = 1) {
+    const tab = CATALOG_TABS.find((item) => item.id === tabId);
+    if (!tab) throw new TypeError('无效的 Aptoide 目录标签');
+    const html = await fetchCatalogText(catalogUrl(tab, page));
+    return html === null ? {apps: [], hasMore: false} : parseCatalogPage(html, tab);
   },
 
   async search(query, page = 1) {
