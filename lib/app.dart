@@ -9,6 +9,7 @@ import 'pages/debug_sheet.dart';
 import 'pages/details_sheet.dart';
 import 'pages/downloads_page.dart';
 import 'pages/home_page.dart';
+import 'pages/library_page.dart';
 import 'pages/settings_page.dart';
 import 'pages/sources_page.dart';
 
@@ -122,6 +123,7 @@ class _ShellState extends State<Shell> {
         onOpenDetails: (context, app) =>
             showAppDetails(context, widget.state, app),
       ),
+      LibraryPage(state: widget.state),
       SourcesPage(state: widget.state),
       SettingsPage(state: widget.state),
     ];
@@ -135,6 +137,11 @@ class _ShellState extends State<Shell> {
         icon: Icon(Icons.download_outlined),
         selectedIcon: Icon(Icons.download),
         label: '下载',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.bookmark_border),
+        selectedIcon: Icon(Icons.bookmark),
+        label: '收藏',
       ),
       NavigationDestination(
         icon: Icon(Icons.hub_outlined),
@@ -296,6 +303,11 @@ class _ShellState extends State<Shell> {
                       icon: Icon(Icons.download_outlined),
                       selectedIcon: Icon(Icons.download),
                       label: Text('下载'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.bookmark_border),
+                      selectedIcon: Icon(Icons.bookmark),
+                      label: Text('收藏'),
                     ),
                     NavigationRailDestination(
                       icon: Icon(Icons.hub_outlined),

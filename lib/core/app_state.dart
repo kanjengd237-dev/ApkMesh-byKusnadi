@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -55,6 +56,8 @@ class AppState extends ChangeNotifier {
   final DownloadStore _downloadStore = createDownloadStore();
   final TranslationService translation = TranslationService();
   final List<DownloadTask> _downloads = [];
+  final List<AppListing> _favorites = [];
+  final List<AppListing> _history = [];
   final Map<String, ApkInstallInfo> _installInfos = {};
   final Set<String> _installStateChecks = {};
   final Set<String> _installingDownloads = {};
@@ -88,8 +91,14 @@ class AppState extends ChangeNotifier {
   bool _isDisposing = false;
   bool _sourceRuntimeReady = false;
   String? _runtimeError;
+  static const _historyLimit = 100;
+  static const _favoritesKey = 'library.favorites';
+  static const _historyKey = 'library.history';
+
   List<ApkSource> get sources => _sourceView;
   List<DownloadTask> get downloads => List.unmodifiable(_downloads);
+  List<AppListing> get favorites => List.unmodifiable(_favorites);
+  List<AppListing> get history => List.unmodifiable(_history);
   bool get sourceRuntimeReady => _sourceRuntimeReady;
   Future<void> get ready => _ready.future;
   String? get runtimeError => _runtimeError;
@@ -103,6 +112,88 @@ class AppState extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  bool isFavorite(AppListing app) {
+    final key = _appKey(app);
+    return key != null && _favorites.any((item) => _appKey(item) == key);
+  }
+
+  void toggleFavorite(AppListing app) {
+    final key = _appKey(app);
+    if (key == null) return;
+    final index = _favorites.indexWhere((item) => _appKey(item) == key);
+    if (index == -1) {
+      _favorites.insert(0, app);
+    } else {
+      _favorites.removeAt(index);
+    }
+    notifyListeners();
+    unawaited(_persistSettings());
+  }
+
+  void clearFavorites() {
+    if (_favorites.isEmpty) return;
+    _favorites.clear();
+    notifyListeners();
+    unawaited(_persistSettings());
+  }
+
+  void recordHistory(AppListing app) {
+    final key = _appKey(app);
+    if (key == null) return;
+    final existingIndex = _history.indexWhere((item) => _appKey(item) == key);
+    final changed =
+        existingIndex != 0 ||
+        existingIndex == -1 ||
+        !_sameListing(_history.first, app);
+    if (existingIndex != -1) _history.removeAt(existingIndex);
+    _history.insert(0, app);
+    if (_history.length > _historyLimit) {
+      _history.removeRange(_historyLimit, _history.length);
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(_persistSettings());
+    }
+  }
+
+  void clearHistory() {
+    if (_history.isEmpty) return;
+    _history.clear();
+    notifyListeners();
+    unawaited(_persistSettings());
+  }
+
+  String? _appKey(AppListing app) {
+    final sourceId = app.sourceId.trim();
+    final id = app.id.trim();
+    if (sourceId.isEmpty || id.isEmpty) return null;
+    return '$sourceId\u0000$id';
+  }
+
+  bool _sameListing(AppListing left, AppListing right) =>
+      left.toJson().toString() == right.toJson().toString();
+
+  List<String> _encodeAppList(Iterable<AppListing> apps) =>
+      apps.map((app) => jsonEncode(app.toJson())).toList(growable: false);
+
+  List<AppListing> _decodeAppList(List<String>? values) {
+    if (values == null) return [];
+    final result = <AppListing>[];
+    final seen = <String>{};
+    for (final value in values) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is! Map) continue;
+        final app = AppListing.fromJson(Map<String, dynamic>.from(decoded));
+        final key = _appKey(app);
+        if (key != null && seen.add(key)) result.add(app);
+      } on Object {
+        // Ignore entries from older or partially written preferences.
+      }
+    }
+    return result;
   }
 
   List<SourceDebugProject> get debugProjects => registry.debugProjects;
@@ -379,6 +470,15 @@ class AppState extends ChangeNotifier {
       final preferences = await SharedPreferences.getInstance();
       if (_isDisposing) return;
       _preferences = preferences;
+      _favorites
+        ..clear()
+        ..addAll(_decodeAppList(preferences.getStringList(_favoritesKey)));
+      _history
+        ..clear()
+        ..addAll(_decodeAppList(preferences.getStringList(_historyKey)));
+      if (_history.length > _historyLimit) {
+        _history.removeRange(_historyLimit, _history.length);
+      }
       _disabledSourceIds =
           preferences.getStringList('source.disabledIds')?.toSet() ?? {};
       _searchTabSourceIds = List.unmodifiable(
@@ -489,6 +589,8 @@ class AppState extends ChangeNotifier {
           ..sort();
     await preferences.setStringList('source.disabledIds', disabledIds);
     await preferences.setStringList('source.searchTabIds', _searchTabSourceIds);
+    await preferences.setStringList(_favoritesKey, _encodeAppList(_favorites));
+    await preferences.setStringList(_historyKey, _encodeAppList(_history));
     final selectedHomeSourceId = homeSourceId;
     if (selectedHomeSourceId == null) {
       await preferences.remove('source.homeId');

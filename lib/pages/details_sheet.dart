@@ -14,6 +14,7 @@ import 'downloads_page.dart';
 import 'home_page.dart';
 
 void showAppDetails(BuildContext context, AppState state, AppListing app) {
+  state.recordHistory(app);
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -270,6 +271,18 @@ class _DetailsSheetState extends State<DetailsSheet> {
           ),
         ),
         const SizedBox(width: 8),
+        IconButton(
+          tooltip: widget.state.isFavorite(widget.app) ? '取消收藏' : '收藏',
+          onPressed: () {
+            widget.state.toggleFavorite(widget.app);
+            setState(() {});
+          },
+          icon: Icon(
+            widget.state.isFavorite(widget.app)
+                ? Icons.bookmark
+                : Icons.bookmark_border,
+          ),
+        ),
         IconButton(
           tooltip: '刷新详情',
           onPressed: _loadingDetails ? null : _refreshDetails,
