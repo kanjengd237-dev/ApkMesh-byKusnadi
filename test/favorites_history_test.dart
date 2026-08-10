@@ -45,6 +45,18 @@ void main() {
     restored.dispose();
   });
 
+  test('batch favorites only adds missing applications', () async {
+    final state = AppState(host: DemoHostApi());
+    await _settleSettings();
+    final first = _listing('source-a', 'app-a', 'App A');
+    final second = _listing('source-b', 'app-b', 'App B');
+
+    expect(state.favoriteApps([first, first, second]), 2);
+    expect(state.favoriteApps([first, second]), 0);
+    expect(state.favorites.map((app) => app.name), ['App B', 'App A']);
+    state.dispose();
+  });
+
   test('keeps different sources separate and limits history', () async {
     final state = AppState(host: DemoHostApi());
     await _settleSettings();

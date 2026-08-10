@@ -110,6 +110,30 @@ void main() {
     }
   });
 
+  test(
+    'batch app download resolves links without opening details UI',
+    () async {
+      final source = _StagedDetailsSource();
+      final state = AppState(host: DemoHostApi());
+      state.registry.replace(source);
+      await state.initialize();
+      final app = _listing('staged', 'Staged App');
+
+      try {
+        final result = await state.downloadApps([app, app]);
+
+        expect(result.results, hasLength(1));
+        expect(result.startedFiles, 1);
+        expect(result.successfulApps, 1);
+        expect(result.appsWithErrors, 1);
+        expect(result.failedApps, isEmpty);
+        expect(state.downloads.single.file.label, 'app.apk');
+      } finally {
+        state.dispose();
+      }
+    },
+  );
+
   test('registry skips disabled source ids', () async {
     final registry = SourceRegistry(scripts: [ExampleCatalogSource()]);
     final host = DemoHostApi();
@@ -675,7 +699,8 @@ class _StagedDetailsSource
   String get name => 'Staged source';
 
   @override
-  SourcePolicy get policy => const SourcePolicy(allowedHosts: {'example.test'});
+  SourcePolicy get policy =>
+      const SourcePolicy(allowedHosts: {'example.test'}, allowDownload: true);
 
   @override
   bool get supportsDetailProgress => true;

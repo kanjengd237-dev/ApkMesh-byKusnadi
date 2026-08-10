@@ -373,6 +373,37 @@ class AppDetailsProgress {
   bool get downloadsComplete => phase == DetailLoadPhase.complete;
 }
 
+class AppDownloadResult {
+  const AppDownloadResult({
+    required this.app,
+    required this.startedFiles,
+    this.error,
+  });
+
+  final AppListing app;
+  final int startedFiles;
+  final String? error;
+
+  bool get hasStarted => startedFiles > 0;
+}
+
+class AppBatchDownloadResult {
+  const AppBatchDownloadResult(this.results);
+
+  final List<AppDownloadResult> results;
+
+  int get startedFiles =>
+      results.fold(0, (total, result) => total + result.startedFiles);
+
+  int get successfulApps => results.where((result) => result.hasStarted).length;
+
+  int get appsWithErrors =>
+      results.where((result) => result.error != null).length;
+
+  List<AppDownloadResult> get failedApps =>
+      results.where((result) => !result.hasStarted).toList(growable: false);
+}
+
 class SourceDownload {
   const SourceDownload({
     required this.label,

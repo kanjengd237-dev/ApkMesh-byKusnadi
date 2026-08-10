@@ -457,6 +457,52 @@ void main() {
     state.dispose();
   });
 
+  testWidgets('long press opens app actions and enters selection mode', (
+    tester,
+  ) async {
+    final state = AppState(host: DemoHostApi());
+    const app = AppDetails(
+      id: 'https://example.test/apps/example',
+      sourceId: 'example-source',
+      name: 'Example App',
+      packageName: 'test.example.app',
+      version: '1.0.0',
+      size: '1 MB',
+      updatedAt: '2026-01-01',
+      category: 'Tools',
+      sourceName: 'Example source',
+      iconUrl: '',
+      summary: '',
+      screenshots: [],
+      comments: [],
+      downloads: [],
+    );
+    var enteredSelection = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppResultTile(
+            app: app,
+            state: state,
+            onEnterSelection: (_) => enteredSelection = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.longPress(find.text('Example App'));
+    await tester.pumpAndSettle();
+    expect(find.text('下载'), findsOneWidget);
+    expect(find.text('收藏'), findsOneWidget);
+    expect(find.text('多选'), findsOneWidget);
+
+    await tester.tap(find.text('多选'));
+    await tester.pumpAndSettle();
+    expect(enteredSelection, isTrue);
+    state.dispose();
+  });
+
   testWidgets('details hides summary and shows metadata chips', (tester) async {
     final state = AppState();
     await state.initialize();

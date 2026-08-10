@@ -132,6 +132,22 @@ class AppState extends ChangeNotifier {
     unawaited(_persistSettings());
   }
 
+  int favoriteApps(Iterable<AppListing> apps) {
+    final existing = _favorites.map(_appKey).whereType<String>().toSet();
+    var added = 0;
+    for (final app in apps) {
+      final key = _appKey(app);
+      if (key == null || !existing.add(key)) continue;
+      _favorites.insert(0, app);
+      added += 1;
+    }
+    if (added > 0) {
+      notifyListeners();
+      unawaited(_persistSettings());
+    }
+    return added;
+  }
+
   void clearFavorites() {
     if (_favorites.isEmpty) return;
     _favorites.clear();
@@ -1091,6 +1107,82 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  Future<AppDownloadResult> downloadApp(AppListing app) async {
+    final result = await downloadApps([app]);
+    return result.results.single;
+  }
+
+  Future<AppBatchDownloadResult> downloadApps(Iterable<AppListing> apps) async {
+    await _settingsReady;
+    final unique = <String, AppListing>{};
+    for (final app in apps) {
+      final key = _appKey(app);
+      if (key != null) unique[key] = app;
+    }
+    if (unique.isEmpty) return const AppBatchDownloadResult([]);
+
+    final results = await Future.wait(
+      unique.values.map(_resolveAndStartAppDownloads),
+    );
+    return AppBatchDownloadResult(List.unmodifiable(results));
+  }
+
+  Future<AppDownloadResult> _resolveAndStartAppDownloads(AppListing app) async {
+    AppDetailsProgress? progress;
+    try {
+      await loadDetails(app, onProgress: (value) => progress = value);
+      final loaded = progress;
+      if (loaded == null) {
+        throw StateError('没有返回应用详情');
+      }
+
+      final filesByUrl = <String, SourceDownload>{};
+      final errors = <String>[];
+      for (final download in loaded.downloads) {
+        if (download.error != null) {
+          errors.add('${download.candidate.label}：${download.error}');
+        } else if (download.files != null && download.files!.isEmpty) {
+          errors.add('${download.candidate.label}：未找到可用下载链接');
+        }
+        for (final file in download.files ?? const <SourceDownload>[]) {
+          if (file.url.trim().isNotEmpty) filesByUrl[file.url] = file;
+        }
+      }
+      if (filesByUrl.isEmpty) {
+        final detailFiles = loaded.details.downloads;
+        for (final file in detailFiles) {
+          if (file.url.trim().isNotEmpty) filesByUrl[file.url] = file;
+        }
+      }
+      if (filesByUrl.isEmpty) {
+        throw StateError(
+          errors.isEmpty ? (loaded.error ?? '未找到可用下载链接') : errors.join('；'),
+        );
+      }
+
+      var startedFiles = 0;
+      for (final file in filesByUrl.values) {
+        try {
+          await download(file, app.sourceId, app: loaded.details);
+          startedFiles += 1;
+        } catch (error) {
+          errors.add(error.toString());
+        }
+      }
+      return AppDownloadResult(
+        app: app,
+        startedFiles: startedFiles,
+        error: errors.isEmpty ? null : errors.join('；'),
+      );
+    } catch (error) {
+      return AppDownloadResult(
+        app: app,
+        startedFiles: 0,
+        error: error.toString(),
+      );
+    }
+  }
+
   AppDetailsProgress? cachedDetailsFor(AppListing app) =>
       _detailsCache[app.sourceId]?[app.id];
 
@@ -1234,14 +1326,14 @@ class AppState extends ChangeNotifier {
     await _settingsReady;
     if (_isDisposing) throw StateError('应用状态已关闭');
     final method = _downloadMethod;
+    final policy = registry.scriptFor(sourceId).policy;
+    if (!policy.allowDownload) throw StateError('该源没有声明下载权限');
     if (method == DownloadMethod.internal) {
       startDownload(file, sourceId, app: app);
       return method;
     }
 
-    final policy = registry.scriptFor(sourceId).policy;
     final uri = Uri.tryParse(file.url);
-    if (!policy.allowDownload) throw StateError('该源没有声明下载权限');
     if (uri == null || !policy.permits(uri)) {
       throw StateError('源权限拒绝访问下载地址');
     }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
@@ -9,6 +11,10 @@ class AppResultTile extends StatelessWidget {
     required this.app,
     required this.state,
     this.onOpen,
+    this.onEnterSelection,
+    this.onSelect,
+    this.selectionMode = false,
+    this.selected = false,
     this.showDivider = true,
     super.key,
   });
@@ -16,6 +22,10 @@ class AppResultTile extends StatelessWidget {
   final AppListing app;
   final AppState state;
   final ValueChanged<AppListing>? onOpen;
+  final ValueChanged<AppListing>? onEnterSelection;
+  final ValueChanged<AppListing>? onSelect;
+  final bool selectionMode;
+  final bool selected;
   final bool showDivider;
 
   @override
@@ -28,51 +38,100 @@ class AppResultTile extends StatelessWidget {
     final description =
         state.translatedText(app.description) ?? app.description.trim();
     final chips = buildAppInfoChips(app, compact: true);
+    final onTap = selectionMode
+        ? (onSelect == null ? null : () => onSelect!(app))
+        : (onOpen == null ? null : () => onOpen!(app));
 
     return Column(
       children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onOpen == null ? null : () => onOpen!(app),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppIcon(url: app.iconUrl, size: 72, borderRadius: 16),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          displayName,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (description.isNotEmpty) ...[
-                          const SizedBox(height: 4),
+        Semantics(
+          selected: selectionMode && selected,
+          button: onTap != null,
+          child: Material(
+            color: selected
+                ? theme.colorScheme.primaryContainer.withValues(alpha: .55)
+                : Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              onLongPress: () => showAppActionMenu(
+                context,
+                state,
+                app,
+                onEnterSelection: onEnterSelection,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox.square(
+                      dimension: 72,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          AppIcon(url: app.iconUrl, size: 72, borderRadius: 16),
+                          if (selectionMode)
+                            Positioned(
+                              right: -4,
+                              bottom: -4,
+                              child: SizedBox.square(
+                                dimension: 28,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? theme.colorScheme.primary
+                                        : theme.colorScheme.surface,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: theme.colorScheme.outline,
+                                    ),
+                                  ),
+                                  child: selected
+                                      ? Icon(
+                                          Icons.check,
+                                          size: 18,
+                                          color: theme.colorScheme.onPrimary,
+                                        )
+                                      : null,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            description,
+                            displayName,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
+                          if (description.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                          if (chips.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            _buildCompactInfoRows(chips),
+                          ],
                         ],
-                        if (chips.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          _buildCompactInfoRows(chips),
-                        ],
-                      ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -86,6 +145,153 @@ class AppResultTile extends StatelessWidget {
       ],
     );
   }
+}
+
+enum _AppListAction { download, favorite, select }
+
+Future<void> showAppActionMenu(
+  BuildContext context,
+  AppState state,
+  AppListing app, {
+  ValueChanged<AppListing>? onEnterSelection,
+}) async {
+  final action = await showModalBottomSheet<_AppListAction>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: AppIcon(url: app.iconUrl, size: 48, borderRadius: 10),
+            title: Text(app.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+            subtitle: Text(
+              app.sourceName.trim().isEmpty ? app.sourceId : app.sourceName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.download_outlined),
+            title: const Text('下载'),
+            subtitle: const Text('后台解析下载链接并加入下载任务'),
+            onTap: () =>
+                Navigator.of(sheetContext).pop(_AppListAction.download),
+          ),
+          ListTile(
+            leading: Icon(
+              state.isFavorite(app)
+                  ? Icons.bookmark_remove_outlined
+                  : Icons.bookmark_add_outlined,
+            ),
+            title: Text(state.isFavorite(app) ? '取消收藏' : '收藏'),
+            onTap: () =>
+                Navigator.of(sheetContext).pop(_AppListAction.favorite),
+          ),
+          if (onEnterSelection != null)
+            ListTile(
+              leading: const Icon(Icons.checklist_outlined),
+              title: const Text('多选'),
+              subtitle: const Text('选择多个应用后批量下载或收藏'),
+              onTap: () =>
+                  Navigator.of(sheetContext).pop(_AppListAction.select),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+  if (!context.mounted || action == null) return;
+  switch (action) {
+    case _AppListAction.download:
+      unawaited(_downloadFromListMenu(context, state, app));
+    case _AppListAction.favorite:
+      state.toggleFavorite(app);
+    case _AppListAction.select:
+      onEnterSelection?.call(app);
+  }
+}
+
+Future<void> _downloadFromListMenu(
+  BuildContext context,
+  AppState state,
+  AppListing app,
+) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  messenger
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(const SnackBar(content: Text('正在解析下载链接…')));
+  try {
+    final result = await state.downloadApp(app);
+    if (!context.mounted || messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            result.hasStarted
+                ? result.error == null
+                      ? '已开始下载 ${result.startedFiles} 个文件，可在下载页查看进度'
+                      : '已开始下载 ${result.startedFiles} 个文件，但部分链接处理失败'
+                : '下载失败：${result.error ?? '未找到可用下载链接'}',
+          ),
+        ),
+      );
+  } catch (error) {
+    if (!context.mounted || messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('无法开始下载：$error')));
+  }
+}
+
+class AppSelectionToolbar extends StatelessWidget {
+  const AppSelectionToolbar({
+    required this.selectedCount,
+    required this.onClose,
+    required this.onDownload,
+    required this.onFavorite,
+    super.key,
+  });
+
+  final int selectedCount;
+  final VoidCallback onClose;
+  final VoidCallback onDownload;
+  final VoidCallback onFavorite;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: '退出多选',
+            onPressed: onClose,
+            icon: const Icon(Icons.close),
+          ),
+          Expanded(
+            child: Text(
+              '已选择 $selectedCount 个应用',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ),
+          IconButton(
+            tooltip: '收藏选中应用',
+            onPressed: onFavorite,
+            icon: const Icon(Icons.bookmark_add_outlined),
+          ),
+          IconButton(
+            tooltip: '下载选中应用',
+            onPressed: onDownload,
+            icon: const Icon(Icons.download_outlined),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 Widget _buildCompactInfoRows(List<Widget> items) {

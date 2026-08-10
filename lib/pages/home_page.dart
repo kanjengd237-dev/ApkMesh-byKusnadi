@@ -57,6 +57,8 @@ class HomePageState extends State<HomePage> {
   Map<String, String> _searchPageErrors = {};
   String? _lastShownSearchError;
   int _nextSearchPage = 2;
+  bool _selectionMode = false;
+  final Map<String, AppListing> _selectedApps = {};
   final List<AppListing> _pendingSearchResults = [];
   Timer? _searchMergeTimer;
   SourceSearchCancellation? _searchCancellation;
@@ -82,6 +84,85 @@ class HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  String _appKey(AppListing app) => '${app.sourceId}\u0000${app.id}';
+
+  bool _isSelected(AppListing app) => _selectedApps.containsKey(_appKey(app));
+
+  void _enterSelection(AppListing app) {
+    setState(() {
+      _selectionMode = true;
+      _selectedApps[_appKey(app)] = app;
+    });
+  }
+
+  void _toggleSelection(AppListing app) {
+    final key = _appKey(app);
+    setState(() {
+      if (_selectedApps.remove(key) == null) {
+        _selectedApps[key] = app;
+      }
+    });
+  }
+
+  void _exitSelection() {
+    if (!_selectionMode && _selectedApps.isEmpty) return;
+    setState(() {
+      _selectionMode = false;
+      _selectedApps.clear();
+    });
+  }
+
+  void _favoriteSelected() {
+    final apps = _selectedApps.values.toList(growable: false);
+    final added = widget.state.favoriteApps(apps);
+    _exitSelection();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(added == 0 ? '所选应用已在收藏中' : '已收藏 $added 个应用')),
+      );
+  }
+
+  void _downloadSelected() {
+    final apps = _selectedApps.values.toList(growable: false);
+    if (apps.isEmpty) return;
+    _exitSelection();
+    final messenger = ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('正在后台解析下载链接…')));
+    unawaited(_runBatchDownload(apps, messenger));
+  }
+
+  Future<void> _runBatchDownload(
+    List<AppListing> apps,
+    ScaffoldMessengerState messenger,
+  ) async {
+    try {
+      final result = await widget.state.downloadApps(apps);
+      if (!mounted || !messenger.mounted) return;
+      final failed = result.appsWithErrors;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              result.startedFiles == 0
+                  ? '批量下载失败：没有找到可用下载链接'
+                  : failed == 0
+                  ? '已开始下载 ${result.startedFiles} 个文件，可在下载页查看进度'
+                  : '已开始下载 ${result.startedFiles} 个文件，$failed 个应用存在解析或下载问题',
+            ),
+          ),
+        );
+    } catch (error) {
+      if (!mounted || !messenger.mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('批量下载失败：$error')));
+    }
+  }
+
   void _onStateChanged() {
     if (!mounted || submittedQuery != null) return;
     if (_loadedCatalogSourceId == widget.state.homeSourceId) return;
@@ -91,6 +172,8 @@ class HomePageState extends State<HomePage> {
       catalogLoaded = false;
       catalogLoading = false;
       _selectedTab = '';
+      _selectionMode = false;
+      _selectedApps.clear();
     });
     _notifyPageJumpAvailabilityChanged();
     _loadCatalog();
@@ -790,9 +873,16 @@ class HomePageState extends State<HomePage> {
       itemBuilder: (context, index) {
         if (index < state.apps.length) {
           return AppResultTile(
+            key: ValueKey(
+              '${state.apps[index].sourceId}:${state.apps[index].id}',
+            ),
             app: state.apps[index],
             state: widget.state,
             onOpen: (app) => showAppDetails(context, widget.state, app),
+            onEnterSelection: _enterSelection,
+            onSelect: _toggleSelection,
+            selectionMode: _selectionMode,
+            selected: _isSelected(state.apps[index]),
             showDivider: index < state.apps.length - 1,
           );
         }
@@ -863,9 +953,16 @@ class HomePageState extends State<HomePage> {
           );
         }
         return AppResultTile(
+          key: ValueKey(
+            '${visibleResults[index].sourceId}:${visibleResults[index].id}',
+          ),
           app: visibleResults[index],
           state: widget.state,
           onOpen: (app) => showAppDetails(context, widget.state, app),
+          onEnterSelection: _enterSelection,
+          onSelect: _toggleSelection,
+          selectionMode: _selectionMode,
+          selected: _isSelected(visibleResults[index]),
           showDivider: index < visibleResults.length - 1,
         );
       },
@@ -901,11 +998,24 @@ class HomePageState extends State<HomePage> {
               child: _buildTabBar(context, tabs, activeTab),
             ),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: _refreshContent,
-              child: showingHome
-                  ? _buildCatalogView(context, activeTab)
-                  : _buildSearchView(context, activeTab!),
+            child: Column(
+              children: [
+                if (_selectionMode)
+                  AppSelectionToolbar(
+                    selectedCount: _selectedApps.length,
+                    onClose: _exitSelection,
+                    onDownload: _downloadSelected,
+                    onFavorite: _favoriteSelected,
+                  ),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _refreshContent,
+                    child: showingHome
+                        ? _buildCatalogView(context, activeTab)
+                        : _buildSearchView(context, activeTab!),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
