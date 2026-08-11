@@ -1,27 +1,87 @@
-# APK Mesh
 
-APK Mesh 是一个使用 Flutter 构建的开源 APK 源聚合客户端。源脚本使用 QuickJS 编写，宿主向脚本提供受控的浏览器自动化、网络抓取、下载和安装能力。当前版本包含主页、下载、源管理和设置四个页面；Android 端会自动发现并加载 `assets/sources/` 下的内置源脚本，当前包括 APKVision、APKMirror 和 APKTodo。
+<div align="center">
+  <img src="web/icons/Icon-512.png" alt="APK Mesh Logo" width="128" height="128" />
+  <h1>APK Mesh</h1>
+  <p>基于 Flutter 构建的开源 APK 源聚合客户端</p>
+</div>
 
-## 法律与安全边界
+---
 
-本软件不托管或分发 APK。内置源脚本仅用于展示和开发验证，不代表对相关站点内容的认可。请只启用你有权访问和使用的源，并自行确认应用版权、分发许可、文件签名和安全性。源管理支持从 HTTPS URL 导入 `.js` 源，也支持通过系统文件提供器导入单个 `.js` 或包含多个源脚本的 `.zip`。
+## 项目概述
 
-源作者不得编写或分发用于解析明显侵权、绕过访问控制、窃取账号或传播恶意软件的网站源。使用者对导入源、搜索结果、下载文件和安装行为承担全部责任；软件作者不对第三方源及其内容承担责任。任何站点的使用都必须遵守当地法律、站点条款和版权方授权。
+APK Mesh 是一个跨平台的 APK 源聚合客户端。它采用去中心化的源脚本架构，源脚本使用 JavaScript (QuickJS) 编写。宿主应用为这些脚本提供受控的隐藏浏览器自动化、网络抓取、文件下载以及应用安装能力，从而实现多源 APK 资源的统一检索与管理。
 
-## 开发
+当前版本提供主页分类、聚合搜索、下载管理、源管理以及应用设置等核心功能。在 Android 平台上，系统会自动扫描并加载 `assets/sources/` 目录下的内置源脚本（如 APKVision、APKMirror、APKTodo 等）。
+
+## 核心特性
+
+* **受控的脚本沙盒**：通过 QuickJS 引擎执行源脚本，所有网络请求、浏览器导航和下载行为均受严格的清单（Manifest）权限策略约束。
+* **无头浏览器自动化**：内置 Headless WebView，支持基于 CSS 选择器的 DOM 查询、动态页面等待以及反爬策略绕过。
+* **高级安装机制**：在 Android 平台上，支持调用系统默认安装器，同时支持配置 Shizuku 实现无 root 权限的静默安装。
+* **灵活的源管理**：支持从 HTTPS URL 远程导入 `.js` 源文件，或通过系统文件选择器导入独立的 `.js` 及打包的 `.zip` 源脚本。
+* **独立开发者工具**：配套提供完全独立的 Python CLI 调试器，无需 Android 环境即可在桌面端进行源脚本的开发、录制、回放与 Trace 调试。
+
+## 免责声明与合规性
+
+本软件仅作为技术聚合工具，**不托管、不分发任何 APK 文件**。内置的演示源脚本仅用于验证宿主接口和技术可行性，不代表对相关站点内容的认可。
+
+* **用户责任**：请仅启用您有权访问的源。用户需自行确认目标应用的版权、分发许可、文件签名及安全性。
+* **开发者约束**：源脚本作者不得编写或分发用于解析明显侵权内容、绕过合法访问控制、窃取用户凭据或传播恶意软件的脚本。
+* **免责声明**：使用者对导入的源、搜索的结果、下载的文件和安装的行为承担全部法律责任。软件作者不对第三方源及其提供的内容承担任何直接或间接责任。
+
+## 架构说明
+
+QuickJS 宿主桥接逻辑位于 `lib/core/source_runtime.dart`，Android 平台的具体实现位于 `lib/core/quickjs_source_io.dart` 与 `lib/core/host_factory_io.dart`：
+
+1. `flutter_js` 在 Android 中运行 QuickJS，并通过异步消息总线注册 `apkmesh.*` 原生能力。
+2. `flutter_inappwebview` 提供隔离的无头浏览器环境，所有资源加载均按源 Manifest 的域名白名单进行严格拦截与校验。
+3. 下载模块采用流式 HTTP 传输，重定向链路受白名单保护。
+4. 有关 JavaScript 源脚本的 API 契约和宿主能力详情，请参阅 [Source API 文档](docs/source-api.md)。
+
+## 开发指南
+
+### 环境要求
+
+* Flutter SDK `^3.12.2`
+* Android Studio / Xcode (用于原生平台编译)
+
+### 构建与运行
 
 ```bash
+# 获取依赖
 flutter pub get
+
+# 运行项目
 flutter run
+
+# 执行测试用例
 flutter test
 ```
 
-QuickJS 宿主桥接位于 `lib/core/source_runtime.dart`，Android 实现位于 `lib/core/quickjs_source_io.dart` 和 `lib/core/host_factory_io.dart`：
+### Python 源调试器
 
-- `flutter_js` 在 Android 中运行 QuickJS，并通过异步消息注册 `apkmesh.request`、`apkmesh.browser`、`apkmesh.download` 和 `apkmesh.install`。
-- `flutter_inappwebview` 提供隔离的 Headless WebView，所有导航和网络资源按源 manifest 的域名白名单校验。
-- 下载使用流式 HTTP，限制重定向必须继续落在白名单内；安装必须由用户点击操作，Android 11+ 会在设置页请求“允许安装未知应用”。Android 上也可在设置中启用 Shizuku，点击安装后通过 Shizuku 执行，并在完成后核对本机安装版本。
-- APKVision 源通过站点搜索页获取结果，再用隐藏浏览器解析详情，并从下载页解析受信任的直链。站点改版或 Cloudflare 验证可能导致源暂时不可用。
-- Android 端会自动扫描 `assets/sources/` 下的 `.js` 文件，并从每个脚本的 manifest 注册内置源。源管理也支持从 HTTPS URL 或系统文件提供器导入源；ZIP 内的全部 `.js` 文件会逐个尝试导入。
+项目包含一个功能完整的 Python 调试器，位于 `tools/source_debugger/` 目录，专为源脚本开发者设计。
 
-Web 调试目标保留确定性的测试源，原生能力会显示为不可用；这是因为浏览器不能安全地模拟系统安装器和隐藏 WebView。
+**环境初始化：**
+```bash
+cd tools/source_debugger
+uv sync
+uv run playwright install chromium
+```
+
+**常用调试命令：**
+```bash
+# 查看源清单及能力声明
+uv run apkmesh-debug ../../assets/sources/apkvision.js inspect
+
+# 在线搜索测试
+uv run apkmesh-debug ../../assets/sources/apkvision.js search minecraft
+
+# 录制网络请求及 DOM 快照以供离线回放
+uv run apkmesh-debug --mode record --record-dir fixtures/apkvision \
+  ../../assets/sources/apkvision.js search minecraft
+```
+
+## 开源协议
+
+本项目采用 MIT 协议开源。详情请参阅 [LICENSE](LICENSE) 文件。
