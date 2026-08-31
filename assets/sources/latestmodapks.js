@@ -1,7 +1,7 @@
 /** LatestModAPKs public-page source for APK Mesh's QuickJS contract. */
 const ORIGIN = 'https://www.latestmodapks.com';
 const CATALOG_TABS = [
-  {id: 'featured', name: '推荐', paged: false},
+  {id: 'featured', name: 'Featured', paged: false},
 ];
 
 function decodeHtml(value) {
@@ -338,31 +338,31 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '通过受隔离的浏览器读取 LatestModAPKs 公开页面、详情、截图和下载项。',
+    description: 'Reads LatestModAPKs public pages, details, screenshots and download items via an isolated browser.',
     permissions: {network: ['*'], browser: true, download: true, install: false},
     debugProjects: [
       {
         id: 'search-keyword',
-        name: '搜索关键词',
-        description: '在 LatestModAPKs 公开搜索页检查应用与游戏结果。',
-        inputLabel: '关键词',
-        placeholder: '例如 minecraft',
+        name: 'Search keyword',
+        description: 'Checks app and game results on the LatestModAPKs public search page.',
+        inputLabel: 'Keyword',
+        placeholder: 'For example minecraft',
         defaultInput: 'minecraft',
       },
       {
         id: 'app-details',
-        name: '获取应用详情',
-        description: '读取 LatestModAPKs 详情页元数据、截图和公开下载链接。',
-        inputLabel: '应用详情 URL',
-        placeholder: '粘贴 LatestModAPKs 应用 URL',
+        name: 'Read app details',
+        description: 'Reads LatestModAPKs detail page metadata, screenshots and public download links.',
+        inputLabel: 'Detail URL',
+        placeholder: 'Paste LatestModAPKs app URL',
         defaultInput: 'https://minecraft.latestmodapks.com/',
       },
     ],
   },
 
   async catalog() {
-    const appTabs = await loadCategoryTabs('apps', '应用');
-    const gameTabs = await loadCategoryTabs('games', '游戏');
+    const appTabs = await loadCategoryTabs('apps', 'Apps');
+    const gameTabs = await loadCategoryTabs('games', 'Games');
     return {defaultTabId: 'featured', tabs: CATALOG_TABS.concat(appTabs, gameTabs)};
   },
 
@@ -370,7 +370,7 @@ globalThis.source = {
     const number = Math.max(1, Number(page) || 1);
     if (tabId === 'featured' && number > 1) return {apps: [], hasMore: false};
     if (tabId !== 'featured' && !/^https:\/\/(?:www\.)?latestmodapks\.com\/(?:apps|games)\/[^/?#]+\/?$/i.test(tabId)) {
-      throw new TypeError('无效的目录标签');
+      throw new TypeError('Invalid catalog tab');
     }
     const result = await loadListing(listingUrl(tabId, number));
     return {apps: result.apps, hasMore: tabId === 'featured' ? false : result.hasMore};
@@ -378,13 +378,13 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const normalized = cleanText(query);
-    if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (normalized.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     return (await loadListing(searchUrl(normalized, page))).apps;
   },
 
   async detailsMetadata(value) {
     const url = absoluteUrl(value);
-    if (!isAppUrl(url)) throw new TypeError('无效的 LatestModAPKs 详情地址');
+    if (!isAppUrl(url)) throw new TypeError('Invalid LatestModAPKs detail URL');
     const tab = await apkmesh.browser.open(url);
     try {
       const page = await readPage(tab, 'main, article');
@@ -467,12 +467,12 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const results = await this.search(value);
-      return {title: '搜索完成', summary: `关键词“${value}”返回 ${results.length} 条结果`, data: results};
+      return {title: 'Search completed', summary: `Keyword "${value}" returned ${results.length} results`, data: results};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
-      return {title: '详情读取完成', summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`, data: app};
+      return {title: 'Details read', summary: `Read ${app.name} with ${app.downloads.length} downloads`, data: app};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

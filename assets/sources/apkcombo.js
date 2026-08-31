@@ -215,8 +215,8 @@ async function progress(requestId, index, downloads, error) {
 }
 
 const CATALOG_TABS = [
-  {id: `${ORIGIN}/category/game/`, name: '游戏', description: 'APKCombo 游戏榜单', paged: false, category: '游戏'},
-  {id: `${ORIGIN}/category/app/`, name: '应用', description: 'APKCombo 应用榜单', paged: false, category: '应用'},
+  {id: `${ORIGIN}/category/game/`, name: 'Games', description: 'APKCombo games chart', paged: false, category: 'Games'},
+  {id: `${ORIGIN}/category/app/`, name: 'Apps', description: 'APKCombo apps chart', paged: false, category: 'Apps'},
 ];
 
 globalThis.source = {
@@ -226,7 +226,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 APKCombo 公开搜索、榜单、详情、截图和 APK/XAPK 变体。',
+    description: 'Reads APKCombo public search, charts, details, screenshots and APK/XAPK variants.',
     packageLookup: true,
     permissions: {
       network: ['*'],
@@ -235,8 +235,8 @@ globalThis.source = {
       install: false,
     },
     debugProjects: [
-      {id: 'search-keyword', name: '搜索关键词', description: '检查 APKCombo 搜索与分页结果。', inputLabel: '关键词', placeholder: '例如 minecraft', defaultInput: 'minecraft'},
-      {id: 'app-details', name: '获取应用详情', description: '读取元数据、截图和公开 APK/XAPK 变体。', inputLabel: '详情 URL', placeholder: '粘贴 apkcombo.com 详情 URL', defaultInput: 'https://apkcombo.com/minecraft-education-preview/com.mojang.minecraftedu_preview/'},
+      {id: 'search-keyword', name: 'Search keyword', description: 'Checks APKCombo search and pagination results.', inputLabel: 'Keyword', placeholder: 'For example minecraft', defaultInput: 'minecraft'},
+      {id: 'app-details', name: 'Read app details', description: 'Reads metadata, screenshots and public APK/XAPK variants.', inputLabel: 'Detail URL', placeholder: 'Paste apkcombo.com detail URL', defaultInput: 'https://apkcombo.com/minecraft-education-preview/com.mojang.minecraftedu_preview/'},
     ],
   },
 
@@ -246,7 +246,7 @@ globalThis.source = {
 
   async catalogPage(tabId, page = 1) {
     const tab = CATALOG_TABS.find((item) => item.id === tabId);
-    if (!tab) throw new TypeError('无效的 APKCombo 目录标签');
+    if (!tab) throw new TypeError('Invalid APKCombo catalog tab');
     if (Math.max(1, Number(page) || 1) > 1) return {apps: [], hasMore: false};
     const html = await fetchPage(tab.id);
     return {apps: html === null ? [] : parseCatalogResults(html, tab.category), hasMore: false};
@@ -254,7 +254,7 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const value = cleanText(query);
-    if (value.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (value.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     const number = Math.max(1, Number(page) || 1);
     if (number > 1) return [];
     const html = await fetchPage(`${ORIGIN}/search/${encodeURIComponent(value)}`);
@@ -274,7 +274,7 @@ globalThis.source = {
 
   async detailsMetadata(url) {
     const id = absoluteUrl(url);
-    if (!isDetailUrl(id)) throw new TypeError('无效的 APKCombo 详情地址');
+    if (!isDetailUrl(id)) throw new TypeError('Invalid APKCombo detail URL');
     return parseDetails(await fetchText(id), id);
   },
 
@@ -304,12 +304,12 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const apps = await this.search(value, 1);
-      return {title: '搜索完成', summary: `APKCombo 返回 ${apps.length} 条结果`, data: apps};
+      return {title: 'Search completed', summary: `APKCombo returned ${apps.length} results`, data: apps};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
-      return {title: '详情读取完成', summary: `${app.name}：${app.downloads.length} 个下载变体`, data: app};
+      return {title: 'Details read', summary: `${app.name}: ${app.downloads.length} download variants`, data: app};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

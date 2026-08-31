@@ -2,9 +2,9 @@
 const ORIGIN = 'https://pdalife.com';
 const FEATURED_TAB_ID = 'featured';
 const CATALOG_TABS = [
-  {id: FEATURED_TAB_ID, name: '推荐', paged: false},
-  {id: `${ORIGIN}/android/games/`, name: '安卓游戏', paged: true},
-  {id: `${ORIGIN}/android/programmy/`, name: '安卓应用', paged: true},
+  {id: FEATURED_TAB_ID, name: 'Featured', paged: false},
+  {id: `${ORIGIN}/android/games/`, name: 'Android games', paged: true},
+  {id: `${ORIGIN}/android/programmy/`, name: 'Android apps', paged: true},
 ];
 
 function decodeHtml(value) {
@@ -235,7 +235,7 @@ function mobdiscPageUrl(candidateUrl) {
 
 async function resolveDownloadCandidate(candidate) {
   const candidateUrl = absoluteUrl(candidate.url);
-  if (!isDownloadCandidate(candidateUrl)) throw new TypeError('无效的 PDALIFE 下载候选地址');
+  if (!isDownloadCandidate(candidateUrl)) throw new TypeError('Invalid PDALIFE download candidate URL');
   const tab = await apkmesh.browser.open(candidateUrl);
   try {
     try {
@@ -291,7 +291,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 PDALIFE 的安卓应用与游戏搜索、目录、详情、截图和下载项。',
+    description: 'Reads PDALIFE Android app and game search, catalog, details, screenshots and download items.',
     permissions: {
       network: ['*'],
       browser: true,
@@ -301,18 +301,18 @@ globalThis.source = {
     debugProjects: [
       {
         id: 'search-keyword',
-        name: '搜索关键词',
-        description: '在 PDALIFE 公开搜索页检查安卓应用与游戏结果。',
-        inputLabel: '关键词',
-        placeholder: '例如 minecraft',
+        name: 'Search keyword',
+        description: 'Checks Android app and game results on the PDALIFE public search page.',
+        inputLabel: 'Keyword',
+        placeholder: 'For example minecraft',
         defaultInput: 'minecraft',
       },
       {
         id: 'app-details',
-        name: '获取应用详情',
-        description: '读取 PDALIFE 详情页元数据、截图和公开下载链接。',
-        inputLabel: '应用详情 URL',
-        placeholder: '粘贴 PDALIFE 安卓应用 URL',
+        name: 'Read app details',
+        description: 'Reads PDALIFE detail page metadata, screenshots and public download links.',
+        inputLabel: 'Detail URL',
+        placeholder: 'Paste PDALIFE Android app URL',
         defaultInput: 'https://pdalife.com/google-service-android-a11744.html',
       },
     ],
@@ -329,24 +329,24 @@ globalThis.source = {
         ? {apps: [], hasMore: false}
         : {apps: await loadFeatured(), hasMore: false};
     }
-    if (!CATALOG_TABS.some((tab) => tab.id === tabId)) throw new TypeError('无效的目录标签');
+    if (!CATALOG_TABS.some((tab) => tab.id === tabId)) throw new TypeError('Invalid catalog tab');
     return loadCatalogListing(listingUrl(tabId, number));
   },
 
   async search(query, page = 1) {
     const normalized = cleanText(query);
-    if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (normalized.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     return (await loadCatalogListing(searchUrl(normalized, page))).apps;
   },
 
   async detailsMetadata(value) {
     const url = canonicalSourceUrl(value);
-    if (!isAppUrl(url)) throw new TypeError('无效的 PDALIFE 安卓应用地址');
+    if (!isAppUrl(url)) throw new TypeError('Invalid PDALIFE Android app URL');
     const tab = await apkmesh.browser.open(url);
     try {
       const page = await pageState(tab, 'h1.publication-title');
       assertPublicPage(page);
-      if (isNotFound(page)) throw new Error('PDALIFE 详情页不存在');
+      if (isNotFound(page)) throw new Error('PDALIFE detail page not found');
       const fields = await tab.query({
         name: 'h1.publication-title@text',
         version: '.accordion-title strong@text',
@@ -379,7 +379,7 @@ globalThis.source = {
         url: '.game-versions__downloads-button@href',
       });
       const name = cleanText(fields.name);
-      if (!name) throw new Error('PDALIFE 详情页未提供应用名称');
+      if (!name) throw new Error('PDALIFE detail page did not provide an app name');
       const candidates = uniqueBy(downloadNodes.map((item) => ({
         label: candidateLabel(item, name),
         url: absoluteUrl(item.url, url),
@@ -443,19 +443,19 @@ globalThis.source = {
     if (projectId === 'search-keyword') {
       const results = await this.search(value);
       return {
-        title: '搜索完成',
-        summary: `关键词“${value}”返回 ${results.length} 条安卓结果`,
+        title: 'Search completed',
+        summary: `Keyword "${value}" returned ${results.length} Android results`,
         data: results,
       };
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
       return {
-        title: '详情读取完成',
-        summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`,
+        title: 'Details read',
+        summary: `Read ${app.name} with ${app.downloads.length} downloads`,
         data: app,
       };
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

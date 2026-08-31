@@ -3,7 +3,7 @@
   "name": "Download.it",
   "version": "1.1.0",
   "homepage": "https://en.download.it/",
-  "description": "读取 Download.it 的 Android 应用搜索、详情、截图和 APK 下载项。",
+  "description": "Reads Android app search, details, screenshots, and APK download items from Download.it.",
   "permissions": {
     "network": [
       "download.it",
@@ -25,18 +25,18 @@
   "debugProjects": [
     {
       "id": "search-keyword",
-      "name": "搜索关键词",
-      "description": "通过 Download.it 搜索 Android 应用。",
-      "inputLabel": "关键词",
-      "placeholder": "例如 traps",
+      "name": "Search Keywords",
+      "description": "Search Android apps via Download.it.",
+      "inputLabel": "Keyword",
+      "placeholder": "e.g. traps",
       "defaultInput": "traps"
     },
     {
       "id": "app-details",
-      "name": "获取应用详情",
-      "description": "读取详情页元数据、截图和 APK 下载链接。",
-      "inputLabel": "应用详情 URL",
-      "placeholder": "粘贴 *.en.download.it/android URL",
+      "name": "Get App Details",
+      "description": "Reads detail page metadata, screenshots, and APK download links.",
+      "inputLabel": "App Details URL",
+      "placeholder": "Paste *.en.download.it/android URL",
       "defaultInput": "https://trap-beats.en.download.it/android"
     }
   ]

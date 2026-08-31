@@ -209,7 +209,7 @@ class DebugLogStore extends ChangeNotifier {
   static String _limitBody(String value) {
     const limit = 120000;
     if (value.length <= limit) return value;
-    return '${value.substring(0, limit)}\\n... [响应内容已截断]';
+    return '${value.substring(0, limit)}\\n... [response truncated]';
   }
 
   void clear() {

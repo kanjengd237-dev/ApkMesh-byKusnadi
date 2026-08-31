@@ -113,7 +113,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
     final url = (detail?.id ?? widget.app.id).trim();
     final uri = Uri.tryParse(url);
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-      _showDetailsMessage('当前应用没有可打开的网页地址');
+      _showDetailsMessage('No web URL available for this app');
       return;
     }
 
@@ -121,11 +121,11 @@ class _DetailsSheetState extends State<DetailsSheet> {
     try {
       policy = widget.state.registry.scriptFor(widget.app.sourceId).policy;
     } catch (value) {
-      _showDetailsMessage('无法读取源权限：$value');
+      _showDetailsMessage('Failed to read source policy: $value');
       return;
     }
     if (!policy.allowBrowser || !policy.permits(uri)) {
-      _showDetailsMessage('该源不允许打开此网页');
+      _showDetailsMessage('This source does not allow opening this web page');
       return;
     }
 
@@ -135,9 +135,9 @@ class _DetailsSheetState extends State<DetailsSheet> {
         uri,
         mode: LaunchMode.externalApplication,
       );
-      if (!launched) throw StateError('系统没有可用的浏览器');
+      if (!launched) throw StateError('No system browser available');
     } catch (value) {
-      if (mounted) _showDetailsMessage('浏览器打开失败：$value');
+      if (mounted) _showDetailsMessage('Failed to open browser: $value');
     } finally {
       if (mounted) setState(() => _openingBrowser = false);
     }
@@ -146,7 +146,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
   Future<void> _switchSource() async {
     final query = (detail?.name ?? widget.app.name).trim();
     if (query.isEmpty) {
-      _showDetailsMessage('当前应用没有可用于搜索的名称');
+      _showDetailsMessage('This app has no name available for searching');
       return;
     }
 
@@ -244,10 +244,14 @@ class _DetailsSheetState extends State<DetailsSheet> {
             if (detail == null && error == null)
               const SearchLoadingView(
                 icon: Icons.article_outlined,
-                label: '正在加载详情',
+                label: 'Loading details',
               ),
             if (error != null)
-              Text(detail == null ? '源详情加载失败：$error' : '下载链接解析失败：$error'),
+              Text(
+                detail == null
+                    ? 'Failed to load source details: $error'
+                    : 'Failed to parse download links: $error',
+              ),
             if (detail != null)
               ..._buildDetailContent(
                 context,
@@ -272,7 +276,9 @@ class _DetailsSheetState extends State<DetailsSheet> {
         ),
         const SizedBox(width: 8),
         IconButton(
-          tooltip: widget.state.isFavorite(widget.app) ? '取消收藏' : '收藏',
+          tooltip: widget.state.isFavorite(widget.app)
+              ? 'Remove from favorites'
+              : 'Add to favorites',
           onPressed: () {
             widget.state.toggleFavorite(widget.app);
             setState(() {});
@@ -284,7 +290,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
           ),
         ),
         IconButton(
-          tooltip: '刷新详情',
+          tooltip: 'Refresh details',
           onPressed: _loadingDetails ? null : _refreshDetails,
           icon: _loadingDetails
               ? const SizedBox.square(
@@ -294,7 +300,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
               : const Icon(Icons.refresh),
         ),
         IconButton(
-          tooltip: '浏览器打开',
+          tooltip: 'Open in browser',
           onPressed: _openingBrowser ? null : _openInBrowser,
           icon: _openingBrowser
               ? const SizedBox.square(
@@ -304,7 +310,9 @@ class _DetailsSheetState extends State<DetailsSheet> {
               : const Icon(Icons.open_in_browser_outlined),
         ),
         IconButton(
-          tooltip: _showTranslation ? '显示原文' : '翻译名称和简介',
+          tooltip: _showTranslation
+              ? 'Show original text'
+              : 'Translate name and description',
           onPressed: _toggleTranslation,
           icon: widget.state.isTranslationLoading((detail ?? widget.app).name)
               ? const SizedBox.square(
@@ -316,7 +324,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
                 ),
         ),
         IconButton(
-          tooltip: '切换源',
+          tooltip: 'Switch source',
           onPressed: _switchSource,
           icon: const Icon(Icons.swap_horiz),
         ),
@@ -336,7 +344,9 @@ class _DetailsSheetState extends State<DetailsSheet> {
       content.add(const SizedBox(height: 20));
     }
     if (detail.screenshots.isNotEmpty) {
-      content.add(Text('截图', style: Theme.of(context).textTheme.titleMedium));
+      content.add(
+        Text('Screenshots', style: Theme.of(context).textTheme.titleMedium),
+      );
       content.add(const SizedBox(height: 8));
       content.add(ScreenshotGallery(urls: detail.screenshots));
       content.add(const SizedBox(height: 20));
@@ -347,7 +357,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
           children: [
             Expanded(
               child: Text(
-                '下载文件',
+                'Download files',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
@@ -365,7 +375,7 @@ class _DetailsSheetState extends State<DetailsSheet> {
         content.add(
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('正在查找下载项…'),
+            child: Text('Finding download items…'),
           ),
         );
       } else {
@@ -405,7 +415,9 @@ class _DetailsSheetState extends State<DetailsSheet> {
     }
     if (detail.comments.isNotEmpty) {
       if (content.isNotEmpty) content.add(const SizedBox(height: 20));
-      content.add(Text('评论', style: Theme.of(context).textTheme.titleMedium));
+      content.add(
+        Text('Comments', style: Theme.of(context).textTheme.titleMedium),
+      );
       content.addAll(
         detail.comments.map(
           (comment) => ListTile(
@@ -556,7 +568,7 @@ class _SourceMatchSheetState extends State<SourceMatchSheet> {
 
   void _handleSourcePage(SourceSearchPage page) {
     if (!page.succeeded) {
-      _sourceErrors[page.sourceName] = page.error ?? '源搜索失败';
+      _sourceErrors[page.sourceName] = page.error ?? 'Source search failed';
       return;
     }
     for (final app in page.results) {
@@ -595,12 +607,12 @@ class _SourceMatchSheetState extends State<SourceMatchSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      '切换源',
+                      'Switch source',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: 'Close',
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close),
                   ),
@@ -632,7 +644,7 @@ class _SourceMatchSheetState extends State<SourceMatchSheet> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
                 child: Text(
-                  '部分源搜索失败：${_sourceErrors.keys.join('、')}',
+                  'Some sources failed: ${_sourceErrors.keys.join(', ')}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -651,7 +663,7 @@ class _SourceMatchSheetState extends State<SourceMatchSheet> {
       if (_loading) {
         return const SearchLoadingView(
           icon: Icons.manage_search,
-          label: '正在搜索',
+          label: 'Searching',
         );
       }
       final failed = _sourceErrors.isNotEmpty;
@@ -664,12 +676,16 @@ class _SourceMatchSheetState extends State<SourceMatchSheet> {
               Icon(failed ? Icons.error_outline : Icons.search_off, size: 48),
               const SizedBox(height: 12),
               Text(
-                failed ? '同名应用搜索失败' : '没有找到完全同名的应用',
+                failed
+                    ? 'Search for same-name apps failed'
+                    : 'No exact same-name app found',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 6),
               Text(
-                failed ? _sourceErrors.values.join('\n') : '仅展示所有启用源的第一页结果。',
+                failed
+                    ? _sourceErrors.values.join('\n')
+                    : 'Showing first page of results from all enabled sources.',
                 textAlign: TextAlign.center,
               ),
             ],
@@ -710,7 +726,8 @@ class PendingSourceDownloadTile extends StatelessWidget {
     final failed = progress.error != null;
     final empty = progress.files != null && progress.files!.isEmpty;
     final detail =
-        progress.error ?? (empty ? '未找到可用下载链接' : progress.candidate.size);
+        progress.error ??
+        (empty ? 'No available download links' : progress.candidate.size);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
@@ -836,7 +853,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     required TextDirection direction,
     required double maxWidth,
   }) {
-    const suffix = '... 点击展开';
+    const suffix = '... Tap to expand';
     final codePoints = widget.text.runes.toList();
 
     bool fits(int count) {
@@ -1014,7 +1031,7 @@ class SourceDownloadTile extends StatelessWidget {
         ),
         onPressed: () => _startDownload(context),
         icon: const Icon(Icons.download),
-        label: const Text('下载'),
+        label: const Text('Download'),
       ),
     );
   }
@@ -1025,14 +1042,17 @@ class SourceDownloadTile extends StatelessWidget {
       final method = await state.download(file, sourceId, app: app);
       if (!context.mounted) return;
       final message = switch (method) {
-        DownloadMethod.internal => '已开始下载，可在下载页查看进度',
-        DownloadMethod.browser => '已交给浏览器处理',
-        DownloadMethod.externalDownloader => '已交给外部下载器处理',
+        DownloadMethod.internal =>
+          'Download started, view progress in Downloads',
+        DownloadMethod.browser => 'Passed to browser for handling',
+        DownloadMethod.externalDownloader => 'Passed to external downloader',
       };
       messenger.showSnackBar(SnackBar(content: Text(message)));
     } catch (error) {
       if (!context.mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('无法开始下载：$error')));
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to start download: $error')),
+      );
     }
   }
 }

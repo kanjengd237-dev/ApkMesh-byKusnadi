@@ -119,10 +119,8 @@ void main() {
     skip: !Platform.isAndroid,
   );
 
-  test(
-    'QuickJS staged details forward download progress events',
-    () async {
-      final source = QuickJsApkSourceScript('''
+  test('QuickJS staged details forward download progress events', () async {
+    final source = QuickJsApkSourceScript('''
       globalThis.source = {
         manifest: {
           id: 'staged-quickjs-test',
@@ -156,39 +154,35 @@ void main() {
       };
     ''');
 
-      await source.initialize();
-      final updates = <AppDetailsProgress>[];
-      await SourceRegistry(scripts: [source]).loadDetails(
-        const AppListing(
-          id: 'https://example.test/details/app',
-          sourceId: 'staged-quickjs-test',
-          name: 'Listing',
-          packageName: '',
-          version: '',
-          size: '',
-          updatedAt: '',
-          category: '',
-          sourceName: 'Staged QuickJS test',
-          iconUrl: '',
-        ),
-        DemoHostApi(),
-        onProgress: updates.add,
-      );
+    await source.initialize();
+    final updates = <AppDetailsProgress>[];
+    await SourceRegistry(scripts: [source]).loadDetails(
+      const AppListing(
+        id: 'https://example.test/details/app',
+        sourceId: 'staged-quickjs-test',
+        name: 'Listing',
+        packageName: '',
+        version: '',
+        size: '',
+        updatedAt: '',
+        category: '',
+        sourceName: 'Staged QuickJS test',
+        iconUrl: '',
+      ),
+      DemoHostApi(),
+      onProgress: updates.add,
+    );
 
-      expect(updates.last.details.downloads.single.label, 'app.apk');
-      expect(
-        updates[1].downloads.single.files?.single.url,
-        'https://example.test/app.apk',
-      );
-      await source.dispose();
-    },
-    skip: !Platform.isAndroid,
-  );
+    expect(updates.last.details.downloads.single.label, 'app.apk');
+    expect(
+      updates[1].downloads.single.files?.single.url,
+      'https://example.test/app.apk',
+    );
+    await source.dispose();
+  }, skip: !Platform.isAndroid);
 
-  test(
-    'QuickJS package lookup preserves URL and null results',
-    () async {
-      final source = QuickJsApkSourceScript('''
+  test('QuickJS package lookup preserves URL and null results', () async {
+    final source = QuickJsApkSourceScript('''
       globalThis.source = {
         manifest: {
           id: 'package-url-test',
@@ -214,21 +208,19 @@ void main() {
       };
     ''');
 
-      await source.initialize();
-      expect(
-        await source.packageLookupUrl('com.example.app', DemoHostApi()),
-        'https://example.test/details/com.example.app',
-      );
-      expect(
-        await source.packageLookupUrl('com.example.missing', DemoHostApi()),
-        isNull,
-      );
-      final results = await SourceRegistry(
-        scripts: [source],
-      ).lookupByPackageName('com.example.app', DemoHostApi());
-      expect(results.single.id, 'https://example.test/details/com.example.app');
-      await source.dispose();
-    },
-    skip: !Platform.isAndroid,
-  );
+    await source.initialize();
+    expect(
+      await source.packageLookupUrl('com.example.app', DemoHostApi()),
+      'https://example.test/details/com.example.app',
+    );
+    expect(
+      await source.packageLookupUrl('com.example.missing', DemoHostApi()),
+      isNull,
+    );
+    final results = await SourceRegistry(
+      scripts: [source],
+    ).lookupByPackageName('com.example.app', DemoHostApi());
+    expect(results.single.id, 'https://example.test/details/com.example.app');
+    await source.dispose();
+  }, skip: !Platform.isAndroid);
 }

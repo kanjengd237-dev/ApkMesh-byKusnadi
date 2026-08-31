@@ -95,16 +95,16 @@ class _SourceBatchTestSheetState extends State<SourceBatchTestSheet> {
     final shouldDisable = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('关闭测试失败的源？'),
-        content: Text('将关闭 ${failed.length} 个测试失败的源。'),
+        title: const Text('Disable failed sources?'),
+        content: Text('This will disable ${failed.length} failed sources.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('关闭源'),
+            child: const Text('Disable Sources'),
           ),
         ],
       ),
@@ -143,23 +143,23 @@ class _SourceBatchTestSheetState extends State<SourceBatchTestSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '批量测试源',
+                          'Batch Test Sources',
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                         Text(
-                          '搜索“$_query” · ${_sources.length} 个源',
+                          'Searching “$_query” · ${_sources.length} sources',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    tooltip: '重新测试',
+                    tooltip: 'Re-test',
                     onPressed: _loading ? null : _runTest,
                     icon: const Icon(Icons.refresh),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: 'Close',
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close),
                   ),
@@ -180,8 +180,8 @@ class _SourceBatchTestSheetState extends State<SourceBatchTestSheet> {
                   Expanded(
                     child: Text(
                       _loading
-                          ? '正在测试 · 已完成 ${_results.length}/${_sources.length} · 可用 $succeeded 个 · 失败 $failed 个'
-                          : '可用 $succeeded 个 · 失败 $failed 个',
+                          ? 'Testing · Completed ${_results.length}/${_sources.length} · Available $succeeded · Failed $failed'
+                          : 'Available $succeeded · Failed $failed',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
@@ -189,7 +189,7 @@ class _SourceBatchTestSheetState extends State<SourceBatchTestSheet> {
                     FilledButton.icon(
                       onPressed: _disableFailedSources,
                       icon: const Icon(Icons.power_settings_new),
-                      label: Text('关闭失败源 ($failedEnabled)'),
+                      label: Text('Disable Failed Sources ($failedEnabled)'),
                     ),
                 ],
               ),
@@ -209,7 +209,7 @@ class _SourceBatchTestSheetState extends State<SourceBatchTestSheet> {
                         Icons.error_outline,
                         color: Theme.of(context).colorScheme.error,
                       ),
-                      title: const Text('批量测试未完成'),
+                      title: const Text('Batch test incomplete'),
                       subtitle: Text(_error!),
                     );
                   }
@@ -245,22 +245,22 @@ class _SourceTestTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final (IconData icon, Color? color, String subtitle) = switch (result) {
-      null when loading => (Icons.hourglass_empty, null, '等待测试'),
-      null => (Icons.help_outline, null, '未测试'),
+      null when loading => (Icons.hourglass_empty, null, 'Waiting for test'),
+      null => (Icons.help_outline, null, 'Not tested'),
       final value when value.succeeded => (
         Icons.check_circle_outline,
         Colors.green,
-        '可用 · 搜索返回 ${value.resultCount} 条',
+        'Available · Search returned ${value.resultCount} results',
       ),
       final value => (
         Icons.error_outline,
         colorScheme.error,
-        '不可用 · ${value.error}',
+        'Unavailable · ${value.error}',
       ),
     };
     final statusSuffix =
         source.status == SourceStatus.disabled && result?.succeeded == true
-        ? ' · 当前已关闭'
+        ? ' · Currently disabled'
         : '';
     return ListTile(
       contentPadding: EdgeInsets.zero,

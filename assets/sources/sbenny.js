@@ -2,20 +2,20 @@
 const ORIGIN = 'https://sbenny.com';
 const PAGE_SIZE = 24;
 const CATALOG_TABS = [
-  {id: `${ORIGIN}/`, name: '最近更新', paged: true},
-  {id: `${ORIGIN}/games.html`, name: '游戏', paged: true},
-  {id: `${ORIGIN}/apps.html`, name: '应用', paged: true},
-  {id: `${ORIGIN}/games/action.html`, name: '动作', paged: true},
-  {id: `${ORIGIN}/games/adventure.html`, name: '冒险', paged: true},
-  {id: `${ORIGIN}/games/puzzle.html`, name: '益智', paged: true},
-  {id: `${ORIGIN}/games/role-playing-games.html`, name: '角色扮演', paged: true},
-  {id: `${ORIGIN}/games/simulation.html`, name: '模拟', paged: true},
-  {id: `${ORIGIN}/games/strategy.html`, name: '策略', paged: true},
-  {id: `${ORIGIN}/apps/communication.html`, name: '通讯', paged: true},
-  {id: `${ORIGIN}/apps/education.html`, name: '教育', paged: true},
-  {id: `${ORIGIN}/apps/entertainment.html`, name: '娱乐', paged: true},
-  {id: `${ORIGIN}/apps/photography.html`, name: '摄影', paged: true},
-  {id: `${ORIGIN}/apps/tools.html`, name: '工具', paged: true},
+  {id: `${ORIGIN}/`, name: 'Recently updated', paged: true},
+  {id: `${ORIGIN}/games.html`, name: 'Games', paged: true},
+  {id: `${ORIGIN}/apps.html`, name: 'Apps', paged: true},
+  {id: `${ORIGIN}/games/action.html`, name: 'Action', paged: true},
+  {id: `${ORIGIN}/games/adventure.html`, name: 'Adventure', paged: true},
+  {id: `${ORIGIN}/games/puzzle.html`, name: 'Puzzle', paged: true},
+  {id: `${ORIGIN}/games/role-playing-games.html`, name: 'Role-playing', paged: true},
+  {id: `${ORIGIN}/games/simulation.html`, name: 'Simulation', paged: true},
+  {id: `${ORIGIN}/games/strategy.html`, name: 'Strategy', paged: true},
+  {id: `${ORIGIN}/apps/communication.html`, name: 'Communication', paged: true},
+  {id: `${ORIGIN}/apps/education.html`, name: 'Education', paged: true},
+  {id: `${ORIGIN}/apps/entertainment.html`, name: 'Entertainment', paged: true},
+  {id: `${ORIGIN}/apps/photography.html`, name: 'Photography', paged: true},
+  {id: `${ORIGIN}/apps/tools.html`, name: 'Tools', paged: true},
 ];
 
 function cleanText(value) {
@@ -231,7 +231,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '通过受隔离的浏览器读取 Sbenny 公开目录、搜索、详情和匿名可用下载项；不处理论坛账号登录。',
+    description: 'Reads Sbenny public catalog, search, details and anonymous download items via an isolated browser; does not handle forum account login.',
     permissions: {
       network: ['sbenny.com', '*.sbenny.com', 'challenges.cloudflare.com', '*.challenges.cloudflare.com'],
       browser: true,
@@ -241,18 +241,18 @@ globalThis.source = {
     debugProjects: [
       {
         id: 'search-keyword',
-        name: '搜索关键词',
-        description: '在 Sbenny 公开搜索页检查应用和游戏结果。',
-        inputLabel: '关键词',
-        placeholder: '例如 bubble shoot',
+        name: 'Search keyword',
+        description: 'Checks app and game results on the Sbenny public search page.',
+        inputLabel: 'Keyword',
+        placeholder: 'For example bubble shoot',
         defaultInput: 'bubble shoot',
       },
       {
         id: 'app-details',
-        name: '获取应用详情',
-        description: '读取 Sbenny 详情页元数据、截图和公开下载入口。',
-        inputLabel: '应用详情 URL',
-        placeholder: '粘贴 Sbenny 应用或游戏详情 URL',
+        name: 'Read app details',
+        description: 'Reads Sbenny detail page metadata, screenshots and public download links.',
+        inputLabel: 'Detail URL',
+        placeholder: 'Paste Sbenny app or game detail URL',
         defaultInput: 'https://sbenny.com/games/puzzle/bubble-shoot.html',
       },
     ],
@@ -263,20 +263,20 @@ globalThis.source = {
   },
 
   async catalogPage(tabId, page = 1) {
-    if (!isCatalogUrl(tabId)) throw new TypeError('无效的 Sbenny 目录标签');
+    if (!isCatalogUrl(tabId)) throw new TypeError('Invalid Sbenny catalog tab');
     const result = await loadListing(pageUrl(tabId, page));
     return {apps: result.apps, hasMore: result.hasMore};
   },
 
   async search(query, page = 1) {
     const value = cleanText(query);
-    if (value.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (value.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     return (await loadListing(searchUrl(value, page))).apps;
   },
 
   async detailsMetadata(value) {
     const url = absoluteUrl(value);
-    if (!isAppUrl(url)) throw new TypeError('无效的 Sbenny 详情地址');
+    if (!isAppUrl(url)) throw new TypeError('Invalid Sbenny detail URL');
     const tab = await apkmesh.browser.open(url);
     try {
       const page = await readPage(tab, '#k2Container.itemView');
@@ -361,12 +361,12 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const results = await this.search(value);
-      return {title: '搜索完成', summary: `关键词“${value}”返回 ${results.length} 条结果`, data: results};
+      return {title: 'Search completed', summary: `Keyword "${value}" returned ${results.length} results`, data: results};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
-      return {title: '详情读取完成', summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`, data: app};
+      return {title: 'Details read', summary: `Read ${app.name} with ${app.downloads.length} downloads`, data: app};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

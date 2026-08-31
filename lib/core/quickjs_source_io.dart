@@ -182,7 +182,7 @@ class QuickJsApkSourceScript
   String get homepage => _sourceHomepage ?? '';
 
   @override
-  String get description => _sourceDescription ?? '内置 QuickJS 源';
+  String get description => _sourceDescription ?? 'Built-in QuickJS source';
 
   void _log(String message, {DebugLogLevel level = DebugLogLevel.info}) {
     debugPrint('[APK Mesh] $message');
@@ -195,7 +195,7 @@ class QuickJsApkSourceScript
   String get id => _sourceId ?? 'quickjs-source';
 
   @override
-  String get name => _sourceName ?? 'QuickJS 源';
+  String get name => _sourceName ?? 'QuickJS source';
 
   @override
   SourcePolicy get policy => _policy;
@@ -286,7 +286,7 @@ class QuickJsApkSourceScript
       value is Map ? value.cast<String, dynamic>() : <String, dynamic>{};
 
   Future<void> _activateRuntime() async {
-    if (_disposed) throw StateError('源已释放');
+    if (_disposed) throw StateError('Source runtime has been disposed');
     if (_runtime != null) return;
     final runtime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: false);
     _runtime = runtime;
@@ -308,7 +308,8 @@ class QuickJsApkSourceScript
   }
 
   Future<void> _evaluateScript() async {
-    final runtime = _runtime ?? (throw StateError('QuickJS 运行时未激活'));
+    final runtime =
+        _runtime ?? (throw StateError('QuickJS runtime is not active'));
     final bootstrap = '''
       globalThis.apkmesh = {
         request: (url, options = {}) => sendMessage('apkmesh.request', JSON.stringify({url, headers: options.headers || {}})),
@@ -342,7 +343,7 @@ class QuickJsApkSourceScript
     final actualId = manifest['id']?.toString();
     if (_sourceId != null && actualId != _sourceId) {
       throw FormatException(
-        '源 sidecar ID 与脚本 manifest 不一致：$_sourceId != $actualId',
+        'Source sidecar ID does not match script manifest: $_sourceId != $actualId',
       );
     }
     final hasCatalog =
@@ -414,7 +415,7 @@ class QuickJsApkSourceScript
                 id: (project['id'] ?? '').toString(),
                 name: (project['name'] ?? '').toString(),
                 description: (project['description'] ?? '').toString(),
-                inputLabel: (project['inputLabel'] ?? '输入').toString(),
+                inputLabel: (project['inputLabel'] ?? 'Input').toString(),
                 placeholder: (project['placeholder'] ?? '').toString(),
                 defaultInput: (project['defaultInput'] ?? '').toString(),
               );
@@ -438,13 +439,14 @@ class QuickJsApkSourceScript
       projectId: project.id,
       sourceId: id,
       title: (result['title'] ?? project.name).toString(),
-      summary: (result['summary'] ?? '调试项目执行完成').toString(),
+      summary: (result['summary'] ?? 'Debug project completed').toString(),
       data: result['data'] ?? value,
     );
   }
 
   Future<dynamic> _evaluateJson(String expression) async {
-    final runtime = _runtime ?? (throw StateError('QuickJS 运行时未激活'));
+    final runtime =
+        _runtime ?? (throw StateError('QuickJS runtime is not active'));
     var result = await runtime.evaluateAsync(expression, sourceUrl: _sourceUrl);
     runtime.executePendingJob();
     if (result.stringResult == '[object Promise]' ||
@@ -482,7 +484,7 @@ class QuickJsApkSourceScript
         '})()',
       );
       if (result is! Map || !result.containsKey('__apkmeshResult')) {
-        throw const FormatException('QuickJS 调用结果格式无效');
+        throw const FormatException('Invalid QuickJS call result format');
       }
       final value = result['__apkmeshResult'];
       _log('QuickJS call $method completed');
@@ -523,7 +525,7 @@ class QuickJsApkSourceScript
       tabs.add(
         SourceCatalogTab(
           id: _legacyRecommendedTabId,
-          name: '推荐',
+          name: 'Recommended',
           sourceId: id,
           sourceName: name,
           paged: false,
@@ -665,7 +667,9 @@ class QuickJsApkSourceScript
     onProgress,
   }) async {
     if (!_hasDetailProgress) {
-      throw UnsupportedError('源未声明分阶段详情能力');
+      throw UnsupportedError(
+        'Source does not declare staged detail capability',
+      );
     }
     final requestId =
         '${DateTime.now().microsecondsSinceEpoch}-${identityHashCode(this)}';

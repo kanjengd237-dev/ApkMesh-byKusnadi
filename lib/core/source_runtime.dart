@@ -310,7 +310,8 @@ class SourceRegistry {
     void Function(ApkSourceScript source, SourceSearchPage result)?
     onSourcePageCompleted,
   }) async {
-    if (page < 1) throw ArgumentError.value(page, 'page', '必须大于 0');
+    if (page < 1)
+      throw ArgumentError.value(page, 'page', 'must be greater than 0');
     if (clearErrors) lastErrors.clear();
     final selectedScripts = scripts
         .where(
@@ -490,7 +491,8 @@ class SourceRegistry {
   }
 
   ApkSourceScript scriptFor(String sourceId) =>
-      _scriptsById[sourceId] ?? (throw StateError('源运行时不存在：$sourceId'));
+      _scriptsById[sourceId] ??
+      (throw StateError('Source runtime does not exist: $sourceId'));
 
   List<SourceDebugProject> get debugProjects => scripts
       .whereType<DebugProjectSource>()
@@ -504,7 +506,7 @@ class SourceRegistry {
   ) {
     final script = scriptFor(project.sourceId);
     if (script is! DebugProjectSource) {
-      throw UnsupportedError('源未声明调试项目');
+      throw UnsupportedError('Source does not declare debug projects');
     }
     return (script as DebugProjectSource).runDebugProject(project, input, host);
   }
@@ -537,10 +539,11 @@ class SourceRegistry {
     SourceHostApi host, {
     int page = 1,
   }) {
-    if (page < 1) throw ArgumentError.value(page, 'page', '必须大于 0');
+    if (page < 1)
+      throw ArgumentError.value(page, 'page', 'must be greater than 0');
     final script = scriptFor(tab.sourceId);
     if (script is! SourceCatalogScript) {
-      throw UnsupportedError('源未声明目录接口');
+      throw UnsupportedError('Source does not declare catalog interface');
     }
     final catalog = script as SourceCatalogScript;
     return catalog.catalogPage(tab.id, host, page: page);
@@ -571,28 +574,38 @@ class DemoHostApi implements SourceHostApi {
 
   @override
   Future<String> browserOpen(String url, {required SourcePolicy policy}) =>
-      throw UnsupportedError('当前平台不支持隐藏浏览器');
+      throw UnsupportedError(
+        'Headless browser is not supported on this platform',
+      );
 
   @override
   Future<void> browserWaitFor(String tabId, String selector) =>
-      throw UnsupportedError('当前平台不支持隐藏浏览器');
+      throw UnsupportedError(
+        'Headless browser is not supported on this platform',
+      );
 
   @override
   Future<String> browserWaitForUrlChange(String tabId, String previousUrl) =>
-      throw UnsupportedError('当前平台不支持隐藏浏览器');
+      throw UnsupportedError(
+        'Headless browser is not supported on this platform',
+      );
 
   @override
   Future<Map<String, dynamic>> browserQuery(
     String tabId,
     Map<String, dynamic> selectors,
-  ) => throw UnsupportedError('当前平台不支持隐藏浏览器');
+  ) => throw UnsupportedError(
+    'Headless browser is not supported on this platform',
+  );
 
   @override
   Future<List<Map<String, dynamic>>> browserQueryAll(
     String tabId,
     String rootSelector,
     Map<String, dynamic> selectors,
-  ) => throw UnsupportedError('当前平台不支持隐藏浏览器');
+  ) => throw UnsupportedError(
+    'Headless browser is not supported on this platform',
+  );
 
   @override
   Future<void> browserClose(String tabId) async {}
@@ -614,19 +627,23 @@ class DemoHostApi implements SourceHostApi {
     String? fileName,
     required SourcePolicy policy,
     void Function(int received, int? total)? onProgress,
-  }) => throw UnsupportedError('当前平台不支持文件下载');
+  }) =>
+      throw UnsupportedError('File download is not supported on this platform');
 
   @override
-  Future<void> pauseDownload(String downloadId) =>
-      throw UnsupportedError('当前平台不支持暂停下载');
+  Future<void> pauseDownload(String downloadId) => throw UnsupportedError(
+    'Download pause is not supported on this platform',
+  );
 
   @override
-  Future<void> resumeDownload(String downloadId) =>
-      throw UnsupportedError('当前平台不支持继续下载');
+  Future<void> resumeDownload(String downloadId) => throw UnsupportedError(
+    'Download resume is not supported on this platform',
+  );
 
   @override
-  Future<void> cancelDownload(String downloadId) =>
-      throw UnsupportedError('当前平台不支持取消下载');
+  Future<void> cancelDownload(String downloadId) => throw UnsupportedError(
+    'Download cancel is not supported on this platform',
+  );
 
   @override
   Future<void> removeDownloadFiles(
@@ -669,14 +686,18 @@ class DemoHostApi implements SourceHostApi {
     String url, {
     Map<String, String> headers = const {},
     required SourcePolicy policy,
-  }) => throw UnsupportedError('当前平台不支持源网络请求');
+  }) => throw UnsupportedError(
+    'Source network request is not supported on this platform',
+  );
 
   @override
   Future<List<int>> requestBytes(
     String url, {
     Map<String, String> headers = const {},
     required SourcePolicy policy,
-  }) => throw UnsupportedError('当前平台不支持源网络请求');
+  }) => throw UnsupportedError(
+    'Source network request is not supported on this platform',
+  );
 
   @override
   Future<void> dispose() async {}
@@ -707,7 +728,7 @@ class ApkVisionDemoScript
     tabs: const [
       SourceCatalogTab(
         id: 'recommended',
-        name: '推荐',
+        name: 'Recommended',
         sourceId: 'apkvision-demo',
         sourceName: 'APKVision',
         paged: false,
@@ -718,7 +739,7 @@ class ApkVisionDemoScript
         sourceId: 'apkvision-demo',
         sourceName: 'APKVision',
         paged: true,
-        description: '动作与街机类应用',
+        description: 'Action and arcade apps',
       ),
     ],
   );
@@ -779,7 +800,8 @@ class ApkVisionDemoScript
     iconUrl:
         'https://apkvision.org/wp-content/uploads/2020/01/minecraft-play-with-friends.png',
     summary: 'Minecraft APK free download from APKVision.',
-    description: '这是一个用于验证 APKVision 搜索、详情和下载接口的测试条目。',
+    description:
+        'A test entry for verifying APKVision search, details, and download interfaces.',
     screenshots: [
       'https://img.apkvision.org/minecraft-play-with-friends/minecraft-play-with-friends-1.webp',
       'https://img.apkvision.org/minecraft-play-with-friends/minecraft-play-with-friends-2.webp',
@@ -787,7 +809,7 @@ class ApkVisionDemoScript
       'https://img.apkvision.org/minecraft-play-with-friends/minecraft-play-with-friends-4.webp',
       'https://img.apkvision.org/minecraft-play-with-friends/minecraft-play-with-friends-5.webp',
     ],
-    comments: ['请在安装前自行校验文件来源与签名。'],
+    comments: ['Verify file source and signature before installing.'],
     downloads: [
       SourceDownload(
         label: 'Minecraft APK v1.26.50.24 Beta',

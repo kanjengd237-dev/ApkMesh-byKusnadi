@@ -267,7 +267,7 @@ globalThis.source = {
     version: '1.2.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 APKVision 应用与游戏的搜索、目录、详情、截图和下载项。',
+    description: 'Fetch APKVision app and game search, catalog, details, screenshots, and downloads.',
     permissions: {
       network: ['apkvision.org', '*.apkvision.org'],
       browser: true,
@@ -277,18 +277,18 @@ globalThis.source = {
     debugProjects: [
       {
         id: 'search-keyword',
-        name: '搜索关键词',
-        description: '调用源搜索接口，观察请求、状态码和返回内容。',
-        inputLabel: '关键词',
-        placeholder: '例如 minecraft',
+        name: 'Search Keywords',
+        description: 'Call source search API, observe requests, status codes, and responses.',
+        inputLabel: 'Keyword',
+        placeholder: 'e.g. minecraft',
         defaultInput: 'minecraft',
       },
       {
         id: 'app-details',
-        name: '获取应用详情',
-        description: '打开详情页并通过 WebView 读取应用信息和下载链接。',
-        inputLabel: '应用详情 URL',
-        placeholder: '粘贴源详情页 URL',
+        name: 'Get App Details',
+        description: 'Open detail page and read app info and download links via WebView.',
+        inputLabel: 'App details URL',
+        placeholder: 'Paste source detail page URL',
         defaultInput: 'https://apkvision.org/games/arcade/minecraft-pe-apk-55409/',
       },
     ],
@@ -298,11 +298,11 @@ globalThis.source = {
     const html = await fetchText(`${ORIGIN}/`);
     catalogHomeHtml = html;
     const tabs = [
-      {id: RECOMMENDED_TAB_ID, name: '推荐', paged: false},
-      {id: `${ORIGIN}/app/`, name: '应用', paged: true},
-      {id: `${ORIGIN}/games/`, name: '游戏', paged: true},
-      {id: `${ORIGIN}/updated/`, name: '最近更新', paged: true},
-      {id: `${ORIGIN}/best-new-releases/`, name: '最佳新作', paged: true},
+      {id: RECOMMENDED_TAB_ID, name: 'Featured', paged: false},
+      {id: `${ORIGIN}/app/`, name: 'Apps', paged: true},
+      {id: `${ORIGIN}/games/`, name: 'Games', paged: true},
+      {id: `${ORIGIN}/updated/`, name: 'Recent Updates', paged: true},
+      {id: `${ORIGIN}/best-new-releases/`, name: 'Best New', paged: true},
     ];
     const seen = new Set(tabs.map((tab) => tab.id));
     for (const category of parseCategories(html)) {
@@ -330,7 +330,7 @@ globalThis.source = {
 
     const id = absoluteUrl(tabId);
     if (!/^https:\/\/apkvision\.org\/(?:app|apps|games|updated|best-new-releases)(?:\/[^/?#]+)?\/?$/i.test(id)) {
-      throw new TypeError('无效的目录标签地址');
+      throw new TypeError('Invalid catalog tab URL');
     }
     const html = await fetchSearchText(catalogPageUrl(id, number));
     if (html === null) return {apps: [], hasMore: false};
@@ -342,14 +342,14 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const normalized = cleanText(query);
-    if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (normalized.length < 2) throw new TypeError('Search keyword must be at least 2 characters');
     const html = await fetchSearchText(searchUrl(normalized, page));
     return html === null ? [] : parseSearchResults(html);
   },
 
   async detailsMetadata(url) {
     const id = absoluteUrl(url);
-    if (!isApkVisionUrl(id)) throw new TypeError('无效的 APKVision 详情地址');
+    if (!isApkVisionUrl(id)) throw new TypeError('Invalid APKVision details URL');
     const tab = await apkmesh.browser.open(id);
     try {
       await tab.waitFor('#MobileApplication');
@@ -445,8 +445,8 @@ globalThis.source = {
     if (projectId === 'search-keyword') {
       const results = await this.search(value);
       return {
-        title: '搜索完成',
-        summary: `关键词“${value}”返回 ${results.length} 条结果`,
+        title: 'Search Complete',
+        summary: `Keyword "${value}" returned ${results.length} results`,
         data: results.map((item) => ({
           name: item.name,
           id: item.id,
@@ -458,8 +458,8 @@ globalThis.source = {
     if (projectId === 'app-details') {
       const app = await this.details(value);
       return {
-        title: '详情读取完成',
-        summary: `已读取 ${app.name} 的详情`,
+        title: 'Details Fetched',
+        summary: `Fetched details of ${app.name}`,
         data: {
           name: app.name,
           packageName: app.packageName,
@@ -469,6 +469,6 @@ globalThis.source = {
         },
       };
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

@@ -14,15 +14,15 @@ const _settingsControlWidth = 152.0;
 final _githubRepositoryUri = Uri.parse('https://github.com/wsdx233/ApkMesh');
 
 String _themeModeLabel(AppThemeMode mode) => switch (mode) {
-  AppThemeMode.system => '跟随系统',
-  AppThemeMode.light => '浅色',
-  AppThemeMode.dark => '深色',
+  AppThemeMode.system => 'System',
+  AppThemeMode.light => 'Light',
+  AppThemeMode.dark => 'Dark',
 };
 
 String _downloadMethodLabel(DownloadMethod method) => switch (method) {
-  DownloadMethod.internal => '应用内部',
-  DownloadMethod.browser => '浏览器',
-  DownloadMethod.externalDownloader => '外部下载器',
+  DownloadMethod.internal => 'In-app',
+  DownloadMethod.browser => 'Browser',
+  DownloadMethod.externalDownloader => 'External downloader',
 };
 
 class SettingsPage extends StatelessWidget {
@@ -44,7 +44,7 @@ class SettingsPage extends StatelessWidget {
                 Padding(
                   padding: _settingsTilePadding,
                   child: Text(
-                    '设置',
+                    'Settings',
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                 ),
@@ -52,7 +52,7 @@ class SettingsPage extends StatelessWidget {
                 ListTile(
                   contentPadding: _settingsTilePadding,
                   leading: const Icon(Icons.brightness_6_outlined),
-                  title: const Text('主题'),
+                  title: const Text('Theme'),
                   subtitle: Text(_themeModeLabel(state.themeMode)),
                   trailing: SizedBox(
                     width: _settingsControlWidth,
@@ -77,11 +77,12 @@ class SettingsPage extends StatelessWidget {
                 const Divider(),
                 _InformationSettingsTile(
                   icon: Icons.folder_outlined,
-                  title: '下载目录',
-                  subtitle: '应用内部下载使用系统下载目录',
+                  title: 'Download directory',
+                  subtitle:
+                      'Internal downloads use the system download directory',
                   paragraphs: const [
-                    '选择“应用内部”时，文件会保存到当前平台提供的下载目录；平台未提供该目录时使用应用文档目录。',
-                    '选择浏览器或外部下载器时，保存位置由接收下载链接的应用决定。',
+                    'When "In-app" is selected, files are saved to the download directory provided by the current platform; if the platform does not provide one, the application documents directory is used.',
+                    'When Browser or External downloader is selected, the save location is determined by the app that receives the download link.',
                   ],
                 ),
                 const Divider(),
@@ -92,11 +93,11 @@ class SettingsPage extends StatelessWidget {
                 ListTile(
                   contentPadding: _settingsTilePadding,
                   leading: const Icon(Icons.security_outlined),
-                  title: const Text('安装权限'),
+                  title: const Text('Install permission'),
                   subtitle: Text(
                     state.host.supportsInstall
-                        ? '安装 APK 前需要允许本应用安装未知来源的应用'
-                        : '当前平台不支持 APK 安装',
+                        ? 'Allow this app to install unknown sources before installing APK'
+                        : 'APK installation is not supported on this platform',
                   ),
                   trailing: const Icon(Icons.open_in_new),
                   onTap: state.host.supportsInstall
@@ -104,9 +105,9 @@ class SettingsPage extends StatelessWidget {
                       : () => _showInformationSheet(
                           context,
                           icon: Icons.security_outlined,
-                          title: '安装权限',
+                          title: 'Install permission',
                           paragraphs: const [
-                            'APK 安装仅在 Android 平台可用。用户点击安装不受源的安装权限声明限制；源脚本主动调用安装时仍需声明对应权限。',
+                            'APK installation is only available on Android. User-initiated installs are not restricted by source install permissions; when a source script actively calls install, it must still declare the corresponding permission.',
                           ],
                         ),
                 ),
@@ -117,31 +118,34 @@ class SettingsPage extends StatelessWidget {
                 const Divider(),
                 const _InformationSettingsTile(
                   icon: Icons.policy_outlined,
-                  title: '法律与安全',
-                  subtitle: '使用第三方源和 APK 文件前请确认授权与可信度',
+                  title: 'Legal and security',
+                  subtitle:
+                      'Verify authorization and trust before using third-party sources and APK files',
                   paragraphs: [
-                    '请只导入你有权访问和使用的站点源，并遵守对应站点的服务条款与当地法律。',
-                    'APK Mesh 不验证第三方下载内容。安装前请核验应用来源、包名、版本和签名，并使用可信的安全工具检查文件。',
-                    '源声明的网络、浏览器、下载和安装权限会限制脚本可调用的宿主能力，但不会阻止用户手动安装已下载的 APK。',
+                    'Only import site sources you have the right to access and use, and comply with the corresponding site terms of service and local laws.',
+                    'APK Mesh does not verify third-party download content. Before installing, verify the app source, package name, version, and signature, and use a trusted security tool to check the file.',
+                    'The network, browser, download, and install permissions declared by a source restrict the host capabilities the script can call, but do not prevent the user from manually installing a downloaded APK.',
                   ],
                 ),
                 const Divider(),
                 ListTile(
                   contentPadding: _settingsTilePadding,
                   leading: const Icon(Icons.code),
-                  title: const Text('GitHub 项目'),
-                  subtitle: const Text('查看源代码、问题和版本发布'),
+                  title: const Text('GitHub project'),
+                  subtitle: const Text(
+                    'View source code, issues, and releases',
+                  ),
                   trailing: const Icon(Icons.open_in_new),
                   onTap: () => _openGitHubRepository(context),
                 ),
                 const Divider(),
                 const _InformationSettingsTile(
                   icon: Icons.info_outline,
-                  title: '关于 APK Mesh',
-                  subtitle: '开源 APK 源聚合客户端 · 1.0.0',
+                  title: 'About APK Mesh',
+                  subtitle: 'Open-source APK source aggregation client · 1.0.0',
                   paragraphs: [
-                    'APK Mesh 是一个开源 APK 源聚合客户端。应用通过受权限策略约束的独立源脚本搜索应用、解析详情并获取下载地址。',
-                    '版本 1.0.0',
+                    'APK Mesh is an open-source APK source aggregation client. The app searches for apps, parses details, and obtains download links through independent source scripts constrained by permission policies.',
+                    'Version 1.0.0',
                   ],
                 ),
               ],
@@ -166,7 +170,7 @@ Future<void> _openGitHubRepository(BuildContext context) async {
   if (!context.mounted) return;
   ScaffoldMessenger.of(
     context,
-  ).showSnackBar(const SnackBar(content: Text('无法打开 GitHub 项目')));
+  ).showSnackBar(const SnackBar(content: Text('Cannot open GitHub project')));
 }
 
 class _DownloadMethodSettingsTile extends StatelessWidget {
@@ -178,7 +182,7 @@ class _DownloadMethodSettingsTile extends StatelessWidget {
   Widget build(BuildContext context) => ListTile(
     contentPadding: _settingsTilePadding,
     leading: const Icon(Icons.download_for_offline_outlined),
-    title: const Text('下载方式'),
+    title: const Text('Download method'),
     subtitle: Text(_downloadMethodLabel(state.downloadMethod)),
     trailing: const Icon(Icons.chevron_right),
     onTap: () => showModalBottomSheet<void>(
@@ -208,7 +212,7 @@ class _DownloadMethodSheet extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '下载方式',
+                    'Download method',
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
                 ),
@@ -233,26 +237,30 @@ class _DownloadMethodSheet extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                     value: DownloadMethod.internal,
                     secondary: Icon(Icons.download_outlined),
-                    title: Text('应用内部'),
-                    subtitle: Text('在 APK Mesh 中下载，可查看进度、暂停、继续和安装'),
+                    title: Text('In-app'),
+                    subtitle: Text(
+                      'Download in APK Mesh, view progress, pause, resume, and install',
+                    ),
                   ),
                   const RadioListTile<DownloadMethod>(
                     contentPadding: EdgeInsets.zero,
                     value: DownloadMethod.browser,
                     secondary: Icon(Icons.open_in_browser_outlined),
-                    title: Text('浏览器'),
-                    subtitle: Text('使用系统默认浏览器打开下载链接'),
+                    title: Text('Browser'),
+                    subtitle: Text(
+                      'Open download links with the system default browser',
+                    ),
                   ),
                   RadioListTile<DownloadMethod>(
                     contentPadding: EdgeInsets.zero,
                     value: DownloadMethod.externalDownloader,
                     enabled: state.supportsExternalDownloader,
                     secondary: const Icon(Icons.move_to_inbox_outlined),
-                    title: const Text('外部下载器'),
+                    title: const Text('External downloader'),
                     subtitle: Text(
                       state.supportsExternalDownloader
-                          ? '选择 ADM、1DM 等支持下载 Intent 的应用'
-                          : '当前平台不支持外部下载器',
+                          ? 'Choose an app that supports download Intent, such as ADM, 1DM, etc.'
+                          : 'External downloader is not supported on this platform',
                     ),
                   ),
                 ],
@@ -323,7 +331,7 @@ void _showInformationSheet(
                     ),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: 'Close',
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close),
                   ),
@@ -356,7 +364,7 @@ class _SourceConcurrencySettingsTile extends StatelessWidget {
     return ListTile(
       contentPadding: _settingsTilePadding,
       leading: const Icon(Icons.speed_outlined),
-      title: const Text('源并发设置'),
+      title: const Text('Source concurrency settings'),
       subtitle: Text(
         'HTTP ${settings.httpRequests} · WebView ${settings.webViews}',
       ),
@@ -477,12 +485,12 @@ class _SourceConcurrencySheetState extends State<_SourceConcurrencySheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        '源并发设置',
+                        'Source concurrency settings',
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     ),
                     IconButton(
-                      tooltip: '关闭',
+                      tooltip: 'Close',
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close),
                     ),
@@ -491,8 +499,8 @@ class _SourceConcurrencySheetState extends State<_SourceConcurrencySheet> {
                 const SizedBox(height: 20),
                 _ConcurrencyControl(
                   icon: Icons.language_outlined,
-                  title: 'HTTP 请求',
-                  subtitle: '同时执行的源网络请求数',
+                  title: 'HTTP requests',
+                  subtitle: 'Number of concurrent source network requests',
                   value: _httpRequests,
                   baselineMax: 100,
                   controller: _httpController,
@@ -502,8 +510,8 @@ class _SourceConcurrencySheetState extends State<_SourceConcurrencySheet> {
                 const Divider(height: 40),
                 _ConcurrencyControl(
                   icon: Icons.web_asset_outlined,
-                  title: '隐藏 WebView',
-                  subtitle: '同时保持活动的浏览器标签页数',
+                  title: 'Hidden WebView',
+                  subtitle: 'Number of active browser tabs to keep alive',
                   value: _webViews,
                   baselineMax: 10,
                   controller: _webViewController,
@@ -517,13 +525,13 @@ class _SourceConcurrencySheetState extends State<_SourceConcurrencySheet> {
                     TextButton.icon(
                       onPressed: _restoreDefaults,
                       icon: const Icon(Icons.restart_alt),
-                      label: const Text('恢复默认值'),
+                      label: const Text('Restore defaults'),
                     ),
                     const SizedBox(width: 12),
                     FilledButton.icon(
                       onPressed: _valid ? _apply : null,
                       icon: const Icon(Icons.check),
-                      label: const Text('应用'),
+                      label: const Text('Apply'),
                     ),
                   ],
                 ),
@@ -600,8 +608,8 @@ class _ConcurrencyControl extends StatelessWidget {
                 textAlign: TextAlign.end,
                 onChanged: onTextChanged,
                 decoration: InputDecoration(
-                  labelText: '并发数',
-                  errorText: valid ? null : '至少为 1',
+                  labelText: 'Concurrency',
+                  errorText: valid ? null : 'Must be at least 1',
                 ),
               ),
             ),
@@ -631,15 +639,22 @@ class _ConcurrencyControl extends StatelessWidget {
   }
 }
 
-String _shizukuStatusLabel(ShizukuStatus status, bool enabled) =>
-    switch (status) {
-      ShizukuStatus.authorized =>
-        enabled ? '已授权；点击安装后将通过 Shizuku 安装 APK' : '已授权，打开后通过 Shizuku 安装 APK',
-      ShizukuStatus.unavailable =>
-        enabled ? 'Shizuku 未运行，安装前请先启动服务' : '请先启动 Shizuku，再打开此选项',
-      ShizukuStatus.denied => 'Shizuku 未授予 APK Mesh 权限',
-      ShizukuStatus.unsupported => '当前平台不支持 Shizuku 安装',
-    };
+String _shizukuStatusLabel(
+  ShizukuStatus status,
+  bool enabled,
+) => switch (status) {
+  ShizukuStatus.authorized =>
+    enabled
+        ? 'Authorized; APK will be installed via Shizuku after tapping install'
+        : 'Authorized; APK will be installed via Shizuku when opened',
+  ShizukuStatus.unavailable =>
+    enabled
+        ? 'Shizuku is not running, please start the service before installing'
+        : 'Please start Shizuku before enabling this option',
+  ShizukuStatus.denied => 'Shizuku has not granted permission to APK Mesh',
+  ShizukuStatus.unsupported =>
+    'Shizuku installation is not supported on this platform',
+};
 
 class _ShizukuInstallationSettingsPanel extends StatefulWidget {
   const _ShizukuInstallationSettingsPanel({required this.state});
@@ -673,9 +688,9 @@ class _ShizukuInstallationSettingsPanelState
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Shizuku 授权失败：$error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Shizuku authorization failed: $error')),
+        );
       }
     } finally {
       if (mounted) setState(() => _changing = false);
@@ -686,7 +701,7 @@ class _ShizukuInstallationSettingsPanelState
   Widget build(BuildContext context) => SwitchListTile(
     contentPadding: _settingsTilePadding,
     secondary: const Icon(Icons.admin_panel_settings_outlined),
-    title: const Text('使用 Shizuku 安装'),
+    title: const Text('Use Shizuku for installation'),
     subtitle: Text(
       _shizukuStatusLabel(
         widget.state.shizukuStatus,
@@ -709,7 +724,7 @@ class TranslationSettingsPanel extends StatelessWidget {
     return ListTile(
       contentPadding: _settingsTilePadding,
       leading: const Icon(Icons.translate_outlined),
-      title: const Text('翻译'),
+      title: const Text('Translation'),
       subtitle: Text(
         '${settings.provider.label} · ${translationLanguageLabel(settings.targetLanguage)}',
       ),
@@ -786,12 +801,12 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            '翻译设置',
+                            'Translation settings',
                             style: Theme.of(context).textTheme.headlineSmall,
                           ),
                         ),
                         IconButton(
-                          tooltip: '关闭',
+                          tooltip: 'Close',
                           onPressed: () => Navigator.pop(context),
                           icon: const Icon(Icons.close),
                         ),
@@ -800,15 +815,19 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                     const SizedBox(height: 12),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('自动翻译应用名称和简介'),
-                      subtitle: const Text('搜索结果和详情加载后自动请求翻译'),
+                      title: const Text(
+                        'Auto-translate app names and descriptions',
+                      ),
+                      subtitle: const Text(
+                        'Automatically request translation after search results and details are loaded',
+                      ),
                       value: settings.autoTranslate,
                       onChanged: widget.state.setAutoTranslate,
                     ),
                     const Divider(),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('翻译服务'),
+                      title: const Text('Translation service'),
                       trailing: SizedBox(
                         width: _settingsControlWidth,
                         child: DropdownButton<TranslationProvider>(
@@ -831,7 +850,7 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                     ),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('目标语言'),
+                      title: const Text('Target language'),
                       trailing: SizedBox(
                         width: _settingsControlWidth,
                         child: DropdownButton<String>(
@@ -872,14 +891,15 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                             .setGooglePublicKey(_googleKeyController.text),
                         onSubmitted: widget.state.setGooglePublicKey,
                         decoration: const InputDecoration(
-                          labelText: 'Google 公共 API Key（可选）',
-                          helperText: '留空时使用 Google Translate 浏览器旧接口。',
+                          labelText: 'Google public API Key (optional)',
+                          helperText:
+                              'When left blank, the legacy Google Translate browser interface is used.',
                         ),
                       ),
                     ],
                     const SizedBox(height: 20),
                     Text(
-                      '翻译文本会发送到所选服务商或其网关。接口不稳定或请求失败时保留原文。',
+                      'Translation text will be sent to the selected service provider or its gateway. If the interface is unstable or the request fails, the original text is retained.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],

@@ -88,15 +88,17 @@ class _SourcesPageState extends State<SourcesPage> {
               ? null
               : _openBatchTest,
           icon: const Icon(Icons.fact_check_outlined),
-          label: const Text('批量测试'),
+          label: const Text('Batch Test'),
         );
         final importButton = FilledButton.icon(
           onPressed: () => _showAddSource(context),
           icon: const Icon(Icons.add),
-          label: const Text('导入源'),
+          label: const Text('Import Source'),
         );
         final title = Text(
-          _selectionMode ? '已选择 ${_selectedSourceIds.length} 个源' : '源管理',
+          _selectionMode
+              ? 'Selected ${_selectedSourceIds.length} sources'
+              : 'Source Management',
           style: Theme.of(context).textTheme.headlineMedium,
         );
 
@@ -108,7 +110,7 @@ class _SourcesPageState extends State<SourcesPage> {
                 children: [
                   if (_selectionMode)
                     IconButton(
-                      tooltip: '退出多选',
+                      tooltip: 'Exit Selection',
                       onPressed: _exitSelection,
                       icon: const Icon(Icons.close),
                     ),
@@ -136,7 +138,7 @@ class _SourcesPageState extends State<SourcesPage> {
           children: [
             if (_selectionMode)
               IconButton(
-                tooltip: '退出多选',
+                tooltip: 'Exit Selection',
                 onPressed: _exitSelection,
                 icon: const Icon(Icons.close),
               ),
@@ -157,29 +159,29 @@ class _SourcesPageState extends State<SourcesPage> {
 
   List<Widget> _buildSelectionActions() => [
     IconButton(
-      tooltip: '全选',
+      tooltip: 'Select All',
       onPressed: _selectAll,
       icon: const Icon(Icons.select_all),
     ),
     IconButton(
-      tooltip: '反选',
+      tooltip: 'Invert Selection',
       onPressed: _invertSelection,
       icon: const Icon(Icons.swap_vert),
     ),
     IconButton(
-      tooltip: '区间选择',
+      tooltip: 'Range Select',
       onPressed: _selectRange,
       icon: const Icon(Icons.unfold_more),
     ),
     IconButton(
-      tooltip: '开启选中源',
+      tooltip: 'Enable Selected',
       onPressed: _selectedSourceIds.isEmpty
           ? null
           : () => _setSelectedEnabled(true),
       icon: const Icon(Icons.toggle_on_outlined),
     ),
     IconButton(
-      tooltip: '关闭选中源',
+      tooltip: 'Disable Selected',
       onPressed: _selectedSourceIds.isEmpty
           ? null
           : () => _setSelectedEnabled(false),
@@ -188,28 +190,37 @@ class _SourcesPageState extends State<SourcesPage> {
   ];
 
   Widget _buildOverflowMenu() => PopupMenuButton<_SourceBulkAction>(
-    tooltip: '批量管理',
+    tooltip: 'Batch Management',
     icon: const Icon(Icons.more_vert),
     onSelected: _handleBulkAction,
     itemBuilder: (context) => [
       const PopupMenuItem(
         value: _SourceBulkAction.selectAll,
-        child: _BulkActionMenuLabel(icon: Icons.select_all, label: '全选'),
+        child: _BulkActionMenuLabel(
+          icon: Icons.select_all,
+          label: 'Select All',
+        ),
       ),
       const PopupMenuItem(
         value: _SourceBulkAction.invert,
-        child: _BulkActionMenuLabel(icon: Icons.swap_vert, label: '反选'),
+        child: _BulkActionMenuLabel(
+          icon: Icons.swap_vert,
+          label: 'Invert Selection',
+        ),
       ),
       const PopupMenuItem(
         value: _SourceBulkAction.range,
-        child: _BulkActionMenuLabel(icon: Icons.unfold_more, label: '区间选择'),
+        child: _BulkActionMenuLabel(
+          icon: Icons.unfold_more,
+          label: 'Range Select',
+        ),
       ),
       PopupMenuItem(
         value: _SourceBulkAction.enable,
         enabled: _selectedSourceIds.isNotEmpty,
         child: const _BulkActionMenuLabel(
           icon: Icons.toggle_on_outlined,
-          label: '开启',
+          label: 'Enable',
         ),
       ),
       PopupMenuItem(
@@ -217,7 +228,7 @@ class _SourcesPageState extends State<SourcesPage> {
         enabled: _selectedSourceIds.isNotEmpty,
         child: const _BulkActionMenuLabel(
           icon: Icons.toggle_off_outlined,
-          label: '关闭',
+          label: 'Disable',
         ),
       ),
     ],
@@ -299,9 +310,11 @@ class _SourcesPageState extends State<SourcesPage> {
         );
     final end = _rangeEnd ?? anchor;
     if (anchor < 0 || end < 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先选择区间起点和终点')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select range start and end first'),
+        ),
+      );
       return;
     }
     final start = anchor < end ? anchor : end;
@@ -360,8 +373,8 @@ class _SourcesPageState extends State<SourcesPage> {
                 }
                 Navigator.pop(dialogContext);
                 final message = result.failures.isEmpty
-                    ? '已导入 ${result.imported.length} 个源'
-                    : '已导入 ${result.imported.length} 个源，失败 ${result.failures.length} 个';
+                    ? 'Imported ${result.imported.length} sources'
+                    : 'Imported ${result.imported.length} sources, failed ${result.failures.length}';
                 if (context.mounted) {
                   ScaffoldMessenger.of(
                     context,
@@ -382,7 +395,7 @@ class _SourcesPageState extends State<SourcesPage> {
             }
 
             return AlertDialog(
-              title: const Text('导入源'),
+              title: const Text('Import Source'),
               content: SizedBox(
                 width: 420,
                 child: Column(
@@ -393,7 +406,7 @@ class _SourcesPageState extends State<SourcesPage> {
                       controller: url,
                       enabled: !busy,
                       decoration: const InputDecoration(
-                        labelText: '源 URL',
+                        labelText: 'Source URL',
                         hintText: 'https://example.com/source.js',
                       ),
                       keyboardType: TextInputType.url,
@@ -422,7 +435,7 @@ class _SourcesPageState extends State<SourcesPage> {
                               return state.importSourceBytes(bytes, file.name);
                             }),
                       icon: const Icon(Icons.folder_open_outlined),
-                      label: const Text('从系统文件选择 JS 或 ZIP'),
+                      label: const Text('Choose JS or ZIP from system files'),
                     ),
                     if (error != null) ...[
                       const SizedBox(height: 12),
@@ -439,7 +452,7 @@ class _SourcesPageState extends State<SourcesPage> {
               actions: [
                 TextButton(
                   onPressed: busy ? null : () => Navigator.pop(dialogContext),
-                  child: const Text('取消'),
+                  child: const Text('Cancel'),
                 ),
                 FilledButton.icon(
                   onPressed: busy
@@ -447,7 +460,7 @@ class _SourcesPageState extends State<SourcesPage> {
                       : () {
                           if (url.text.trim().isEmpty) {
                             setDialogState(() {
-                              error = '请输入源 URL';
+                              error = 'Please enter source URL';
                             });
                             return;
                           }
@@ -460,7 +473,7 @@ class _SourcesPageState extends State<SourcesPage> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.download),
-                  label: const Text('从 URL 导入'),
+                  label: const Text('Import from URL'),
                 ),
               ],
             );
@@ -545,14 +558,14 @@ class SourceTile extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   PopupMenuButton<SourceDebugProject>(
-                    tooltip: '查看测试项目',
+                    tooltip: 'View Test Projects',
                     onSelected: (project) =>
                         showSourceDebugTestSheet(context, state, project),
                     itemBuilder: (context) => projects.isEmpty
                         ? const [
                             PopupMenuItem<SourceDebugProject>(
                               enabled: false,
-                              child: Text('暂无可测试项目'),
+                              child: Text('No testable projects available'),
                             ),
                           ]
                         : projects
@@ -590,7 +603,7 @@ class SourceTile extends StatelessWidget {
                               .toList(),
                     child: const Chip(
                       avatar: Icon(Icons.fact_check_outlined, size: 18),
-                      label: Text('测试'),
+                      label: Text('Test'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -599,7 +612,7 @@ class SourceTile extends StatelessWidget {
                         ? null
                         : const Icon(Icons.home_outlined, size: 18),
                     showCheckmark: true,
-                    label: const Text('主页'),
+                    label: const Text('Home'),
                     selected: source.homeSource,
                     onSelected: enabled
                         ? (selected) {
@@ -609,7 +622,7 @@ class SourceTile extends StatelessWidget {
                   ),
                   if (!source.builtIn)
                     IconButton(
-                      tooltip: '删除源',
+                      tooltip: 'Remove Source',
                       icon: const Icon(Icons.delete_outline),
                       onPressed: () => state.removeSource(source.id),
                     ),

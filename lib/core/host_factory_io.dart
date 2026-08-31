@@ -111,9 +111,10 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
   }
 
   void _check(Uri uri, SourcePolicy policy, {required bool capability}) {
-    if (!capability) throw UnsupportedError('该源没有请求此能力');
+    if (!capability)
+      throw UnsupportedError('Source does not request this capability');
     if (!policy.permits(uri)) {
-      throw StateError('源权限拒绝访问 ${uri.host}');
+      throw StateError('Source permission denied for ${uri.host}');
     }
   }
 
@@ -214,10 +215,11 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
       }
       await response.stream.drain<void>();
       final location = response.headers['location'];
-      if (location == null) throw HttpException('重定向缺少 Location', uri: uri);
+      if (location == null)
+        throw HttpException('Redirect missing Location', uri: uri);
       uri = uri.resolve(location);
     }
-    throw HttpException('重定向次数过多', uri: uri);
+    throw HttpException('Too many redirects', uri: uri);
   }
 
   @override
@@ -225,7 +227,9 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
     final uri = Uri.parse(url);
     _check(uri, policy, capability: policy.allowBrowser);
     if (!_hasHeadlessWebView) {
-      throw UnsupportedError('Linux/Windows 当前没有隐藏 WebView 实现');
+      throw UnsupportedError(
+        'Headless WebView is not implemented on Linux/Windows',
+      );
     }
 
     await _webViews.acquire();
@@ -330,7 +334,7 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
   }
 
   InAppWebViewController _controller(String tabId) =>
-      _controllers[tabId] ?? (throw StateError('浏览器标签页不存在'));
+      _controllers[tabId] ?? (throw StateError('Browser tab does not exist'));
 
   @override
   Future<void> browserWaitFor(String tabId, String selector) async {
@@ -348,7 +352,7 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
     _setTabState(tabId, state: 'wait-timeout');
-    throw TimeoutException('等待选择器超时: $selector');
+    throw TimeoutException('Waiting for selector timed out: $selector');
   }
 
   @override
@@ -367,7 +371,9 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
     _setTabState(tabId, state: 'wait-timeout');
-    throw TimeoutException('等待下载地址跳转超时: $previousUrl');
+    throw TimeoutException(
+      'Waiting for download URL redirect timed out: $previousUrl',
+    );
   }
 
   @override
@@ -509,7 +515,9 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
     return BrowserTabViewHandle(
       headlessWebView: headless?.isRunning() == true ? headless : null,
       keepAlive: keepAlive,
-      policy: _tabPolicies[tabId] ?? (throw StateError('浏览器标签页权限策略不存在')),
+      policy:
+          _tabPolicies[tabId] ??
+          (throw StateError('Browser tab policy does not exist')),
     );
   }
 
@@ -620,7 +628,10 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         await response.stream.drain<void>();
-        throw HttpException('下载失败 HTTP ${response.statusCode}', uri: uri);
+        throw HttpException(
+          'Download failed HTTP ${response.statusCode}',
+          uri: uri,
+        );
       }
       if (session.canceled) throw const DownloadCancelledException();
 
@@ -639,7 +650,10 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
         );
         if (response.statusCode < 200 || response.statusCode >= 300) {
           await response.stream.drain<void>();
-          throw HttpException('下载失败 HTTP ${response.statusCode}', uri: uri);
+          throw HttpException(
+            'Download failed HTTP ${response.statusCode}',
+            uri: uri,
+          );
         }
       }
 
@@ -671,11 +685,14 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
       if (session.canceled) throw const DownloadCancelledException();
       await sink.close();
       if (total != null && received != total) {
-        throw HttpException('下载内容不完整：$received/$total', uri: uri);
+        throw HttpException('Incomplete download: $received/$total', uri: uri);
       }
       await directory.create(recursive: true);
       if (!await partial.exists()) {
-        throw FileSystemException('下载临时文件不存在', partial.path);
+        throw FileSystemException(
+          'Download temporary file does not exist',
+          partial.path,
+        );
       }
       if (await destination.exists()) await destination.delete();
       await partial.rename(destination.path);
@@ -699,7 +716,7 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
   @override
   Future<void> pauseDownload(String downloadId) async {
     final session = _downloadSessions[downloadId];
-    if (session == null) throw StateError('下载任务不存在');
+    if (session == null) throw StateError('Download task does not exist');
     session.paused = true;
     session.subscription?.pause();
   }
@@ -707,7 +724,7 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
   @override
   Future<void> resumeDownload(String downloadId) async {
     final session = _downloadSessions[downloadId];
-    if (session == null) throw StateError('下载任务不存在');
+    if (session == null) throw StateError('Download task does not exist');
     session.paused = false;
     session.subscription?.resume();
   }
@@ -755,12 +772,17 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
     bool userInitiated = false,
   }) async {
     if (!policy.permitsInstall(userInitiated: userInitiated)) {
-      throw StateError('源未声明安装权限');
+      throw StateError('Source does not declare install permission');
     }
-    if (!supportsInstall) throw UnsupportedError('当前平台不支持 APK 安装');
+    if (!supportsInstall)
+      throw UnsupportedError(
+        'APK installation is not supported on the current platform',
+      );
     if (_installMethod == InstallMethod.shizuku) {
       if (!userInitiated) {
-        throw StateError('Shizuku 安装必须由用户点击安装按钮发起');
+        throw StateError(
+          'Shizuku installation must be initiated by user clicking the install button',
+        );
       }
       final status = await shizukuStatus();
       if (status != ShizukuStatus.authorized) {
@@ -778,7 +800,7 @@ class NativeHostApi implements SourceHostApi, SourceHostConcurrencyApi {
             }) ??
             false;
       } on PlatformException catch (error) {
-        throw StateError(error.message ?? 'Shizuku 安装失败');
+        throw StateError(error.message ?? 'Shizuku installation failed');
       }
     }
     final result = await OpenFilex.open(
@@ -881,9 +903,12 @@ ShizukuStatus _parseShizukuStatus(String? value) => switch (value) {
 
 String _shizukuStatusMessage(ShizukuStatus status) => switch (status) {
   ShizukuStatus.authorized => '',
-  ShizukuStatus.denied => 'Shizuku 未授予 APK Mesh 权限，请在设置中重新授权',
-  ShizukuStatus.unavailable => '未检测到正在运行的 Shizuku，请先启动服务',
-  ShizukuStatus.unsupported => '当前平台不支持 Shizuku 安装',
+  ShizukuStatus.denied =>
+    'Shizuku has not granted APK Mesh permission; please re-authorize in settings',
+  ShizukuStatus.unavailable =>
+    'No running Shizuku detected; please start the service first',
+  ShizukuStatus.unsupported =>
+    'Shizuku installation is not supported on the current platform',
 };
 
 String? _platformString(dynamic value) => value is String ? value : null;

@@ -239,11 +239,11 @@ async function progress(requestId, index, download, error) {
 }
 
 const CATALOG_TABS = [
-  {id: `${ORIGIN}/android/latest-updates`, name: '最近更新', paged: false},
-  {id: `${ORIGIN}/android/games`, name: '游戏', paged: false},
-  {id: `${ORIGIN}/android/tools`, name: '工具', paged: false},
-  {id: `${ORIGIN}/android/communication`, name: '通讯', paged: false},
-  {id: `${ORIGIN}/android/productivity`, name: '效率', paged: false},
+  {id: `${ORIGIN}/android/latest-updates`, name: 'Recently updated', paged: false},
+  {id: `${ORIGIN}/android/games`, name: 'Games', paged: false},
+  {id: `${ORIGIN}/android/tools`, name: 'Tools', paged: false},
+  {id: `${ORIGIN}/android/communication`, name: 'Communication', paged: false},
+  {id: `${ORIGIN}/android/productivity`, name: 'Productivity', paged: false},
 ];
 
 globalThis.source = {
@@ -253,7 +253,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 Uptodown 公开页面的 Android 搜索、目录、详情和 APK 下载项。',
+    description: 'Reads Android search, catalog, details and APK download items from the Uptodown public page.',
     packageLookup: false,
     permissions: {
       network: ['en.uptodown.com', '*.en.uptodown.com', 'dw.uptodown.com'],
@@ -262,8 +262,8 @@ globalThis.source = {
       install: false,
     },
     debugProjects: [
-      {id: 'search-keyword', name: '搜索关键词', description: '检查 Uptodown 搜索与分页结果。', inputLabel: '关键词', placeholder: '例如 minecraft', defaultInput: 'minecraft'},
-      {id: 'app-details', name: '获取应用详情', description: '读取元数据、截图和公开 APK 下载链接。', inputLabel: '详情 URL', placeholder: '粘贴 *.en.uptodown.com/android URL', defaultInput: 'https://f-droid.en.uptodown.com/android'},
+      {id: 'search-keyword', name: 'Search keyword', description: 'Checks Uptodown search and pagination results.', inputLabel: 'Keyword', placeholder: 'For example minecraft', defaultInput: 'minecraft'},
+      {id: 'app-details', name: 'Read app details', description: 'Reads metadata, screenshots and public APK download links.', inputLabel: 'Detail URL', placeholder: 'Paste *.en.uptodown.com/android URL', defaultInput: 'https://f-droid.en.uptodown.com/android'},
     ],
   },
 
@@ -273,7 +273,7 @@ globalThis.source = {
 
   async catalogPage(tabId, page = 1) {
     const tab = CATALOG_TABS.find((item) => item.id === tabId);
-    if (!tab) throw new TypeError('无效的 Uptodown 目录标签');
+    if (!tab) throw new TypeError('Invalid Uptodown catalog tab');
     if (Math.max(1, Number(page) || 1) > 1) return {apps: [], hasMore: false};
     const html = await fetchPage(tab.id);
     return {apps: html === null ? [] : parseCards(html), hasMore: false};
@@ -281,13 +281,13 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const value = cleanText(query);
-    if (value.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (value.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     return searchPage(value, page);
   },
 
   async detailsMetadata(url) {
     const id = absoluteUrl(url);
-    if (!isDetailUrl(id)) throw new TypeError('无效的 Uptodown Android 详情地址');
+    if (!isDetailUrl(id)) throw new TypeError('Invalid Uptodown Android detail URL');
     return parseDetails(await fetchText(id), id);
   },
 
@@ -316,12 +316,12 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const apps = await this.search(value, 1);
-      return {title: '搜索完成', summary: `返回 ${apps.length} 条结果`, data: apps};
+      return {title: 'Search completed', summary: `Returned ${apps.length} results`, data: apps};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
-      return {title: '详情读取完成', summary: `${app.name}：${app.downloads.length} 个 APK 下载项`, data: app};
+      return {title: 'Details read', summary: `${app.name}: ${app.downloads.length} APK downloads`, data: app};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

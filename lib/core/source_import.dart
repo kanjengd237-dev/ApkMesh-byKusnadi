@@ -18,7 +18,7 @@ List<SourceScriptFile> sourceScriptsFromBytes(
   final extension = fileName.split('.').last.toLowerCase();
   final isZip = extension == 'zip' || _looksLikeZip(bytes);
   if (!isZip && extension != 'js') {
-    throw const FormatException('只支持 .js 或 .zip 源文件');
+    throw const FormatException('Only .js or .zip source files are supported');
   }
   if (isZip) return _scriptsFromZip(bytes);
   try {
@@ -47,19 +47,19 @@ List<SourceScriptFile> _scriptsFromZip(Uint8List bytes) {
       })
       .toList();
   if (scripts.isEmpty) {
-    throw const FormatException('ZIP 中没有 JS 源脚本');
+    throw const FormatException('No JS source scripts found in ZIP');
   }
   return scripts;
 }
 
 String _decodeScript(dynamic content) {
   if (content is! List<int>) {
-    throw const FormatException('无法读取 JS 源脚本');
+    throw const FormatException('Cannot read JS source script');
   }
   try {
     return utf8.decode(content);
   } on FormatException {
-    throw const FormatException('源脚本必须使用 UTF-8 编码');
+    throw const FormatException('Source script must be UTF-8 encoded');
   }
 }
 

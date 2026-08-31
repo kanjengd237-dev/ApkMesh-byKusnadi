@@ -1,9 +1,9 @@
 /** APKMODY public-page source for APK Mesh's QuickJS contract. */
 const ORIGIN = 'https://apkmody.com';
 const CATALOG_TABS = [
-  {id: 'featured', name: '推荐', paged: false},
-  {id: 'games', name: '游戏', paged: true},
-  {id: 'apps', name: '应用', paged: true},
+  {id: 'featured', name: 'Featured', paged: false},
+  {id: 'games', name: 'Games', paged: true},
+  {id: 'apps', name: 'Apps', paged: true},
 ];
 
 function decodeHtml(value) {
@@ -167,7 +167,7 @@ async function loadListing(url) {
         version: extractVersion(firstValue(item.version, item.meta, text)),
         size: extractSize(firstValue(item.meta, text)),
         updatedAt: '',
-        category: /\/games\//i.test(id) ? '游戏' : '应用',
+        category: /\/games\//i.test(id) ? 'Games' : 'Apps',
         iconUrl: imageValue(item, url),
       };
     }).filter(Boolean);
@@ -306,7 +306,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '通过受隔离的浏览器读取 APKMODY 公开页面、应用详情和下载项。',
+    description: 'Reads APKMODY public pages, app details and download items via an isolated browser.',
     permissions: {
       network: ['*'],
       browser: true,
@@ -316,18 +316,18 @@ globalThis.source = {
     debugProjects: [
       {
         id: 'search-keyword',
-        name: '搜索关键词',
-        description: '在 APKMODY 公开搜索页检查应用与游戏结果。',
-        inputLabel: '关键词',
-        placeholder: '例如 minecraft',
+        name: 'Search keyword',
+        description: 'Checks app and game results on the APKMODY public search page.',
+        inputLabel: 'Keyword',
+        placeholder: 'For example minecraft',
         defaultInput: 'minecraft',
       },
       {
         id: 'app-details',
-        name: '获取应用详情',
-        description: '读取 APKMODY 详情页元数据、截图和公开下载链接。',
-        inputLabel: '应用详情 URL',
-        placeholder: '粘贴 APKMODY 应用或游戏 URL',
+        name: 'Read app details',
+        description: 'Reads APKMODY detail page metadata, screenshots and public download links.',
+        inputLabel: 'Detail URL',
+        placeholder: 'Paste APKMODY app or game URL',
         defaultInput: 'https://apkmody.com/games/minecraft-education',
       },
     ],
@@ -338,7 +338,7 @@ globalThis.source = {
   },
 
   async catalogPage(tabId, page = 1) {
-    if (!CATALOG_TABS.some((tab) => tab.id === tabId)) throw new TypeError('无效的目录标签');
+    if (!CATALOG_TABS.some((tab) => tab.id === tabId)) throw new TypeError('Invalid catalog tab');
     const number = Math.max(1, Number(page) || 1);
     if (tabId === 'featured' && number > 1) return {apps: [], hasMore: false};
     const result = await loadListing(listingUrl(tabId, number));
@@ -347,13 +347,13 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const normalized = cleanText(query);
-    if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (normalized.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     return (await loadListing(searchUrl(normalized, page))).apps;
   },
 
   async detailsMetadata(value) {
     const url = absoluteUrl(value);
-    if (!isAppUrl(url)) throw new TypeError('无效的 APKMODY 详情地址');
+    if (!isAppUrl(url)) throw new TypeError('Invalid APKMODY detail URL');
     const tab = await apkmesh.browser.open(url);
     try {
       const page = await readPage(tab, 'main, article');
@@ -435,12 +435,12 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const results = await this.search(value);
-      return {title: '搜索完成', summary: `关键词“${value}”返回 ${results.length} 条结果`, data: results};
+      return {title: 'Search completed', summary: `Keyword "${value}" returned ${results.length} results`, data: results};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
-      return {title: '详情读取完成', summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`, data: app};
+      return {title: 'Details read', summary: `Read ${app.name} with ${app.downloads.length} downloads`, data: app};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

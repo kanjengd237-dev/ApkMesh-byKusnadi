@@ -28,7 +28,7 @@ class AdjustableSemaphore {
   }
 
   void release() {
-    if (_active == 0) throw StateError('没有可释放的并发许可');
+    if (_active == 0) throw StateError('No permits to release');
     _active -= 1;
     _drain();
   }
@@ -50,7 +50,8 @@ class AdjustableSemaphore {
   }
 
   static int _validate(int value) {
-    if (value < 1) throw ArgumentError.value(value, 'limit', '必须大于 0');
+    if (value < 1)
+      throw ArgumentError.value(value, 'limit', 'must be greater than 0');
     return value;
   }
 }

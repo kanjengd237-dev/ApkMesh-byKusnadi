@@ -9,9 +9,9 @@ enum TranslationProvider { microsoft, google, freeModel }
 
 extension TranslationProviderLabel on TranslationProvider {
   String get label => switch (this) {
-    TranslationProvider.microsoft => '微软 Edge/Bing',
+    TranslationProvider.microsoft => 'Microsoft Edge/Bing',
     TranslationProvider.google => 'Google Translate',
-    TranslationProvider.freeModel => '免费翻译服务',
+    TranslationProvider.freeModel => 'Free translation service',
   };
 }
 
@@ -90,7 +90,9 @@ class TranslationService {
         ),
       };
       if (result.length != batch.length) {
-        throw const FormatException('翻译接口返回数量与请求不一致');
+        throw const FormatException(
+          'Translation API returned a different number of results than requested',
+        );
       }
       for (var index = 0; index < batch.length; index++) {
         translated[batch[index].index] += result[index];
@@ -157,7 +159,9 @@ class TranslationService {
     _checkResponse(response, 'Microsoft');
     final decoded = _decodeJson(response.body);
     if (decoded is! List || decoded.length != texts.length) {
-      throw const FormatException('Microsoft 翻译返回格式无效');
+      throw const FormatException(
+        'Invalid Microsoft translation response format',
+      );
     }
     return decoded
         .map((item) {
@@ -288,13 +292,15 @@ class TranslationService {
     if (response.statusCode == 401) {
       throw const _UnauthorizedTranslationException();
     }
-    _checkResponse(response, '免费翻译服务');
+    _checkResponse(response, 'Free translation service');
     final decoded = _decodeJson(response.body);
     final rawSegments = decoded is Map
         ? (decoded['result'] is Map ? decoded['result']['segments'] : null)
         : null;
     if (rawSegments is! List) {
-      throw const FormatException('免费翻译服务返回格式无效');
+      throw const FormatException(
+        'Invalid free translation service response format',
+      );
     }
     final values = <String>[];
     final byId = <String, String>{};
@@ -332,11 +338,13 @@ class TranslationService {
     final response = await _client
         .get(uri, headers: {'Accept-Language': language})
         .timeout(const Duration(seconds: 15));
-    _checkResponse(response, '免费翻译服务 Token');
+    _checkResponse(response, 'Free translation service Token');
     final decoded = _decodeJson(response.body);
     final token = decoded is Map ? decoded['data']?.toString() : null;
     if (token == null || token.isEmpty) {
-      throw const FormatException('免费翻译服务没有返回 Token');
+      throw const FormatException(
+        'Free translation service did not return a token',
+      );
     }
     _freeModelJwt = token;
     _freeModelTokenExpiresAt =
@@ -363,7 +371,9 @@ class TranslationService {
     try {
       return jsonDecode(body);
     } catch (error) {
-      throw FormatException('翻译接口返回不是有效 JSON：$error');
+      throw FormatException(
+        'Translation API did not return valid JSON: $error',
+      );
     }
   }
 
@@ -415,16 +425,16 @@ String translationLanguageCode(String language, TranslationProvider provider) {
 }
 
 String translationLanguageLabel(String language) => switch (language) {
-  'system' => '跟随系统',
-  'zh-CN' => '中文简体',
-  'zh-TW' => '中文繁体',
-  'en' => '英语',
-  'ja' => '日语',
-  'ko' => '韩语',
-  'es' => '西班牙语',
-  'fr' => '法语',
-  'de' => '德语',
-  'pt' => '葡萄牙语',
+  'system' => 'System default',
+  'zh-CN' => 'Simplified Chinese',
+  'zh-TW' => 'Traditional Chinese',
+  'en' => 'English',
+  'ja' => 'Japanese',
+  'ko' => 'Korean',
+  'es' => 'Spanish',
+  'fr' => 'French',
+  'de' => 'German',
+  'pt' => 'Portuguese',
   _ => language,
 };
 

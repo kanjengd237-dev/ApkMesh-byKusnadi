@@ -60,7 +60,7 @@ class _SourceDebugTestSheetState extends State<SourceDebugTestSheet> {
         _status = _SourceDebugTestStatus.idle;
         _result = null;
         _startedAt = null;
-        _error = '请输入${project.inputLabel}';
+        _error = 'Please enter ${project.inputLabel}';
       });
       return;
     }
@@ -97,26 +97,26 @@ class _SourceDebugTestSheetState extends State<SourceDebugTestSheet> {
       _SourceDebugTestStatus.idle => (
         icon: Icons.play_circle_outline,
         color: null,
-        title: '等待测试',
-        detail: _error ?? '输入${project.inputLabel}后开始测试',
+        title: 'Waiting for test',
+        detail: _error ?? 'Enter ${project.inputLabel} to start testing',
       ),
       _SourceDebugTestStatus.running => (
         icon: Icons.sync,
         color: Theme.of(context).colorScheme.primary,
-        title: '正在测试',
-        detail: '测试进行中，状态会实时更新',
+        title: 'Testing',
+        detail: 'Test in progress, status updates in real time',
       ),
       _SourceDebugTestStatus.succeeded => (
         icon: Icons.check_circle_outline,
         color: Colors.green,
-        title: '测试成功',
-        detail: _result?.summary ?? '测试已完成',
+        title: 'Test succeeded',
+        detail: _result?.summary ?? 'Test completed',
       ),
       _SourceDebugTestStatus.failed => (
         icon: Icons.error_outline,
         color: errorColor,
-        title: '测试失败',
-        detail: _error ?? '测试未完成',
+        title: 'Test failed',
+        detail: _error ?? 'Test not completed',
       ),
     };
   }
@@ -154,19 +154,21 @@ class _SourceDebugTestSheetState extends State<SourceDebugTestSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('实时状态', style: Theme.of(context).textTheme.titleMedium),
+        Text('Live Status', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.swap_horiz_outlined),
-          title: Text('请求 ${requests.length} 个'),
-          subtitle: Text('进行中 $pending · 已完成 $completed · 失败 $failed'),
+          title: Text('${requests.length} requests'),
+          subtitle: Text(
+            'In progress $pending · Completed $completed · Failed $failed',
+          ),
         ),
         if (state.host.browserTabs.isNotEmpty)
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.web_outlined),
-            title: Text('WebView ${state.host.browserTabs.length} 个'),
+            title: Text('${state.host.browserTabs.length} WebViews'),
             subtitle: Text(
               state.host.browserTabs.last.url,
               maxLines: 2,
@@ -175,7 +177,7 @@ class _SourceDebugTestSheetState extends State<SourceDebugTestSheet> {
           ),
         if (logs.isNotEmpty) ...[
           const SizedBox(height: 4),
-          Text('最近事件', style: Theme.of(context).textTheme.titleSmall),
+          Text('Recent Events', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 4),
           ...logs.map(
             (entry) => ListTile(
@@ -205,7 +207,7 @@ class _SourceDebugTestSheetState extends State<SourceDebugTestSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        Text('测试结果', style: Theme.of(context).textTheme.titleMedium),
+        Text('Test Results', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
         ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12),
@@ -254,12 +256,12 @@ class _SourceDebugTestSheetState extends State<SourceDebugTestSheet> {
                       ),
                     ),
                     IconButton(
-                      tooltip: '重新测试',
+                      tooltip: 'Re-test',
                       onPressed: _running ? null : _runProject,
                       icon: const Icon(Icons.refresh),
                     ),
                     IconButton(
-                      tooltip: '关闭',
+                      tooltip: 'Close',
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close),
                     ),
@@ -294,7 +296,7 @@ class _SourceDebugTestSheetState extends State<SourceDebugTestSheet> {
                         labelText: project.inputLabel,
                         hintText: project.placeholder,
                         suffixIcon: IconButton(
-                          tooltip: '运行测试',
+                          tooltip: 'Run Test',
                           onPressed: _running ? null : _runProject,
                           icon: _running
                               ? const SizedBox(

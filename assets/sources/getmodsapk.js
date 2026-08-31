@@ -7,8 +7,8 @@ const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
 };
 const CATALOG_TABS = [
-  {id: 'games', name: '游戏', path: '/games/'},
-  {id: 'apps', name: '应用', path: '/apps/'},
+  {id: 'games', name: 'Games', path: '/games/'},
+  {id: 'apps', name: 'Apps', path: '/apps/'},
 ];
 
 function decodeHtml(value) {
@@ -235,12 +235,12 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 GetModsAPK 的公开搜索、目录、应用详情、截图和 APK 下载链接。',
+    description: 'Fetch GetModsAPK public search, catalog, app details, screenshots, and APK download links.',
     permissions: {network: ['getmodsapk.com', 'files.5modapk.com'], browser: false, download: true, install: false},
     debugProjects: [
-      {id: 'search-keyword', name: '搜索关键词', description: '读取搜索结果及分页。', inputLabel: '关键词', placeholder: '例如 minecraft', defaultInput: 'minecraft'},
-      {id: 'app-details', name: '获取应用详情', description: '读取元数据、截图和最终下载链接。', inputLabel: '详情 URL', placeholder: '粘贴 GetModsAPK 详情地址', defaultInput: 'https://getmodsapk.com/5472-youtube-premium-free-apk-mod/'},
-      {id: 'catalog', name: '检查目录', description: '读取游戏和应用目录首页。', inputLabel: '标签数量上限', placeholder: '0 表示全部', defaultInput: '0'},
+      {id: 'search-keyword', name: 'Search Keywords', description: 'Fetch search results and pagination.', inputLabel: 'Keyword', placeholder: 'e.g. minecraft', defaultInput: 'minecraft'},
+      {id: 'app-details', name: 'Get App Details', description: 'Fetch metadata, screenshots, and final download links.', inputLabel: 'App details URL', placeholder: 'Paste GetModsAPK details URL', defaultInput: 'https://getmodsapk.com/5472-youtube-premium-free-apk-mod/'},
+      {id: 'catalog', name: 'Check Catalog', description: 'Fetch game and app catalog home pages.', inputLabel: 'Tab limit', placeholder: '0 for all', defaultInput: '0'},
     ],
   },
 
@@ -250,7 +250,7 @@ globalThis.source = {
 
   async catalogPage(tabId, page = 1) {
     const tab = CATALOG_TABS.find((item) => item.id === tabId);
-    if (!tab) throw new TypeError('无效的 GetModsAPK 目录标签');
+    if (!tab) throw new TypeError('Invalid GetModsAPK catalog tab');
     const html = await fetchPage(catalogUrl(tab.path, page));
     if (html === null) return {apps: [], hasMore: false};
     return {apps: parseCards(html), hasMore: hasNextPage(html, page)};
@@ -258,14 +258,14 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const value = cleanText(query);
-    if (value.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (value.length < 2) throw new TypeError('Search keyword must be at least 2 characters');
     const html = await fetchPage(searchUrl(value, page));
     return html === null ? [] : parseCards(html);
   },
 
   async detailsMetadata(idOrUrl) {
     const url = absoluteUrl(idOrUrl);
-    if (!isDetailUrl(url)) throw new TypeError('无效的 GetModsAPK 详情地址');
+    if (!isDetailUrl(url)) throw new TypeError('Invalid GetModsAPK details URL');
     return parseDetails(await fetchText(url), url);
   },
 
@@ -275,7 +275,7 @@ globalThis.source = {
       const candidate = candidates[index];
       try {
         const pageUrl = absoluteUrl(candidate && candidate.url);
-        if (!/^https:\/\/(?:www\.)?getmodsapk\.com\/[^/?#]+\/download\/?$/i.test(pageUrl)) throw new TypeError('无效的 GetModsAPK 下载页地址');
+        if (!/^https:\/\/(?:www\.)?getmodsapk\.com\/[^/?#]+\/download\/?$/i.test(pageUrl)) throw new TypeError('Invalid GetModsAPK download page URL');
         const html = await fetchText(pageUrl, pageUrl.replace(/\/download\/?$/, '/'));
         const choices = parseDownloadChoices(html, pageUrl);
         const downloads = [];
@@ -285,7 +285,7 @@ globalThis.source = {
           if (download) downloads.push(download);
         }
         const unique = uniqueBy(downloads, 'url');
-        if (!unique.length) throw new Error('GetModsAPK 下载页未返回可用的 APK 直链');
+        if (!unique.length) throw new Error('GetModsAPK download page did not return a usable APK direct link');
         resolved.push(...unique);
         await reportProgress(requestId, index, unique, null);
       } catch (error) {
@@ -306,11 +306,11 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const results = await this.search(value, 1);
-      return {title: '搜索完成', summary: `返回 ${results.length} 条结果`, data: results};
+      return {title: 'Search Complete', summary: `Returned ${results.length} results`, data: results};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
-      return {title: '详情读取完成', summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`, data: app};
+      return {title: 'Details Fetched', summary: `Fetched ${app.name}; ${app.downloads.length} download items`, data: app};
     }
     if (projectId === 'catalog') {
       const catalog = await this.catalog();
@@ -320,8 +320,8 @@ globalThis.source = {
         const result = await this.catalogPage(tab.id, 1);
         tabs.push({id: tab.id, apps: result.apps.length, hasMore: result.hasMore});
       }
-      return {title: '目录检查完成', summary: `检查 ${tabs.length} 个标签`, data: {tabs}};
+      return {title: 'Catalog Checked', summary: `Checked ${tabs.length} tabs`, data: {tabs}};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

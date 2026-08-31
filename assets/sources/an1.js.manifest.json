@@ -3,7 +3,7 @@
   "name": "AN1",
   "version": "1.0.0",
   "homepage": "https://an1.com/",
-  "description": "读取 AN1 的公开搜索、目录、应用详情、截图和 APK 下载链接。",
+  "description": "Reads AN1 public search, catalog, app details, screenshots and APK download links.",
   "permissions": {
     "network": ["an1.com", "files.an1.net", "files.an1.co"],
     "browser": false,
@@ -18,26 +18,26 @@
   "debugProjects": [
     {
       "id": "search-keyword",
-      "name": "搜索关键词",
-      "description": "读取 AN1 搜索结果及分页。",
-      "inputLabel": "关键词",
-      "placeholder": "例如 minecraft",
+      "name": "Search keyword",
+      "description": "Reads AN1 search results and pagination.",
+      "inputLabel": "Keyword",
+      "placeholder": "For example minecraft",
       "defaultInput": "minecraft"
     },
     {
       "id": "app-details",
-      "name": "获取应用详情",
-      "description": "读取元数据、截图和最终 APK 直链。",
-      "inputLabel": "详情 URL",
-      "placeholder": "粘贴 AN1 详情地址",
+      "name": "Read app details",
+      "description": "Reads metadata, screenshots and the final APK direct link.",
+      "inputLabel": "Detail URL",
+      "placeholder": "Paste AN1 detail URL",
       "defaultInput": "https://an1.com/4718-war-machines.html"
     },
     {
       "id": "catalog",
-      "name": "检查目录",
-      "description": "读取游戏、应用和 MOD 目录首页。",
-      "inputLabel": "标签数量上限",
-      "placeholder": "0 表示全部",
+      "name": "Inspect catalog",
+      "description": "Reads the game, app and MOD catalog home pages.",
+      "inputLabel": "Tab count limit",
+      "placeholder": "0 for all",
       "defaultInput": "0"
     }
   ]

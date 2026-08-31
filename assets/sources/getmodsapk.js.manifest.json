@@ -3,7 +3,7 @@
   "name": "GetModsAPK",
   "version": "1.0.0",
   "homepage": "https://getmodsapk.com/",
-  "description": "读取 GetModsAPK 的公开搜索、目录、应用详情、截图和 APK 下载链接。",
+  "description": "Reads GetModsAPK public search, catalog, app details, screenshots and APK download links.",
   "permissions": {
     "network": ["getmodsapk.com", "files.5modapk.com"],
     "browser": false,
@@ -12,8 +12,8 @@
   },
   "capabilities": {"catalog": true, "detailProgress": true, "packageLookup": false},
   "debugProjects": [
-    {"id": "search-keyword", "name": "搜索关键词", "description": "读取搜索结果及分页。", "inputLabel": "关键词", "placeholder": "例如 minecraft", "defaultInput": "minecraft"},
-    {"id": "app-details", "name": "获取应用详情", "description": "读取元数据、截图和最终下载链接。", "inputLabel": "详情 URL", "placeholder": "粘贴 GetModsAPK 详情地址", "defaultInput": "https://getmodsapk.com/5472-youtube-premium-free-apk-mod/"},
-    {"id": "catalog", "name": "检查目录", "description": "读取游戏和应用目录首页。", "inputLabel": "标签数量上限", "placeholder": "0 表示全部", "defaultInput": "0"}
+    {"id": "search-keyword", "name": "Search keyword", "description": "Reads search results and pagination.", "inputLabel": "Keyword", "placeholder": "For example minecraft", "defaultInput": "minecraft"},
+    {"id": "app-details", "name": "Read app details", "description": "Reads metadata, screenshots and the final download link.", "inputLabel": "Detail URL", "placeholder": "Paste GetModsAPK detail URL", "defaultInput": "https://getmodsapk.com/5472-youtube-premium-free-apk-mod/"},
+    {"id": "catalog", "name": "Inspect catalog", "description": "Reads the game and app catalog home pages.", "inputLabel": "Tab count limit", "placeholder": "0 for all", "defaultInput": "0"}
   ]
 }

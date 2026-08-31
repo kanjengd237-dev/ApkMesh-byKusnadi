@@ -218,8 +218,8 @@ async function progress(requestId, index, downloads, error) {
 }
 
 const CATALOG_TABS = [
-  {id: `${ORIGIN}/game`, name: '游戏', description: 'APKPure Lite 热门游戏', paged: false, category: '游戏'},
-  {id: `${ORIGIN}/app`, name: '应用', description: 'APKPure Lite 热门应用', paged: false, category: '应用'},
+  {id: `${ORIGIN}/game`, name: 'Games', description: 'APKPure Lite popular games', paged: false, category: 'Games'},
+  {id: `${ORIGIN}/app`, name: 'Apps', description: 'APKPure Lite popular apps', paged: false, category: 'Apps'},
 ];
 
 globalThis.source = {
@@ -229,7 +229,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '使用 APKPure 官方 Lite 站点读取搜索、详情、截图和下载项。',
+    description: 'Reads search, details, screenshots and download items from the official APKPure Lite site.',
     packageLookup: true,
     permissions: {
       network: ['apkpure.net', 'd.apkpure.net'],
@@ -238,8 +238,8 @@ globalThis.source = {
       install: false,
     },
     debugProjects: [
-      {id: 'search-keyword', name: '搜索关键词', description: '通过 APKPure Lite 搜索 Android 应用。', inputLabel: '关键词', placeholder: '例如 minecraft', defaultInput: 'minecraft'},
-      {id: 'app-details', name: '获取应用详情', description: '读取 APKPure Lite 详情、截图和下载链接。', inputLabel: '详情 URL', placeholder: '粘贴 apkpure.net 详情 URL', defaultInput: 'https://apkpure.net/minecraft-trial-game/com.mojang.minecrafttrialpe'},
+      {id: 'search-keyword', name: 'Search keyword', description: 'Search Android apps via APKPure Lite.', inputLabel: 'Keyword', placeholder: 'For example minecraft', defaultInput: 'minecraft'},
+      {id: 'app-details', name: 'Read app details', description: 'Read APKPure Lite details, screenshots and download links.', inputLabel: 'Detail URL', placeholder: 'Paste apkpure.net detail URL', defaultInput: 'https://apkpure.net/minecraft-trial-game/com.mojang.minecrafttrialpe'},
     ],
   },
 
@@ -249,7 +249,7 @@ globalThis.source = {
 
   async catalogPage(tabId, page = 1) {
     const tab = CATALOG_TABS.find((item) => item.id === tabId);
-    if (!tab) throw new TypeError('无效的 APKPure 目录标签');
+    if (!tab) throw new TypeError('Invalid APKPure catalog tab');
     if (Math.max(1, Number(page) || 1) > 1) return {apps: [], hasMore: false};
     const html = await fetchPage(tab.id);
     return {apps: html === null ? [] : parseCatalogResults(html, tab.category), hasMore: false};
@@ -257,7 +257,7 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const value = cleanText(query);
-    if (value.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (value.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     if (Math.max(1, Number(page) || 1) > 1) return [];
     const html = await fetchPage(`${ORIGIN}/search?q=${encodeURIComponent(value)}`);
     return html === null ? [] : parseSearchResults(html);
@@ -274,7 +274,7 @@ globalThis.source = {
 
   async detailsMetadata(url) {
     const id = absoluteUrl(url);
-    if (!isDetailUrl(id)) throw new TypeError('无效的 APKPure Lite 详情地址');
+    if (!isDetailUrl(id)) throw new TypeError('Invalid APKPure Lite detail URL');
     return parseDetails(await fetchText(id), id);
   },
 
@@ -304,12 +304,12 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const apps = await this.search(value, 1);
-      return {title: '搜索完成', summary: `APKPure Lite 返回 ${apps.length} 条结果`, data: apps};
+      return {title: 'Search completed', summary: `APKPure Lite returned ${apps.length} results`, data: apps};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
-      return {title: '详情读取完成', summary: `${app.name}：${app.downloads.length} 个下载项`, data: app};
+      return {title: 'Details read', summary: `${app.name}: ${app.downloads.length} downloads`, data: app};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

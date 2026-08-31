@@ -451,7 +451,7 @@ class SourceDownload {
 String _requiredJsonString(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value is! String || value.isEmpty) {
-    throw FormatException('下载任务字段无效：$key');
+    throw FormatException('Invalid download task field: $key');
   }
   return value;
 }
@@ -465,7 +465,8 @@ int? _jsonInt(dynamic value) {
 
 DateTime _requiredJsonDateTime(Map<String, dynamic> json, String key) {
   final value = DateTime.tryParse((json[key] ?? '').toString());
-  if (value == null) throw FormatException('下载任务时间字段无效：$key');
+  if (value == null)
+    throw FormatException('Invalid download task time field: $key');
   return value;
 }
 
@@ -495,10 +496,11 @@ class DownloadPolicySnapshot {
   factory DownloadPolicySnapshot.fromJson(Map<String, dynamic> json) {
     final rawHosts = json['allowedHosts'];
     if (rawHosts is! List || rawHosts.any((host) => host is! String)) {
-      throw const FormatException('下载权限字段无效');
+      throw const FormatException('Invalid download permission field');
     }
     final hosts = rawHosts.cast<String>().where((host) => host.isNotEmpty);
-    if (hosts.isEmpty) throw const FormatException('下载权限主机为空');
+    if (hosts.isEmpty)
+      throw const FormatException('Download permission hosts are empty');
     return DownloadPolicySnapshot(
       allowedHosts: List<String>.unmodifiable(hosts),
       allowInstall: json['allowInstall'] == true,
@@ -510,7 +512,7 @@ class DownloadCancelledException implements Exception {
   const DownloadCancelledException();
 
   @override
-  String toString() => '下载已取消';
+  String toString() => 'Download cancelled';
 }
 
 enum DownloadStatus { downloading, paused, completed, failed, canceled }
@@ -583,13 +585,15 @@ class DownloadTask {
 
   factory DownloadTask.fromJson(Map<String, dynamic> json) {
     final rawFile = json['file'];
-    if (rawFile is! Map) throw const FormatException('下载任务文件字段无效');
+    if (rawFile is! Map)
+      throw const FormatException('Invalid download task file field');
     final statusName = json['status'];
     final status = DownloadStatus.values.cast<DownloadStatus?>().firstWhere(
       (value) => value?.name == statusName,
       orElse: () => null,
     );
-    if (status == null) throw const FormatException('下载任务状态无效');
+    if (status == null)
+      throw const FormatException('Invalid download task status');
     return DownloadTask(
       id: _requiredJsonString(json, 'id'),
       file: SourceDownload.fromJson(Map<String, dynamic>.from(rawFile)),

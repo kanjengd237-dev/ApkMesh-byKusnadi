@@ -131,27 +131,27 @@ class _ShellState extends State<Shell> {
       NavigationDestination(
         icon: Icon(Icons.home_outlined),
         selectedIcon: Icon(Icons.home),
-        label: '主页',
+        label: 'Home',
       ),
       NavigationDestination(
         icon: Icon(Icons.download_outlined),
         selectedIcon: Icon(Icons.download),
-        label: '下载',
+        label: 'Downloads',
       ),
       NavigationDestination(
         icon: Icon(Icons.bookmark_border),
         selectedIcon: Icon(Icons.bookmark),
-        label: '收藏',
+        label: 'Favorites',
       ),
       NavigationDestination(
         icon: Icon(Icons.hub_outlined),
         selectedIcon: Icon(Icons.hub),
-        label: '源管理',
+        label: 'Sources',
       ),
       NavigationDestination(
         icon: Icon(Icons.settings_outlined),
         selectedIcon: Icon(Icons.settings),
-        label: '设置',
+        label: 'Settings',
       ),
     ];
     final visibleSearchQuery = index == 0 ? submittedSearchQuery : null;
@@ -172,7 +172,7 @@ class _ShellState extends State<Shell> {
                 : null,
             leading: visibleSearchQuery != null
                 ? IconButton(
-                    tooltip: '返回主页',
+                    tooltip: 'Back to home',
                     onPressed: _returnHome,
                     icon: const Icon(Icons.arrow_back),
                   )
@@ -201,7 +201,7 @@ class _ShellState extends State<Shell> {
                         textInputAction: TextInputAction.search,
                         onSubmitted: (_) => _submitSearch(),
                         decoration: InputDecoration(
-                          hintText: '搜索应用名称或包名',
+                          hintText: 'Search app name or package name',
                           prefixIcon: const Icon(Icons.search, size: 20),
                           suffixIcon: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -215,7 +215,7 @@ class _ShellState extends State<Shell> {
                                       ),
                                     )
                                   : IconButton(
-                                      tooltip: '翻译为英文',
+                                      tooltip: 'Translate to English',
                                       onPressed: _translateSearch,
                                       icon: const Icon(
                                         Icons.translate_outlined,
@@ -223,7 +223,7 @@ class _ShellState extends State<Shell> {
                                       ),
                                     ),
                               IconButton(
-                                tooltip: '清空搜索',
+                                tooltip: 'Clear search',
                                 onPressed: searchController.clear,
                                 icon: const Icon(Icons.clear, size: 20),
                               ),
@@ -260,13 +260,13 @@ class _ShellState extends State<Shell> {
                   child: searchOpen
                       ? IconButton(
                           key: const ValueKey('close-search'),
-                          tooltip: '关闭搜索',
+                          tooltip: 'Close search',
                           onPressed: () => setState(() => searchOpen = false),
                           icon: const Icon(Icons.close),
                         )
                       : IconButton(
                           key: const ValueKey('open-search'),
-                          tooltip: '搜索',
+                          tooltip: 'Search',
                           onPressed: _openSearch,
                           icon: const Icon(Icons.search),
                         ),
@@ -274,13 +274,13 @@ class _ShellState extends State<Shell> {
               if (index == 0 && !searchOpen && pageJumpAvailable)
                 IconButton(
                   key: const ValueKey('jump-to-page'),
-                  tooltip: '跳转页码',
+                  tooltip: 'Jump to page',
                   onPressed: () => homeKey.currentState?.showPageJumpDialog(),
                   icon: const Icon(Icons.find_in_page_outlined),
                 ),
               if (kDebugMode)
                 IconButton(
-                  tooltip: '调试',
+                  tooltip: 'Debug',
                   onPressed: () => _showDebugSheet(context),
                   icon: const Icon(Icons.bug_report_outlined),
                 ),
@@ -297,27 +297,27 @@ class _ShellState extends State<Shell> {
                     NavigationRailDestination(
                       icon: Icon(Icons.home_outlined),
                       selectedIcon: Icon(Icons.home),
-                      label: Text('主页'),
+                      label: Text('Home'),
                     ),
                     NavigationRailDestination(
                       icon: Icon(Icons.download_outlined),
                       selectedIcon: Icon(Icons.download),
-                      label: Text('下载'),
+                      label: Text('Downloads'),
                     ),
                     NavigationRailDestination(
                       icon: Icon(Icons.bookmark_border),
                       selectedIcon: Icon(Icons.bookmark),
-                      label: Text('收藏'),
+                      label: Text('Favorites'),
                     ),
                     NavigationRailDestination(
                       icon: Icon(Icons.hub_outlined),
                       selectedIcon: Icon(Icons.hub),
-                      label: Text('源管理'),
+                      label: Text('Sources'),
                     ),
                     NavigationRailDestination(
                       icon: Icon(Icons.settings_outlined),
                       selectedIcon: Icon(Icons.settings),
-                      label: Text('设置'),
+                      label: Text('Settings'),
                     ),
                   ],
                 ),
@@ -385,7 +385,7 @@ class _ShellState extends State<Shell> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('翻译失败：$error')));
+        ).showSnackBar(SnackBar(content: Text('Translation failed: $error')));
       }
     } finally {
       if (mounted) setState(() => searchTranslationLoading = false);

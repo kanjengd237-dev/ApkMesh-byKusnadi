@@ -3,7 +3,7 @@
   "name": "LatestModAPKs",
   "version": "1.0.0",
   "homepage": "https://www.latestmodapks.com/",
-  "description": "通过受隔离的浏览器读取 LatestModAPKs 公开页面、详情、截图和下载项。",
+  "description": "Reads LatestModAPKs public pages, details, screenshots and download items via an isolated browser.",
   "permissions": {
     "network": ["*"],
     "browser": true,
@@ -18,18 +18,18 @@
   "debugProjects": [
     {
       "id": "search-keyword",
-      "name": "搜索关键词",
-      "description": "在 LatestModAPKs 公开搜索页检查应用与游戏结果。",
-      "inputLabel": "关键词",
-      "placeholder": "例如 minecraft",
+      "name": "Search keyword",
+      "description": "Checks app and game results on the LatestModAPKs public search page.",
+      "inputLabel": "Keyword",
+      "placeholder": "For example minecraft",
       "defaultInput": "minecraft"
     },
     {
       "id": "app-details",
-      "name": "获取应用详情",
-      "description": "读取 LatestModAPKs 详情页元数据、截图和公开下载链接。",
-      "inputLabel": "应用详情 URL",
-      "placeholder": "粘贴 LatestModAPKs 应用 URL",
+      "name": "Read app details",
+      "description": "Reads LatestModAPKs detail page metadata, screenshots and public download links.",
+      "inputLabel": "Detail URL",
+      "placeholder": "Paste LatestModAPKs app URL",
       "defaultInput": "https://minecraft.latestmodapks.com/"
     }
   ]

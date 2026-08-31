@@ -161,7 +161,7 @@ class _ScreenshotViewerState extends State<ScreenshotViewer> {
           title: Text('${_currentIndex + 1} / ${widget.urls.length}'),
           actions: [
             IconButton(
-              tooltip: '保存图片',
+              tooltip: 'Save image',
               onPressed: _saving ? null : _saveCurrent,
               icon: _saving
                   ? const SizedBox.square(
@@ -174,7 +174,7 @@ class _ScreenshotViewerState extends State<ScreenshotViewer> {
                   : const Icon(Icons.download_outlined),
             ),
             IconButton(
-              tooltip: '关闭',
+              tooltip: 'Close',
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.close),
             ),
@@ -211,7 +211,7 @@ class _ScreenshotViewerState extends State<ScreenshotViewer> {
     try {
       final response = await http.get(Uri.parse(widget.urls[_currentIndex]));
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError('图片请求失败：HTTP ${response.statusCode}');
+        throw StateError('Image request failed: HTTP ${response.statusCode}');
       }
       await Gal.putImageBytes(
         response.bodyBytes,
@@ -221,17 +221,17 @@ class _ScreenshotViewerState extends State<ScreenshotViewer> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('图片已保存到系统相册')));
+      ).showSnackBar(const SnackBar(content: Text('Image saved to gallery')));
     } on GalException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('保存图片失败：${error.toString()}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save image: ${error.toString()}')),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('保存图片失败：$error')));
+      ).showSnackBar(SnackBar(content: Text('Failed to save image: $error')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }

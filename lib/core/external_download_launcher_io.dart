@@ -12,7 +12,9 @@ Future<bool> launchExternalDownloader(
   Map<String, String> headers = const {},
 }) async {
   if (!supportsExternalDownloader) {
-    throw UnsupportedError('当前平台不支持外部下载器');
+    throw UnsupportedError(
+      'External downloader is not supported on this platform',
+    );
   }
   return await _channel.invokeMethod<bool>('launch', {
         'url': uri.toString(),

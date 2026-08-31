@@ -3,7 +3,7 @@
   "name": "PDALIFE",
   "version": "1.0.0",
   "homepage": "https://pdalife.com/",
-  "description": "读取 PDALIFE 的安卓应用与游戏搜索、目录、详情、截图和下载项。",
+  "description": "Reads PDALIFE Android app and game search, catalog, details, screenshots and download items.",
   "permissions": {
     "network": ["*"],
     "browser": true,
@@ -18,18 +18,18 @@
   "debugProjects": [
     {
       "id": "search-keyword",
-      "name": "搜索关键词",
-      "description": "在 PDALIFE 公开搜索页检查安卓应用与游戏结果。",
-      "inputLabel": "关键词",
-      "placeholder": "例如 minecraft",
+      "name": "Search keyword",
+      "description": "Checks Android app and game results on the PDALIFE public search page.",
+      "inputLabel": "Keyword",
+      "placeholder": "For example minecraft",
       "defaultInput": "minecraft"
     },
     {
       "id": "app-details",
-      "name": "获取应用详情",
-      "description": "读取 PDALIFE 详情页元数据、截图和公开下载链接。",
-      "inputLabel": "应用详情 URL",
-      "placeholder": "粘贴 PDALIFE 安卓应用 URL",
+      "name": "Read app details",
+      "description": "Reads PDALIFE detail page metadata, screenshots and public download links.",
+      "inputLabel": "Detail URL",
+      "placeholder": "Paste PDALIFE Android app URL",
       "defaultInput": "https://pdalife.com/google-service-android-a11744.html"
     }
   ]

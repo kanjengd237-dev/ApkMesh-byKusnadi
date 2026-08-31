@@ -7,8 +7,8 @@ const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
 };
 const CATALOG_TABS = [
-  {id: 'games', name: '游戏', path: '/games/'},
-  {id: 'apps', name: '应用', path: '/programmy/'},
+  {id: 'games', name: 'Games', path: '/games/'},
+  {id: 'apps', name: 'Apps', path: '/programmy/'},
   {id: 'mods', name: 'MOD', path: '/tags/mods/'},
 ];
 
@@ -205,7 +205,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 AN1 的公开搜索、目录、应用详情、截图和 APK 下载链接。',
+    description: 'Fetch AN1 public search, catalog, app details, screenshots, and APK download links.',
     permissions: {
       network: ['an1.com', 'files.an1.net', 'files.an1.co'],
       browser: false,
@@ -214,20 +214,20 @@ globalThis.source = {
     },
     debugProjects: [
       {
-        id: 'search-keyword', name: '搜索关键词',
-        description: '读取 AN1 搜索结果及分页。',
-        inputLabel: '关键词', placeholder: '例如 minecraft', defaultInput: 'minecraft',
+        id: 'search-keyword', name: 'Search Keywords',
+        description: 'Fetch AN1 search results and pagination.',
+        inputLabel: 'Keyword', placeholder: 'e.g. minecraft', defaultInput: 'minecraft',
       },
       {
-        id: 'app-details', name: '获取应用详情',
-        description: '读取元数据、截图和最终 APK 直链。',
-        inputLabel: '详情 URL', placeholder: '粘贴 AN1 详情地址',
+        id: 'app-details', name: 'Get App Details',
+        description: 'Fetch metadata, screenshots, and final APK direct link.',
+        inputLabel: 'Details URL', placeholder: 'Paste AN1 details URL',
         defaultInput: 'https://an1.com/4718-war-machines.html',
       },
       {
-        id: 'catalog', name: '检查目录',
-        description: '读取游戏、应用和 MOD 目录首页。',
-        inputLabel: '标签数量上限', placeholder: '0 表示全部', defaultInput: '0',
+        id: 'catalog', name: 'Check Catalog',
+        description: 'Fetch games, apps, and MOD catalog home.',
+        inputLabel: 'Tab limit', placeholder: '0 for all', defaultInput: '0',
       },
     ],
   },
@@ -241,7 +241,7 @@ globalThis.source = {
 
   async catalogPage(tabId, page = 1) {
     const tab = CATALOG_TABS.find((item) => item.id === tabId);
-    if (!tab) throw new TypeError('无效的 AN1 目录标签');
+    if (!tab) throw new TypeError('Invalid AN1 catalog tab');
     const html = await fetchPage(catalogUrl(tab.path, page));
     if (html === null) return {apps: [], hasMore: false};
     return {apps: parseCards(html), hasMore: hasNextPage(html)};
@@ -249,14 +249,14 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const value = cleanText(query);
-    if (value.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (value.length < 2) throw new TypeError('Search keyword must be at least 2 characters');
     const html = await fetchPage(searchUrl(value, page));
     return html === null ? [] : parseCards(html);
   },
 
   async detailsMetadata(idOrUrl) {
     const url = absoluteUrl(idOrUrl);
-    if (!isDetailUrl(url)) throw new TypeError('无效的 AN1 详情地址');
+    if (!isDetailUrl(url)) throw new TypeError('Invalid AN1 details URL');
     return parseDetails(await fetchText(url), url);
   },
 
@@ -267,10 +267,10 @@ globalThis.source = {
       try {
         const url = absoluteUrl(candidate && candidate.url);
         if (!/^https:\/\/(?:www\.)?an1\.com\/file_\d+-dw\.html$/i.test(url)) {
-          throw new TypeError('无效的 AN1 下载页地址');
+          throw new TypeError('Invalid AN1 download page URL');
         }
         const downloads = parseFinalDownloads(await fetchText(url, url), {...candidate, url});
-        if (!downloads.length) throw new Error('AN1 下载页未返回可用的 APK 直链');
+        if (!downloads.length) throw new Error('AN1 download page did not return a usable APK direct link');
         resolved.push(...downloads);
         await reportProgress(requestId, index, downloads, null);
       } catch (error) {
@@ -291,13 +291,13 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const results = await this.search(value, 1);
-      return {title: '搜索完成', summary: `返回 ${results.length} 条结果`, data: results};
+      return {title: 'Search Complete', summary: `Returned ${results.length} results`, data: results};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
       return {
-        title: '详情读取完成',
-        summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`,
+        title: 'Details Fetched',
+        summary: `Fetched ${app.name}; ${app.downloads.length} download items`,
         data: app,
       };
     }
@@ -309,8 +309,8 @@ globalThis.source = {
         const page = await this.catalogPage(tab.id, 1);
         tabs.push({id: tab.id, apps: page.apps.length, hasMore: page.hasMore});
       }
-      return {title: '目录检查完成', summary: `检查 ${tabs.length} 个标签`, data: {tabs}};
+      return {title: 'Catalog Check Complete', summary: `Checked ${tabs.length} tabs`, data: {tabs}};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

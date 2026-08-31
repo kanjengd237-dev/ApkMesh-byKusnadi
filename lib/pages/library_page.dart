@@ -22,8 +22,8 @@ class LibraryPage extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: TabBar(
             tabs: const [
-              Tab(icon: Icon(Icons.bookmark_outline), text: '收藏'),
-              Tab(icon: Icon(Icons.history), text: '历史'),
+              Tab(icon: Icon(Icons.bookmark_outline), text: 'Favorites'),
+              Tab(icon: Icon(Icons.history), text: 'History'),
             ],
           ),
         ),
@@ -88,7 +88,13 @@ class _LibraryListState extends State<_LibraryList> {
     _exitSelection();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(added == 0 ? '所选应用已在收藏中' : '已收藏 $added 个应用')),
+      SnackBar(
+        content: Text(
+          added == 0
+              ? 'Selected apps are already in favorites'
+              : 'Added $added apps to favorites',
+        ),
+      ),
     );
   }
 
@@ -98,7 +104,11 @@ class _LibraryListState extends State<_LibraryList> {
     _exitSelection();
     final messenger = ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('正在后台解析下载链接…')));
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Resolving download links in background…'),
+        ),
+      );
     unawaited(_runBatchDownload(selected, messenger));
   }
 
@@ -115,10 +125,10 @@ class _LibraryListState extends State<_LibraryList> {
           SnackBar(
             content: Text(
               result.startedFiles == 0
-                  ? '批量下载失败：没有找到可用下载链接'
+                  ? 'Batch download failed: no available download links found'
                   : result.appsWithErrors == 0
-                  ? '已开始下载 ${result.startedFiles} 个文件，可在下载页查看进度'
-                  : '已开始下载 ${result.startedFiles} 个文件，${result.appsWithErrors} 个应用存在解析或下载问题',
+                  ? 'Started downloading ${result.startedFiles} files, view progress in Downloads'
+                  : 'Started downloading ${result.startedFiles} files, ${result.appsWithErrors} apps have parsing or download issues',
             ),
           ),
         );
@@ -126,7 +136,9 @@ class _LibraryListState extends State<_LibraryList> {
       if (!mounted || !messenger.mounted) return;
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('批量下载失败：$error')));
+        ..showSnackBar(
+          SnackBar(content: Text('Batch download failed: $error')),
+        );
     }
   }
 
@@ -141,10 +153,10 @@ class _LibraryListState extends State<_LibraryList> {
               const SizedBox(height: 20),
               EmptyMessage(
                 icon: widget.history ? Icons.history : Icons.bookmark_border,
-                title: widget.history ? '暂无历史记录' : '暂无收藏应用',
+                title: widget.history ? 'No history yet' : 'No favorite apps',
                 detail: widget.history
-                    ? '打开应用详情后会自动记录在这里。'
-                    : '在应用列表或详情页点击书签即可收藏。',
+                    ? 'History is recorded automatically after opening app details.'
+                    : 'Tap the bookmark in app list or details to favorite.',
               ),
             ],
           )
@@ -187,7 +199,7 @@ class _LibraryListState extends State<_LibraryList> {
     children: [
       Expanded(
         child: Text(
-          widget.history ? '历史记录' : '我的收藏',
+          widget.history ? 'History' : 'My Favorites',
           style: Theme.of(context).textTheme.headlineMedium,
         ),
       ),
@@ -199,7 +211,7 @@ class _LibraryListState extends State<_LibraryList> {
       ),
       const SizedBox(width: 8),
       IconButton(
-        tooltip: widget.history ? '清空历史' : '清空收藏',
+        tooltip: widget.history ? 'Clear history' : 'Clear favorites',
         onPressed: count == 0 ? null : () => _confirmClear(context),
         icon: const Icon(Icons.delete_sweep_outlined),
       ),
@@ -210,16 +222,20 @@ class _LibraryListState extends State<_LibraryList> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(widget.history ? '清空历史记录？' : '清空收藏？'),
-        content: Text(widget.history ? '这会移除所有历史记录。' : '这会移除所有收藏应用。'),
+        title: Text(widget.history ? 'Clear history?' : 'Clear favorites?'),
+        content: Text(
+          widget.history
+              ? 'This will remove all history.'
+              : 'This will remove all favorite apps.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('清空'),
+            child: const Text('Clear'),
           ),
         ],
       ),

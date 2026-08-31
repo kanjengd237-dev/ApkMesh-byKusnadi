@@ -174,8 +174,10 @@ Future<void> showAppActionMenu(
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.download_outlined),
-            title: const Text('下载'),
-            subtitle: const Text('后台解析下载链接并加入下载任务'),
+            title: const Text('Download'),
+            subtitle: const Text(
+              'Resolve download links in background and add to download tasks',
+            ),
             onTap: () =>
                 Navigator.of(sheetContext).pop(_AppListAction.download),
           ),
@@ -185,15 +187,21 @@ Future<void> showAppActionMenu(
                   ? Icons.bookmark_remove_outlined
                   : Icons.bookmark_add_outlined,
             ),
-            title: Text(state.isFavorite(app) ? '取消收藏' : '收藏'),
+            title: Text(
+              state.isFavorite(app)
+                  ? 'Remove from favorites'
+                  : 'Add to favorites',
+            ),
             onTap: () =>
                 Navigator.of(sheetContext).pop(_AppListAction.favorite),
           ),
           if (onEnterSelection != null)
             ListTile(
               leading: const Icon(Icons.checklist_outlined),
-              title: const Text('多选'),
-              subtitle: const Text('选择多个应用后批量下载或收藏'),
+              title: const Text('Multi-select'),
+              subtitle: const Text(
+                'Select multiple apps to batch download or favorite',
+              ),
               onTap: () =>
                   Navigator.of(sheetContext).pop(_AppListAction.select),
             ),
@@ -221,7 +229,7 @@ Future<void> _downloadFromListMenu(
   final messenger = ScaffoldMessenger.maybeOf(context);
   messenger
     ?..hideCurrentSnackBar()
-    ..showSnackBar(const SnackBar(content: Text('正在解析下载链接…')));
+    ..showSnackBar(const SnackBar(content: Text('Resolving download links…')));
   try {
     final result = await state.downloadApp(app);
     if (!context.mounted || messenger == null) return;
@@ -232,9 +240,9 @@ Future<void> _downloadFromListMenu(
           content: Text(
             result.hasStarted
                 ? result.error == null
-                      ? '已开始下载 ${result.startedFiles} 个文件，可在下载页查看进度'
-                      : '已开始下载 ${result.startedFiles} 个文件，但部分链接处理失败'
-                : '下载失败：${result.error ?? '未找到可用下载链接'}',
+                      ? 'Started downloading ${result.startedFiles} files, view progress in Downloads'
+                      : 'Started downloading ${result.startedFiles} files, but some links failed to process'
+                : 'Download failed: ${result.error ?? 'No available download links found'}',
           ),
         ),
       );
@@ -242,7 +250,9 @@ Future<void> _downloadFromListMenu(
     if (!context.mounted || messenger == null) return;
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('无法开始下载：$error')));
+      ..showSnackBar(
+        SnackBar(content: Text('Unable to start download: $error')),
+      );
   }
 }
 
@@ -268,23 +278,23 @@ class AppSelectionToolbar extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            tooltip: '退出多选',
+            tooltip: 'Exit multi-select',
             onPressed: onClose,
             icon: const Icon(Icons.close),
           ),
           Expanded(
             child: Text(
-              '已选择 $selectedCount 个应用',
+              'Selected $selectedCount apps',
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
           IconButton(
-            tooltip: '收藏选中应用',
+            tooltip: 'Favorite selected apps',
             onPressed: onFavorite,
             icon: const Icon(Icons.bookmark_add_outlined),
           ),
           IconButton(
-            tooltip: '下载选中应用',
+            tooltip: 'Download selected apps',
             onPressed: onDownload,
             icon: const Icon(Icons.download_outlined),
           ),
@@ -397,7 +407,7 @@ class _AppInfoLabel extends StatelessWidget {
     return onPressed == null
         ? label
         : Tooltip(
-            message: '按包名查找应用',
+            message: 'Lookup app by package name',
             child: Semantics(
               button: true,
               onTap: onPressed,
@@ -458,7 +468,7 @@ class _AppInfoChip extends StatelessWidget {
       child: onPressed == null
           ? chip
           : Tooltip(
-              message: '按包名查找应用',
+              message: 'Lookup app by package name',
               child: Semantics(
                 button: true,
                 onTap: onPressed,

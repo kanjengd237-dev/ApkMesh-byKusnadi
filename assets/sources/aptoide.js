@@ -3,10 +3,10 @@ const ORIGIN = 'https://en.aptoide.com';
 const API_ORIGIN = 'https://ws2-cache.aptoide.com/api/7';
 const PAGE_SIZE = 20;
 const CATALOG_TABS = [
-  {id: 'apps-trending', name: '热门应用', description: 'Aptoide 热门 Android 应用', path: '/apps/trending', category: '应用'},
-  {id: 'apps-latest', name: '最新应用', description: 'Aptoide 最新 Android 应用', path: '/apps/latest', category: '应用'},
-  {id: 'games-trending', name: '热门游戏', description: 'Aptoide 热门 Android 游戏', path: '/games/trending', category: '游戏'},
-  {id: 'games-latest', name: '最新游戏', description: 'Aptoide 最新 Android 游戏', path: '/games/latest', category: '游戏'},
+  {id: 'apps-trending', name: 'Popular Apps', description: 'Aptoide popular Android apps', path: '/apps/trending', category: 'Apps'},
+  {id: 'apps-latest', name: 'Latest Apps', description: 'Aptoide latest Android apps', path: '/apps/latest', category: 'Apps'},
+  {id: 'games-trending', name: 'Popular Games', description: 'Aptoide popular Android games', path: '/games/trending', category: 'Games'},
+  {id: 'games-latest', name: 'Latest Games', description: 'Aptoide latest Android games', path: '/games/latest', category: 'Games'},
 ];
 const REQUEST_HEADERS = {
   Accept: 'application/json,text/plain,*/*',
@@ -363,7 +363,7 @@ globalThis.source = {
 
   async catalogPage(tabId, page = 1) {
     const tab = CATALOG_TABS.find((item) => item.id === tabId);
-    if (!tab) throw new TypeError('无效的 Aptoide 目录标签');
+    if (!tab) throw new TypeError('Invalid Aptoide catalog tab');
     const html = await fetchCatalogText(catalogUrl(tab, page));
     return html === null ? {apps: [], hasMore: false} : parseCatalogPage(html, tab);
   },

@@ -49,12 +49,12 @@ class _PackageLookupSheetState extends State<PackageLookupSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        '按包名查找',
+                        'Lookup by package name',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
                     IconButton(
-                      tooltip: '关闭',
+                      tooltip: 'Close',
                       onPressed: () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.close),
                     ),
@@ -76,7 +76,7 @@ class _PackageLookupSheetState extends State<PackageLookupSheet> {
                 else if (snapshot.hasError)
                   _LookupMessage(
                     icon: Icons.error_outline,
-                    title: '包名查找失败',
+                    title: 'Package name lookup failed',
                     detail: snapshot.error.toString(),
                   )
                 else if (results.isEmpty)
@@ -105,8 +105,12 @@ class _PackageLookupSheetState extends State<PackageLookupSheet> {
     );
     return _LookupMessage(
       icon: hasPackageSource ? Icons.search_off : Icons.hub_outlined,
-      title: hasPackageSource ? '未找到对应应用' : '没有可用的包名查找源',
-      detail: hasPackageSource ? '已在启用的包名查找源中搜索该包名。' : '请先启用声明了包名查找能力的源。',
+      title: hasPackageSource
+          ? 'No matching app found'
+          : 'No available package name lookup source',
+      detail: hasPackageSource
+          ? 'Searched for this package name in all enabled sources.'
+          : 'Please enable a source that declares package name lookup capability first.',
     );
   }
 }

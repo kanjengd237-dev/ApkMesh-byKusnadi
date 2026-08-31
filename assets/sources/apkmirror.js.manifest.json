@@ -3,7 +3,7 @@
   "name": "APKMirror",
   "version": "1.1.0",
   "homepage": "https://www.apkmirror.com/",
-  "description": "APKMirror 版本搜索、详情、变体和下载源。",
+  "description": "APKMirror version search, details, variants and download sources.",
   "permissions": {
     "network": ["*"],
     "browser": true,

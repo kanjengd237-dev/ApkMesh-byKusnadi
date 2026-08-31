@@ -7,9 +7,9 @@ const SEARCH_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
 };
 const CATALOG_TABS = [
-  {id: 'games', name: '游戏', description: 'Download.it Android 游戏', query: 'game'},
-  {id: 'tools', name: '工具', description: 'Download.it Android 工具', query: 'tools'},
-  {id: 'music', name: '音乐', description: 'Download.it Android 音乐应用', query: 'music'},
+  {id: 'games', name: 'Games', description: 'Download.it Android games', query: 'game'},
+  {id: 'tools', name: 'Tools', description: 'Download.it Android tools', query: 'tools'},
+  {id: 'music', name: 'Music', description: 'Download.it Android music apps', query: 'music'},
 ];
 
 function decodeHtml(value) {
@@ -95,7 +95,7 @@ function searchSlug(query) {
 function searchUrl(query, page) {
   const slug = searchSlug(query);
   const number = Math.max(1, Number(page) || 1);
-  if (!slug) throw new TypeError('搜索关键词不能为空');
+  if (!slug) throw new TypeError('Search keyword must not be empty');
   return `${ORIGIN}/s/${encodeURIComponent(slug)}${number > 1 ? `?page=${number}` : ''}`;
 }
 
@@ -105,7 +105,7 @@ function isChallengePage(text) {
 
 function ensurePageAvailable(text) {
   if (isChallengePage(text)) {
-    throw new Error('Download.it 当前返回 Cloudflare 验证页');
+    throw new Error('Download.it currently returns a Cloudflare challenge page');
   }
 }
 
@@ -235,7 +235,7 @@ globalThis.source = {
     version: '1.1.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 Download.it 的 Android 应用搜索、详情、截图和 APK 下载项。',
+    description: 'Reads Download.it Android app search, details, screenshots and APK download items.',
     permissions: {
       network: [
         'download.it',
@@ -252,18 +252,18 @@ globalThis.source = {
     debugProjects: [
       {
         id: 'search-keyword',
-        name: '搜索关键词',
-        description: '通过 Download.it 搜索 Android 应用。',
-        inputLabel: '关键词',
-        placeholder: '例如 traps',
+        name: 'Search keyword',
+        description: 'Searches Android apps via Download.it.',
+        inputLabel: 'Keyword',
+        placeholder: 'For example traps',
         defaultInput: 'traps',
       },
       {
         id: 'app-details',
-        name: '获取应用详情',
-        description: '读取详情页元数据、截图和 APK 下载链接。',
-        inputLabel: '应用详情 URL',
-        placeholder: '粘贴 *.en.download.it/android URL',
+        name: 'Read app details',
+        description: 'Reads detail page metadata, screenshots and APK download links.',
+        inputLabel: 'Detail URL',
+        placeholder: 'Paste *.en.download.it/android URL',
         defaultInput: 'https://trap-beats.en.download.it/android',
       },
     ],
@@ -283,14 +283,14 @@ globalThis.source = {
 
   async catalogPage(tabId, page = 1) {
     const tab = CATALOG_TABS.find((item) => item.id === tabId);
-    if (!tab) throw new TypeError('无效的 Download.it 目录标签');
+    if (!tab) throw new TypeError('Invalid Download.it catalog tab');
     if (Math.max(1, Number(page) || 1) > 1) return {apps: [], hasMore: false};
     return {apps: await this.search(tab.query, 1), hasMore: false};
   },
 
   async search(query, page = 1) {
     const normalized = cleanText(query);
-    if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (normalized.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     const tab = await apkmesh.browser.open(searchUrl(normalized, page));
     try {
       await tab.waitFor('body');
@@ -317,7 +317,7 @@ globalThis.source = {
 
   async detailsMetadata(url) {
     const id = absoluteUrl(url);
-    if (!isDetailUrl(id)) throw new TypeError('无效的 Download.it Android 详情地址');
+    if (!isDetailUrl(id)) throw new TypeError('Invalid Download.it Android detail URL');
     const openUrl = id.replace(/\/$/, '');
     const tab = await apkmesh.browser.open(openUrl);
     try {
@@ -397,7 +397,7 @@ globalThis.source = {
       const downloadPage = absoluteUrl(pageInfo.downloadPage || `${openUrl}/download`, openUrl);
       app.downloadCandidates = downloadPage
         ? [{
-          label: `${name || '应用'} APK`,
+          label: `${name || 'App'} APK`,
           url: downloadPage,
           size: app.size,
           headers: downloadHeaders(openUrl),
@@ -438,7 +438,7 @@ globalThis.source = {
         } finally {
           await tab.close();
         }
-        if (!downloads.length) throw new Error('Download.it 未返回有效 APK 下载链接');
+        if (!downloads.length) throw new Error('Download.it did not return a valid APK download link');
         await reportDetailProgress(requestId, index, downloads, null);
         resolved.push(...downloads);
       } catch (error) {
@@ -462,8 +462,8 @@ globalThis.source = {
     if (projectId === 'search-keyword') {
       const results = await this.search(value);
       return {
-        title: '搜索完成',
-        summary: `关键词“${value}”返回 ${results.length} 条 Android 结果`,
+        title: 'Search completed',
+        summary: `Keyword "${value}" returned ${results.length} Android results`,
         data: results.map((item) => ({
           name: item.name,
           id: item.id,
@@ -475,8 +475,8 @@ globalThis.source = {
     if (projectId === 'app-details') {
       const app = await this.details(value);
       return {
-        title: '详情读取完成',
-        summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`,
+        title: 'Details read',
+        summary: `Read ${app.name} with ${app.downloads.length} downloads`,
         data: {
           name: app.name,
           version: app.version,
@@ -488,6 +488,6 @@ globalThis.source = {
         },
       };
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

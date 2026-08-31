@@ -7,8 +7,8 @@ const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
 };
 const CATALOG_TABS = [
-  {id: 'games', name: '游戏', paged: true, path: '/game/category/all/newest-mod'},
-  {id: 'apps', name: '应用', paged: true, path: '/apps/category/all/newest'},
+  {id: 'games', name: 'Games', paged: true, path: '/game/category/all/newest-mod'},
+  {id: 'apps', name: 'Apps', paged: true, path: '/apps/category/all/newest'},
 ];
 
 function decodeHtml(value) {
@@ -214,7 +214,7 @@ function parseDetails(html, requestedUrl) {
 
 function parseDownload(html, candidate) {
   const tag = (String(html || '').match(/<script\b[^>]*id=["']downloadStatejs_id["'][^>]*>/i) || [])[0] || '';
-  if (!tag) throw new Error('PlayMods 下载页缺少版本数据');
+  if (!tag) throw new Error('PlayMods download page is missing version data');
   const type = cleanText(attribute(tag, 'fileType')).toLowerCase();
   const downloadType = cleanText(attribute(tag, 'downloadType'));
   const versionId = cleanText(attribute(tag, 'versionId'));
@@ -225,7 +225,7 @@ function parseDownload(html, candidate) {
   } else if (isHttpUrl(resourceUrl)) {
     url = resourceUrl;
   }
-  if (!url) throw new Error('PlayMods 下载页未提供可用的 APK 链接');
+  if (!url) throw new Error('PlayMods download page did not provide a usable APK link');
   return {
     label: `${cleanText(candidate.label) || 'PlayMods'}${type ? ` (${type.toUpperCase()})` : ''}`,
     url,
@@ -254,12 +254,12 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 PlayMods 公开搜索、分类、详情和下载页；下载会跳转到站点动态 CDN。',
+    description: 'Fetch PlayMods public search, categories, details, and download pages; downloads redirect to site CDN.',
     permissions: {network: ['*'], browser: false, download: true, install: false},
     debugProjects: [
-      {id: 'search-keyword', name: '搜索关键词', description: '读取 PlayMods 搜索结果及分页。', inputLabel: '关键词', placeholder: '例如 minecraft', defaultInput: 'minecraft'},
-      {id: 'app-details', name: '获取应用详情', description: '读取元数据、截图并解析公开下载页。', inputLabel: '详情 URL', placeholder: '粘贴 PlayMods 应用或游戏 URL', defaultInput: 'https://playmods.net/game/minecraft(invincible)/com.mojang.minecraftpe'},
-      {id: 'catalog', name: '检查目录', description: '读取游戏和应用分类首页。', inputLabel: '标签数量上限', placeholder: '0 表示全部', defaultInput: '0'},
+      {id: 'search-keyword', name: 'Search Keywords', description: 'Fetch PlayMods search results and pagination.', inputLabel: 'Keyword', placeholder: 'e.g. minecraft', defaultInput: 'minecraft'},
+      {id: 'app-details', name: 'Get App Details', description: 'Fetch metadata, screenshots, and parse public download page.', inputLabel: 'App details URL', placeholder: 'Paste PlayMods app or game URL', defaultInput: 'https://playmods.net/game/minecraft(invincible)/com.mojang.minecraftpe'},
+      {id: 'catalog', name: 'Check Catalog', description: 'Fetch game and app category home pages.', inputLabel: 'Tab limit', placeholder: '0 for all', defaultInput: '0'},
     ],
   },
 
@@ -269,7 +269,7 @@ globalThis.source = {
 
   async catalogPage(tabId, page = 1) {
     const tab = CATALOG_TABS.find((item) => item.id === tabId);
-    if (!tab) throw new TypeError('无效的 PlayMods 目录标签');
+    if (!tab) throw new TypeError('Invalid PlayMods catalog tab');
     const html = await fetchPage(catalogUrl(tab, page));
     if (html === null) return {apps: [], hasMore: false};
     return {apps: parseCards(html), hasMore: hasNextPage(html)};
@@ -277,18 +277,18 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const value = cleanText(query);
-    if (value.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (value.length < 2) throw new TypeError('Search keyword must be at least 2 characters');
     const html = await fetchPage(searchUrl(value, page));
     return html === null ? [] : parseCards(html);
   },
 
   async detailsMetadata(idOrUrl) {
     const url = normalizeDetailUrl(idOrUrl);
-    if (!url) throw new TypeError('无效的 PlayMods 详情地址');
+    if (!url) throw new TypeError('Invalid PlayMods details URL');
     const html = await fetchPage(url);
-    if (html === null) throw new Error('PlayMods 详情页不存在');
+    if (html === null) throw new Error('PlayMods detail page does not exist');
     const app = parseDetails(html, url);
-    if (!app.name) throw new Error('PlayMods 详情页未返回应用名称');
+    if (!app.name) throw new Error('PlayMods detail page did not return app name');
     return app;
   },
 
@@ -298,9 +298,9 @@ globalThis.source = {
     for (let index = 0; index < (candidates || []).length; index += 1) {
       const candidate = candidates[index];
       try {
-        if (!candidate || !isDownloadPage(candidate.url)) throw new TypeError('无效的 PlayMods 下载页地址');
+        if (!candidate || !isDownloadPage(candidate.url)) throw new TypeError('Invalid PlayMods download page URL');
         const html = await fetchPage(candidate.url, candidate.url.replace(/\/download$/, ''));
-        if (html === null) throw new Error('PlayMods 下载页不存在');
+        if (html === null) throw new Error('PlayMods download page does not exist');
         const downloads = [parseDownload(html, candidate)];
         resolved.push(...downloads);
         await reportProgress(requestId, index, downloads, null);
@@ -325,11 +325,11 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const results = await this.search(value, 1);
-      return {title: '搜索完成', summary: `返回 ${results.length} 条结果`, data: results};
+      return {title: 'Search Complete', summary: `Returned ${results.length} results`, data: results};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
-      return {title: '详情读取完成', summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`, data: app};
+      return {title: 'Details Fetched', summary: `Fetched ${app.name}; ${app.downloads.length} download items`, data: app};
     }
     if (projectId === 'catalog') {
       const catalog = await this.catalog();
@@ -339,8 +339,8 @@ globalThis.source = {
         const result = await this.catalogPage(tab.id, 1);
         tabs.push({id: tab.id, apps: result.apps.length, hasMore: result.hasMore});
       }
-      return {title: '目录检查完成', summary: `检查 ${tabs.length} 个标签`, data: {tabs}};
+      return {title: 'Catalog Checked', summary: `Checked ${tabs.length} tabs`, data: {tabs}};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

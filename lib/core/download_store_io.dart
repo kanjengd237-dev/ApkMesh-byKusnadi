@@ -27,7 +27,7 @@ class DownloadStore {
 
     final decoded = jsonDecode(await file.readAsString());
     if (decoded is! Map || decoded['tasks'] is! List) {
-      throw const FormatException('下载任务存储格式无效');
+      throw const FormatException('Invalid download task storage format');
     }
 
     final tasks = <DownloadTask>[];

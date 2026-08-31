@@ -64,18 +64,18 @@ class _DebugSheetState extends State<DebugSheet> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '调试信息',
+                            'Debug info',
                             style: Theme.of(context).textTheme.headlineSmall,
                           ),
                           Text(
-                            '${state.debug.requests.length} 个请求 · ${state.debug.entries.length} 条日志',
+                            '${state.debug.requests.length} requests · ${state.debug.entries.length} logs',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
                       ),
                     ),
                     IconButton(
-                      tooltip: '清空调试记录',
+                      tooltip: 'Clear debug records',
                       onPressed:
                           state.debug.entries.isEmpty &&
                               state.debug.requests.isEmpty
@@ -84,7 +84,7 @@ class _DebugSheetState extends State<DebugSheet> {
                       icon: const Icon(Icons.delete_sweep_outlined),
                     ),
                     IconButton(
-                      tooltip: '关闭',
+                      tooltip: 'Close',
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close),
                     ),
@@ -98,12 +98,12 @@ class _DebugSheetState extends State<DebugSheet> {
                   segments: const [
                     ButtonSegment(
                       value: _DebugSection.overview,
-                      label: Text('概览'),
+                      label: Text('Overview'),
                       icon: Icon(Icons.dashboard_outlined),
                     ),
                     ButtonSegment(
                       value: _DebugSection.requests,
-                      label: Text('请求'),
+                      label: Text('Requests'),
                       icon: Icon(Icons.swap_horiz),
                     ),
                     ButtonSegment(
@@ -113,12 +113,12 @@ class _DebugSheetState extends State<DebugSheet> {
                     ),
                     ButtonSegment(
                       value: _DebugSection.projects,
-                      label: Text('项目'),
+                      label: Text('Projects'),
                       icon: Icon(Icons.play_circle_outline),
                     ),
                     ButtonSegment(
                       value: _DebugSection.logs,
-                      label: Text('日志'),
+                      label: Text('Logs'),
                       icon: Icon(Icons.notes_outlined),
                     ),
                   ],
@@ -156,7 +156,7 @@ class _DebugSheetState extends State<DebugSheet> {
     final tabs = state.host.browserTabs;
     final logs = state.debug.entries.reversed.take(5).toList();
     return [
-      Text('运行时', style: Theme.of(context).textTheme.titleMedium),
+      Text('Runtime', style: Theme.of(context).textTheme.titleMedium),
       ListTile(
         contentPadding: EdgeInsets.zero,
         leading: Icon(
@@ -164,29 +164,37 @@ class _DebugSheetState extends State<DebugSheet> {
               ? Icons.check_circle_outline
               : Icons.warning_amber_outlined,
         ),
-        title: Text(state.sourceRuntimeReady ? 'QuickJS 源已加载' : '使用演示源'),
+        title: Text(
+          state.sourceRuntimeReady
+              ? 'QuickJS source loaded'
+              : 'Using demo source',
+        ),
         subtitle: Text(
           state.runtimeError ??
-              '已启用源：${state.sources.where((source) => source.status == SourceStatus.enabled).map((source) => source.name).join('、')}',
+              'Enabled sources: ${state.sources.where((source) => source.status == SourceStatus.enabled).map((source) => source.name).join(', ')}',
         ),
       ),
       ListTile(
         contentPadding: EdgeInsets.zero,
         leading: const Icon(Icons.web_outlined),
-        title: Text('WebView：${state.host.supportsBrowser ? '可用' : '不可用'}'),
+        title: Text(
+          'WebView: ${state.host.supportsBrowser ? 'Available' : 'Unavailable'}',
+        ),
         subtitle: Text(
-          '活动标签 ${tabs.where((tab) => tab.active).length} 个 · 安装能力：${state.host.supportsInstall ? '可用' : '不可用'}',
+          '${tabs.where((tab) => tab.active).length} active tabs · Install capability: ${state.host.supportsInstall ? 'Available' : 'Unavailable'}',
         ),
       ),
       const SizedBox(height: 8),
-      Text('WebView 状态', style: Theme.of(context).textTheme.titleMedium),
+      Text('WebView status', style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 4),
       if (tabs.isEmpty)
         const ListTile(
           contentPadding: EdgeInsets.zero,
           leading: Icon(Icons.web_asset_off_outlined),
-          title: Text('暂无 WebView 标签'),
-          subtitle: Text('调试项目运行后可点击标签查看页面。'),
+          title: Text('No WebView tabs'),
+          subtitle: Text(
+            'After running a debug project, you can tap a tab to view the page.',
+          ),
         )
       else
         ...tabs
@@ -200,16 +208,19 @@ class _DebugSheetState extends State<DebugSheet> {
       const SizedBox(height: 8),
       Row(
         children: [
-          Text('最近请求', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Recent requests',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(width: 8),
-          Text('${state.debug.requests.length} 个'),
+          Text('${state.debug.requests.length}'),
         ],
       ),
       if (requests.isEmpty)
         const ListTile(
           contentPadding: EdgeInsets.zero,
           leading: Icon(Icons.swap_horiz_outlined),
-          title: Text('暂无请求'),
+          title: Text('No requests'),
         )
       else
         ...requests.map(
@@ -219,12 +230,12 @@ class _DebugSheetState extends State<DebugSheet> {
           ),
         ),
       const SizedBox(height: 8),
-      Text('运行日志', style: Theme.of(context).textTheme.titleMedium),
+      Text('Runtime logs', style: Theme.of(context).textTheme.titleMedium),
       if (logs.isEmpty)
         const ListTile(
           contentPadding: EdgeInsets.zero,
           leading: Icon(Icons.article_outlined),
-          title: Text('暂无日志'),
+          title: Text('No logs'),
         )
       else
         ...logs.map((entry) => DebugLogTile(entry: entry)),
@@ -236,17 +247,18 @@ class _DebugSheetState extends State<DebugSheet> {
     return [
       Row(
         children: [
-          Text('请求记录', style: Theme.of(context).textTheme.titleMedium),
+          Text('Request log', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(width: 8),
-          Text('${requests.length} 个 · 点击查看内容'),
+          Text('${requests.length} · Tap to view'),
         ],
       ),
       const SizedBox(height: 8),
       if (requests.isEmpty)
         const EmptyMessage(
           icon: Icons.swap_horiz_outlined,
-          title: '暂无请求记录',
-          detail: '运行搜索项目或应用搜索后，请求会出现在这里。',
+          title: 'No request records',
+          detail:
+              'Requests will appear here after running a search project or app search.',
         )
       else
         ...requests.map(
@@ -263,17 +275,21 @@ class _DebugSheetState extends State<DebugSheet> {
     return [
       Row(
         children: [
-          Text('WebView 状态', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'WebView status',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(width: 8),
-          Text('${tabs.length} 个'),
+          Text('${tabs.length}'),
         ],
       ),
       const SizedBox(height: 8),
       if (tabs.isEmpty)
         const EmptyMessage(
           icon: Icons.web_asset_off_outlined,
-          title: '暂无 WebView 标签',
-          detail: '运行“获取应用详情”项目后，可以点开对应标签进行可视化查看。',
+          title: 'No WebView tabs',
+          detail:
+              'After running the "Get app details" project, you can open the corresponding tab for visual viewing.',
         )
       else
         ...tabs.map(
@@ -288,17 +304,21 @@ class _DebugSheetState extends State<DebugSheet> {
     return [
       Row(
         children: [
-          Text('调试项目', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Debug projects',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(width: 8),
-          Text('${projects.length} 个'),
+          Text('${projects.length}'),
         ],
       ),
       const SizedBox(height: 8),
       if (projects.isEmpty)
         const EmptyMessage(
           icon: Icons.play_disabled_outlined,
-          title: '源未声明调试项目',
-          detail: '源可以在 manifest.debugProjects 中声明可触发的调试流程。',
+          title: 'No debug projects declared',
+          detail:
+              'Sources can declare triggerable debug flows in manifest.debugProjects.',
         )
       else
         ...projects.map((project) => DebugProjectTile(project: project)),
@@ -310,17 +330,18 @@ class _DebugSheetState extends State<DebugSheet> {
     return [
       Row(
         children: [
-          Text('运行日志', style: Theme.of(context).textTheme.titleMedium),
+          Text('Runtime logs', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(width: 8),
-          Text('${logs.length} 条'),
+          Text('${logs.length}'),
         ],
       ),
       const SizedBox(height: 8),
       if (logs.isEmpty)
         const EmptyMessage(
           icon: Icons.article_outlined,
-          title: '暂无日志',
-          detail: '执行搜索、详情或调试项目后，运行事件会显示在这里。',
+          title: 'No logs',
+          detail:
+              'After running a search, details, or debug project, runtime events will be displayed here.',
         )
       else
         ...logs.map((entry) => DebugLogTile(entry: entry)),
@@ -333,9 +354,9 @@ class _DebugSheetState extends State<DebugSheet> {
         ? project.defaultInput.trim()
         : controller.text.trim();
     if (input.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('请输入${project.inputLabel}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please enter ${project.inputLabel}')),
+      );
       return;
     }
     setState(() => _runningProjects.add(project.key));
@@ -352,7 +373,7 @@ class _DebugSheetState extends State<DebugSheet> {
         setState(() => _runningProjects.remove(project.key));
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('调试项目失败：$error')));
+        ).showSnackBar(SnackBar(content: Text('Debug project failed: $error')));
       }
     }
   }
@@ -401,7 +422,7 @@ class DebugProjectTile extends StatelessWidget {
               labelText: project.inputLabel,
               hintText: project.placeholder,
               suffixIcon: IconButton(
-                tooltip: '运行调试项目',
+                tooltip: 'Run debug project',
                 onPressed: running ? null : () => sheet._runProject(project),
                 icon: running
                     ? const SizedBox(
@@ -452,9 +473,9 @@ class DebugRequestTile extends StatelessWidget {
     final status =
         request.statusCode?.toString() ??
         switch (request.state) {
-          DebugRequestState.pending => '进行中',
-          DebugRequestState.completed => '完成',
-          DebugRequestState.failed => '失败',
+          DebugRequestState.pending => 'In progress',
+          DebugRequestState.completed => 'Completed',
+          DebugRequestState.failed => 'Failed',
         };
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -466,7 +487,7 @@ class DebugRequestTile extends StatelessWidget {
       ),
       title: Text('${request.method} $status'),
       subtitle: Text(
-        '${request.url}\n${request.duration?.inMilliseconds ?? 0} ms · ${request.responseBody?.length ?? 0} 字符',
+        '${request.url}\n${request.duration?.inMilliseconds ?? 0} ms · ${request.responseBody?.length ?? 0} chars',
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
@@ -498,12 +519,12 @@ class DebugRequestDialog extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '${request.method} ${request.statusCode ?? '请求'}',
+                        '${request.method} ${request.statusCode ?? 'Request'}',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
                     IconButton(
-                      tooltip: '关闭',
+                      tooltip: 'Close',
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close),
                     ),
@@ -520,15 +541,18 @@ class DebugRequestDialog extends StatelessWidget {
               const SizedBox(height: 8),
               const TabBar(
                 tabs: [
-                  Tab(text: '响应内容'),
-                  Tab(text: '请求详情'),
+                  Tab(text: 'Response'),
+                  Tab(text: 'Request details'),
                 ],
               ),
               Expanded(
                 child: TabBarView(
                   children: [
                     DebugBodyView(
-                      body: request.responseBody ?? request.error ?? '暂无响应内容',
+                      body:
+                          request.responseBody ??
+                          request.error ??
+                          'No response content',
                     ),
                     DebugMetadataView(request: request),
                   ],
@@ -564,15 +588,15 @@ class DebugMetadataView extends StatelessWidget {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(20),
     children: [
-      Text('请求头', style: Theme.of(context).textTheme.titleSmall),
+      Text('Request headers', style: Theme.of(context).textTheme.titleSmall),
       const SizedBox(height: 4),
       SelectableText(formatHeaders(request.requestHeaders)),
       const SizedBox(height: 16),
-      Text('响应头', style: Theme.of(context).textTheme.titleSmall),
+      Text('Response headers', style: Theme.of(context).textTheme.titleSmall),
       const SizedBox(height: 4),
       SelectableText(formatHeaders(request.responseHeaders)),
       const SizedBox(height: 16),
-      Text('状态', style: Theme.of(context).textTheme.titleSmall),
+      Text('Status', style: Theme.of(context).textTheme.titleSmall),
       SelectableText(
         '${request.state.name} · ${request.duration?.inMilliseconds ?? 0} ms${request.error == null ? '' : '\n${request.error}'}',
       ),
@@ -590,7 +614,7 @@ class DebugWebViewDialog extends StatefulWidget {
 }
 
 class _DebugWebViewDialogState extends State<DebugWebViewDialog> {
-  String status = '正在加载';
+  String status = 'Loading';
   BrowserTabViewHandle? _tabView;
 
   @override
@@ -624,18 +648,18 @@ class _DebugWebViewDialogState extends State<DebugWebViewDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'WebView 可视化查看',
+                          'WebView visual viewer',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         Text(
-                          '${widget.tab.active ? '活动' : '历史'} · $status',
+                          '${widget.tab.active ? 'Active' : 'History'} · $status',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: 'Close',
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close),
                   ),
@@ -699,19 +723,21 @@ class _DebugWebViewDialogState extends State<DebugWebViewDialog> {
                                   controller,
                                 ),
                       onLoadStart: (_, _) {
-                        if (mounted) setState(() => status = '加载中');
+                        if (mounted) setState(() => status = 'Loading');
                       },
                       onLoadStop: (_, _) {
-                        if (mounted) setState(() => status = '已加载');
+                        if (mounted) setState(() => status = 'Loaded');
                       },
                       onReceivedError: (_, _, _) {
-                        if (mounted) setState(() => status = '加载失败');
+                        if (mounted) setState(() => status = 'Load failed');
                       },
                     )
                   : const Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
-                        child: Text('当前平台不支持可视化 WebView，仅保留标签和操作记录。'),
+                        child: Text(
+                          'Visual WebView is not supported on this platform; only tabs and operations are retained.',
+                        ),
                       ),
                     ),
             ),
@@ -738,7 +764,7 @@ class DebugTabTile extends StatelessWidget {
         tab.active ? Icons.web : Icons.web_asset_off_outlined,
         color: color,
       ),
-      title: Text('${tab.active ? '活动' : '已关闭'} · ${tab.state}'),
+      title: Text('${tab.active ? 'Active' : 'Closed'} · ${tab.state}'),
       subtitle: Text(
         '${tab.url}\n${tab.id} · ${formatDebugTime(tab.startedAt)}',
         maxLines: 3,
@@ -778,7 +804,7 @@ class DebugLogTile extends StatelessWidget {
 }
 
 String formatHeaders(Map<String, String> headers) {
-  if (headers.isEmpty) return '无';
+  if (headers.isEmpty) return 'None';
   return headers.entries
       .map((entry) => '${entry.key}: ${entry.value}')
       .join('\n');

@@ -374,9 +374,9 @@ async function reportDetailProgress(requestId, index, downloads, error) {
 }
 
 const CATALOG_TABS = [
-  {id: RECOMMENDED_TAB_ID, name: '推荐', paged: false},
-  {id: `${ORIGIN}/games/`, name: '游戏', description: 'Android 游戏', paged: true},
-  {id: `${ORIGIN}/apps/`, name: '应用', description: 'Android 应用', paged: true},
+  {id: RECOMMENDED_TAB_ID, name: 'Recommended', paged: false},
+  {id: `${ORIGIN}/games/`, name: 'Games', description: 'Android games', paged: true},
+  {id: `${ORIGIN}/apps/`, name: 'Apps', description: 'Android apps', paged: true},
 ];
 
 globalThis.source = {
@@ -386,7 +386,7 @@ globalThis.source = {
     version: '1.2.1',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 APKTodo 应用元数据、截图、详情和下载项。',
+    description: 'Reads APKTodo app metadata, screenshots, details and download items.',
     permissions: {
       network: ['*'],
       browser: true,
@@ -396,26 +396,26 @@ globalThis.source = {
     debugProjects: [
       {
         id: 'search-keyword',
-        name: '搜索关键词',
-        description: '读取 APKTodo 搜索结果并检查子域名详情地址。',
-        inputLabel: '关键词',
-        placeholder: '例如 hello',
+        name: 'Search keyword',
+        description: 'Reads APKTodo search results and checks subdomain detail URLs.',
+        inputLabel: 'Keyword',
+        placeholder: 'For example hello',
         defaultInput: 'hello',
       },
       {
         id: 'app-details',
-        name: '获取应用详情',
-        description: '打开 APKTodo 子域名详情页，读取元数据、截图和下载页地址。',
-        inputLabel: '应用详情 URL',
-        placeholder: '粘贴源详情页 URL',
+        name: 'Read app details',
+        description: 'Opens APKTodo subdomain detail page, reads metadata, screenshots and download page URL.',
+        inputLabel: 'Detail URL',
+        placeholder: 'Paste source detail page URL',
         defaultInput: 'https://grok.apktodo.io/',
       },
       {
         id: 'catalog',
-        name: '检查目录标签',
-        description: '调用源目录接口，汇总每个标签返回的应用数量。',
-        inputLabel: '标签数量上限',
-        placeholder: '0 表示全部',
+        name: 'Inspect catalog tabs',
+        description: 'Calls the source catalog API and summarizes the app count returned by each tab.',
+        inputLabel: 'Tab count limit',
+        placeholder: '0 for all',
         defaultInput: '0',
       },
     ],
@@ -438,7 +438,7 @@ globalThis.source = {
 
     const id = absoluteUrl(tabId).replace(/\/+$/, '') + '/';
     if (!new RegExp(`^${ORIGIN}/(?:games|apps)/$`, 'i').test(id)) {
-      throw new TypeError('无效的目录标签地址');
+      throw new TypeError('Invalid catalog tab URL');
     }
     const html = await fetchSearchText(catalogPageUrl(id, number));
     if (html === null) return {apps: [], hasMore: false};
@@ -450,14 +450,14 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const normalized = cleanText(query);
-    if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (normalized.length < 2) throw new TypeError('Search keyword must contain at least 2 characters');
     const html = await fetchSearchText(searchUrl(normalized, page));
     return html === null ? [] : parseSearchResults(html);
   },
 
   async detailsMetadata(url) {
     const id = absoluteUrl(url);
-    if (!isApkTodoUrl(id)) throw new TypeError('无效的 APKTodo 详情地址');
+    if (!isApkTodoUrl(id)) throw new TypeError('Invalid APKTodo detail URL');
 
     const openUrl = /\/$/.test(id) ? id : `${id}/`;
     const tab = await apkmesh.browser.open(openUrl);
@@ -541,8 +541,8 @@ globalThis.source = {
     if (projectId === 'search-keyword') {
       const results = await this.search(value);
       return {
-        title: '搜索完成',
-        summary: `关键词“${value}”返回 ${results.length} 条结果`,
+        title: 'Search completed',
+        summary: `Keyword "${value}" returned ${results.length} results`,
         data: results.map((item) => ({
           name: item.name,
           id: item.id,
@@ -554,8 +554,8 @@ globalThis.source = {
     if (projectId === 'app-details') {
       const app = await this.details(value);
       return {
-        title: '详情读取完成',
-        summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`,
+        title: 'Details read',
+        summary: `Read ${app.name} with ${app.downloads.length} downloads`,
         data: {
           name: app.name,
           version: app.version,
@@ -578,11 +578,11 @@ globalThis.source = {
         tabs.push({id: tab.id, name: tab.name, apps: result.apps.length, hasMore: result.hasMore});
       }
       return {
-        title: '目录标签检查完成',
-        summary: `检查标签 ${tabs.length} 个`,
+        title: 'Catalog tab inspection completed',
+        summary: `Inspected ${tabs.length} tabs`,
         data: {tabs},
       };
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

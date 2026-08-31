@@ -8,27 +8,27 @@ const REQUEST_HEADERS = {
 };
 
 const CATALOG_TABS = [
-  {id: 'featured', name: '推荐', paged: false, route: ''},
-  {id: 'popular', name: '热门', paged: true, route: 'popular', customPaging: true},
-  {id: 'new', name: '最新', paged: true, route: 'new', customPaging: true},
+  {id: 'featured', name: 'Featured', paged: false, route: ''},
+  {id: 'popular', name: 'Popular', paged: true, route: 'popular', customPaging: true},
+  {id: 'new', name: 'New', paged: true, route: 'new', customPaging: true},
   {id: 'mod', name: 'Mod', paged: true, route: 'mod'},
-  {id: 'editors-choice', name: '编辑精选', paged: true, route: 'editors-choice', customPaging: true},
-  {id: 'tool', name: '工具', paged: true, route: 'tool'},
-  {id: 'action', name: '动作', paged: true, route: 'action'},
-  {id: 'adventure', name: '冒险', paged: true, route: 'adventure'},
-  {id: 'arcade', name: '街机', paged: true, route: 'arcade'},
-  {id: 'board', name: '棋牌', paged: true, route: 'board'},
-  {id: 'card', name: '卡牌', paged: true, route: 'card'},
-  {id: 'casual', name: '休闲', paged: true, route: 'casual'},
-  {id: 'educational', name: '教育', paged: true, route: 'educational'},
+  {id: 'editors-choice', name: "Editor's Choice", paged: true, route: 'editors-choice', customPaging: true},
+  {id: 'tool', name: 'Tools', paged: true, route: 'tool'},
+  {id: 'action', name: 'Action', paged: true, route: 'action'},
+  {id: 'adventure', name: 'Adventure', paged: true, route: 'adventure'},
+  {id: 'arcade', name: 'Arcade', paged: true, route: 'arcade'},
+  {id: 'board', name: 'Board/Card', paged: true, route: 'board'},
+  {id: 'card', name: 'Card', paged: true, route: 'card'},
+  {id: 'casual', name: 'Casual', paged: true, route: 'casual'},
+  {id: 'educational', name: 'Education', paged: true, route: 'educational'},
   {id: 'psp', name: 'PSP', paged: true, route: 'psp'},
-  {id: 'puzzle', name: '解谜', paged: true, route: 'puzzle'},
+  {id: 'puzzle', name: 'Puzzle', paged: true, route: 'puzzle'},
   {id: 'roguelike', name: 'Roguelike', paged: true, route: 'roguelike'},
-  {id: 'racing', name: '竞速', paged: true, route: 'racing'},
-  {id: 'role-playing', name: '角色扮演', paged: true, route: 'role-playing'},
-  {id: 'simulation', name: '模拟', paged: true, route: 'simulation'},
-  {id: 'sports', name: '体育', paged: true, route: 'sports'},
-  {id: 'strategy', name: '策略', paged: true, route: 'strategy'},
+  {id: 'racing', name: 'Racing', paged: true, route: 'racing'},
+  {id: 'role-playing', name: 'Role Playing', paged: true, route: 'role-playing'},
+  {id: 'simulation', name: 'Simulation', paged: true, route: 'simulation'},
+  {id: 'sports', name: 'Sports', paged: true, route: 'sports'},
+  {id: 'strategy', name: 'Strategy', paged: true, route: 'strategy'},
 ];
 
 const RESERVED_PATHS = new Set([
@@ -318,7 +318,7 @@ globalThis.source = {
     version: '1.0.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: '读取 APKAward 公开页面的目录、搜索、详情、截图和下载项。',
+    description: 'Fetch APKAward public catalog, search, details, screenshots, and download items.',
     permissions: {
       network: ['apkaward.com', '*.apkaward.com', 'apkawards.com', '*.apkawards.com'],
       browser: false,
@@ -328,18 +328,18 @@ globalThis.source = {
     debugProjects: [
       {
         id: 'search-keyword',
-        name: '搜索关键词',
-        description: '检查 APKAward 公开分类页中的匹配结果。',
-        inputLabel: '关键词',
-        placeholder: '例如 minecraft',
+        name: 'Search Keywords',
+        description: 'Check matching results in APKAward public category pages.',
+        inputLabel: 'Keyword',
+        placeholder: 'e.g. minecraft',
         defaultInput: 'minecraft',
       },
       {
         id: 'app-details',
-        name: '获取应用详情',
-        description: '读取 APKAward 详情页并解析公开下载链接。',
-        inputLabel: '应用详情 URL',
-        placeholder: '粘贴 APKAward 应用 URL',
+        name: 'Get App Details',
+        description: 'Fetch APKAward detail page and parse public download links.',
+        inputLabel: 'App details URL',
+        placeholder: 'Paste APKAward app URL',
         defaultInput: 'https://apkaward.com/dont-starve-pocket-edition',
       },
     ],
@@ -354,7 +354,7 @@ globalThis.source = {
 
   async catalogPage(tabId, page = 1) {
     const tab = CATALOG_TABS.find((item) => item.id === tabId);
-    if (!tab) throw new TypeError('无效的 APKAward 目录标签');
+    if (!tab) throw new TypeError('Invalid APKAward catalog tab');
     const number = Math.max(1, Number(page) || 1);
     if (!tab.paged && number > 1) return {apps: [], hasMore: false};
     const html = await fetchPageOrNull(listingUrl(tab, number));
@@ -367,7 +367,7 @@ globalThis.source = {
 
   async search(query, page = 1) {
     const normalized = cleanText(query).toLowerCase();
-    if (normalized.length < 2) throw new TypeError('搜索关键词至少需要 2 个字符');
+    if (normalized.length < 2) throw new TypeError('Search keyword must be at least 2 characters');
     const number = Math.max(1, Number(page) || 1);
     const tabs = ['popular', 'new', 'mod', 'tool', 'editors-choice']
       .map((id) => CATALOG_TABS.find((item) => item.id === id));
@@ -382,7 +382,7 @@ globalThis.source = {
 
   async detailsMetadata(value) {
     const requestedUrl = canonicalSourceUrl(value);
-    if (!isAppUrl(requestedUrl)) throw new TypeError('无效的 APKAward 详情地址');
+    if (!isAppUrl(requestedUrl)) throw new TypeError('Invalid APKAward details URL');
     const html = await fetchHtml(requestedUrl);
     const id = canonicalFromHtml(html, requestedUrl);
     if (!isAppUrl(id)) throw new Error('APKAward detail page did not expose a valid canonical URL');
@@ -442,12 +442,12 @@ globalThis.source = {
     const value = cleanText(input);
     if (projectId === 'search-keyword') {
       const results = await this.search(value, 1);
-      return {title: '搜索完成', summary: `关键词“${value}”返回 ${results.length} 条结果`, data: results};
+      return {title: 'Search Complete', summary: `Keyword "${value}" returned ${results.length} results`, data: results};
     }
     if (projectId === 'app-details') {
       const app = await this.details(value);
-      return {title: '详情读取完成', summary: `已读取 ${app.name}；下载项 ${app.downloads.length} 个`, data: app};
+      return {title: 'Details Fetched', summary: `Fetched ${app.name}; ${app.downloads.length} download items`, data: app};
     }
-    throw new Error(`未知调试项目：${projectId}`);
+    throw new Error(`Unknown debug project: ${projectId}`);
   },
 };

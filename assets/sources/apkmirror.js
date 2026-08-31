@@ -507,7 +507,7 @@ globalThis.source = {
     version: '1.1.0',
     minApiVersion: 1,
     homepage: `${ORIGIN}/`,
-    description: 'APKMirror 版本搜索、详情、变体和下载源。',
+    description: 'APKMirror version search, details, variants and download sources.',
     permissions: {
       network: ['*'],
       browser: true,
@@ -607,7 +607,7 @@ globalThis.source = {
   async resolveDownloads(candidates, requestId) {
     const resolved = await mapLimit(candidates || [], 3, async (item, index) => {
       const download = await resolveDownloadCandidate(item);
-      await reportDetailProgress(requestId, index, download, download ? null : '无法解析下载链接');
+      await reportDetailProgress(requestId, index, download, download ? null : 'Unable to resolve download link');
       return download;
     });
     return resolved.filter(Boolean).filter((item, index, all) =>
